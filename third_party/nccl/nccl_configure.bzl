@@ -50,7 +50,11 @@ alias(
 _NCCL_LOCAL_BUILD_TEMPLATE = """
 filegroup(
   name = "LICENSE",
-  data = ["nccl/NCCL-SLA.txt"],
+  data = ["nccl/NCCL-SLA.txt",
+          "nccl/lib/libnccl.so",
+          "nccl/lib/libnccl.so.2",
+          "nccl/lib/libnccl.so.2.1.15",
+          "nccl/include/nccl.h"],
   visibility = ["//visibility:public"],
 )
 

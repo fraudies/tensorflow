@@ -56,7 +56,9 @@ toolchain {
   cxx_flag: "-std=c++11"
   linker_flag: "-Wl,-no-as-needed"
   linker_flag: "-lstdc++"
-  linker_flag: "-B/usr/bin/"
+  linker_flag: "-lm"
+  linker_flag: "-lrt"
+  linker_flag: "-B/opt/rh/devtoolset-4/root/usr/bin/"
 
 %{host_compiler_includes}
   tool_path { name: "gcov" path: "/usr/bin/gcov" }

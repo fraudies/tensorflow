@@ -1357,7 +1357,7 @@ register_extension_info(
 )
 
 def tf_extension_linkopts():
-  return []  # No extension link opts
+  return ["-lrt"]  # No extension link opts
 
 def tf_extension_copts():
   return []  # No extension c opts

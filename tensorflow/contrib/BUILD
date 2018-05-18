@@ -22,6 +22,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//tensorflow/contrib/all_reduce",
+        "//tensorflow/contrib/avro",
         "//tensorflow/contrib/batching:batch_py",
         "//tensorflow/contrib/bayesflow:bayesflow_py",
         "//tensorflow/contrib/boosted_trees:init_py",
