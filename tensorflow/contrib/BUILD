@@ -22,7 +22,6 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//tensorflow/contrib/all_reduce",
-        "//tensorflow/contrib/avro",
         "//tensorflow/contrib/batching:batch_py",
         "//tensorflow/contrib/bayesflow:bayesflow_py",
         "//tensorflow/contrib/boosted_trees:init_py",
@@ -123,7 +122,10 @@ py_library(
     }) + if_not_windows([
         "//tensorflow/contrib/ffmpeg:ffmpeg_ops_py",
         "//tensorflow/contrib/lite/python:lite",  # unix dependency, need to fix code
-    ]),
+    ]) + select({
+        "//tensorflow:with_avro_support": ["//tensorflow/contrib/avro"],
+        "//conditions:default": [],
+    }),
 )
 
 cc_library(
@@ -151,7 +153,7 @@ cc_library(
             "//tensorflow/contrib/kafka:dataset_kernels",
         ],
         "//conditions:default": [],
-    }),
+    })
 )
 
 cc_library(
