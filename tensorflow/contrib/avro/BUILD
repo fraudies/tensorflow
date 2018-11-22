@@ -4,10 +4,41 @@ licenses(["notice"])  # Apache 2.0
 
 exports_files(["LICENSE"])
 
-load("//tensorflow:tensorflow.bzl", "tf_custom_op_py_library")
-load("//tensorflow:tensorflow.bzl", "tf_custom_op_library")
-load("//tensorflow:tensorflow.bzl", "tf_gen_op_wrapper_py")
-load("//tensorflow:tensorflow.bzl", "tf_gen_op_libs")
+load(
+    "//tensorflow:tensorflow.bzl",
+    "tf_cc_test",
+    "tf_custom_op_py_library",
+    "tf_custom_op_library",
+    "tf_gen_op_wrapper_py",
+    "tf_gen_op_libs",
+)
+
+#load("//tensorflow:tensorflow.bzl", "tf_custom_op_py_library")
+#load("//tensorflow:tensorflow.bzl", "tf_custom_op_library")
+#load("//tensorflow:tensorflow.bzl", "tf_gen_op_wrapper_py")
+#load("//tensorflow:tensorflow.bzl", "tf_gen_op_libs")
+
+cc_library(
+    name = "cc_utils",
+    srcs = ["utils/avro_mem_reader.cc"],
+    hdrs = ["utils/avro_mem_reader.h"],
+    deps = [
+        "//third_party/avro",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:core_cpu",
+    ],
+)
+
+tf_cc_test(
+    name = "avro_mem_reader_test",
+    srcs = ["utils/avro_mem_reader_test.cc"],
+    deps = [
+        ":cc_utils",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
 
 tf_custom_op_py_library(
     name = "avro",
