@@ -18,22 +18,30 @@ limitations under the License.
 namespace tensorflow {
 namespace data {
 
-// Ideally this mem reader would not need a mapping to a file API
-// However, the low level avro c API does not provide the full API
-// of reading a schema from a avro reader and only an avro file
-// reader
-// Also schema resolution is only provided
+void AvroFileReaderDestructor(avro_file_reader_t* reader) {
+  CHECK_GE(avro_file_reader_close(*reader), 0);
+}
+
+void AvroSchemaDestructor(avro_schema_t schema) {
+  CHECK_GE(avro_schema_decref(schema), 0);
+}
+
+void AvroInterfaceDestructor(avro_value_iface_t* iface)  {
+  avro_value_iface_decref(iface);
+}
+
+void AvroValueDestructor(avro_value_t* value) {
+    avro_value_decref(value);
+}
+
+// Avro mem reader assumes that the memory block contains
+// - header information for avro files
+// - schema information about the data
+// This reader uses the file reader on a memory mapped file
+// This reader does not support schema resolution
 class AvroMemReader {
   public:
-    // Supply a filename if this memory is backed by a file
-    static Status Create(AvroMemReader* reader, const std::shared_ptr<void>& mem_data,
-      const uint64 mem_size, const string& filename="generic.avro");
-    virtual Status ReadNext(avro_value_t* value);
-    AvroMemReader(const tensorflow::data::AvroMemReader& mem_reader);
-  protected:
-    using FilePtr = std::shared_ptr<FILE>;
-
-    using AvroFileReaderPtr = std::shared_ptr<avro_file_reader_t>;
+    using AvroFileReaderPtr = std::unique_ptr<avro_file_reader_t, void(*)(avro_file_reader_t*)>;
 
     using AvroSchemaPtr = std::unique_ptr<struct avro_obj_t,
                                            void(*)(avro_schema_t)>;
@@ -43,31 +51,39 @@ class AvroMemReader {
 
     using AvroValuePtr = std::shared_ptr<avro_value_t>;
 
-    explicit AvroMemReader(FilePtr file, AvroFileReaderPtr reader, AvroValuePtr value);
-
-    FilePtr file_;
-    AvroFileReaderPtr file_reader_;
+    AvroMemReader();
+    virtual ~AvroMemReader();
+    // Supply a filename if this memory is backed by a file
+    static Status Create(AvroMemReader* reader, const std::unique_ptr<char[]>& mem_data,
+      const uint64 mem_size, const string& filename="generic.avro");
+    // Note, value is only valid as long as no ReadNext is called since the internal method
+    // re-uses the same memory for the next read
+    virtual Status ReadNext(AvroValuePtr& value);
+  protected:
+    AvroFileReaderPtr file_reader_; // will close the file
     AvroValuePtr writer_value_;
 };
 
+/*
 // Will only create a resolved reader IF
 // the reader schema is not empty AND
 // the reader schema is different from the writer schema
 // OTHERWISE
 // this will return a AvroMemReader
-/*
 class AvroResolvedMemReader : public AvroMemReader {
   public:
-    static Status Create(AvroMemReader* reader, const std::shared_ptr<void>& mem_data,
-      const uint64 mem_size, const string& reader_schema_str, const string& filename="generic.avro");
+    AvroResolvedMemReader();
+
+    static Status Create(AvroResolvedMemReader* reader, const std::unique_ptr<char[]>& mem_data,
+      const uint64 mem_size, const string& reader_schema_str,
+      const string& filename="generic.avro");
+
     virtual Status ReadNext(avro_value_t* value);
-  private:
-    static Status Resolve(bool* resolve, const std::shared_ptr<void>& mem_data,
+
+    static Status DoResolve(bool* resolve, const std::unique_ptr<char[]>& mem_data,
       const uint64 mem_size, const string& reader_schema_str, const string& filename);
-
-    explicit AvroResolvedMemReader();
-
-    AvroValueUPtr reader_value_;
+  private:
+    AvroValuePtr reader_value_;
 };
 */
 

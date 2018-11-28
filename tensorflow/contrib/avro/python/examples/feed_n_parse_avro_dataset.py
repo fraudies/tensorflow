@@ -108,5 +108,7 @@ if __name__ == '__main__':
                 logging.info("Done")
                 break
 
+    print(output_dir)
+
     # Cleanup
-    shutil.rmtree(output_dir)
+    #shutil.rmtree(output_dir)
