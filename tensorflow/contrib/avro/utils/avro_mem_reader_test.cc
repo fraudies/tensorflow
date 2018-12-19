@@ -263,6 +263,11 @@ class AvroMemReaderTest : public ::testing::Test {
       return Status::OK();
     }
 
+    static Status CheckResolvedValue(const avro_value_t& value) {
+      TF_RETURN_IF_ERROR(CheckFieldInValue(value, *fields_[0]));
+      return Status::OK();
+    }
+
     static Status ReadFileIntoMem(std::unique_ptr<char[]>& mem_data, uint64* mem_size,
       const string& filename) {
       // Unfortunately, this somewhat violates the google c++ style guide... because smart pointers
@@ -321,7 +326,7 @@ TEST_F(AvroMemReaderTest, CreateAndDelete) {
   delete reader;
 }
 
-TEST_F(AvroMemReaderTest, CreateAndRead) {
+TEST_F(AvroMemReaderTest, Read) {
   AvroMemReader* reader = new AvroMemReader();
   TF_EXPECT_OK(AvroMemReader::Create(reader, mem_data_, mem_size_, filename_));
   AvroMemReader::AvroValuePtr value;
@@ -335,31 +340,25 @@ TEST_F(AvroMemReaderTest, CreateAndRead) {
   delete reader;
 }
 
-/*
-TEST(AvroResolvedMemReaderTest, CreateAndReadResolved) {
-  string filename = io::GetTempFilename("avro-resolved");
-  std::unique_ptr<char[]> mem_data;
-  uint64 mem_size;
-  TF_EXPECT_OK(WriteAvroFile(filename));
-  LOG(INFO) << "Created tmp file: " << filename;
-
-  TF_EXPECT_OK(ReadFileIntoMem(mem_data, &mem_size, filename));
-  LOG(INFO) << "Read file into memory with " << mem_size << " By";
-
-  AvroMemReader* reader = new AvroResolvedMemReader();
-  TF_EXPECT_OK(AvroMemReader::Create(reader, mem_data, mem_size, filename));
-
-  avro_value_t value;
-  reader->ReadNext(&value);
-
-  // Ensure the contents of the avro value match
-  TF_EXPECT_OK(CheckValue(value));
-
-  // Cleanup
-  avro_value_decref(&value);
-  remove(filename.c_str());
+TEST_F(AvroMemReaderTest, CreateAndDeleteResolved) {
+  AvroResolvedMemReader* reader = new AvroResolvedMemReader();
+  TF_EXPECT_OK(AvroResolvedMemReader::Create(reader, mem_data_, mem_size_, resolved, filename_));
+  delete reader;
 }
-*/
+
+TEST_F(AvroMemReaderTest, ReadResolved) {
+  AvroResolvedMemReader* reader = new AvroResolvedMemReader();
+  TF_EXPECT_OK(AvroResolvedMemReader::Create(reader, mem_data_, mem_size_, resolved, filename_));
+  AvroMemReader::AvroValuePtr value;
+  for (int i_record = 0; i_record < n_record; ++i_record) {
+    TF_EXPECT_OK(reader->ReadNext(value));
+    LogValue(value.get());
+    // Ensure the contents of the avro value match
+    TF_EXPECT_OK(CheckResolvedValue(*value));
+  }
+  EXPECT_EQ(reader->ReadNext(value), Status(errors::OutOfRange("eof")));
+  delete reader;
+}
 
 }  // namespace data
 }  // namespace tensorflow

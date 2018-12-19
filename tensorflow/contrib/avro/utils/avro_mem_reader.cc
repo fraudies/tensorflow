@@ -91,13 +91,12 @@ Status AvroMemReader::ReadNext(AvroValuePtr& value) {
   return Status::OK();
 }
 
-/*
+
 AvroResolvedMemReader::AvroResolvedMemReader() :
   AvroMemReader(),
-  reader_value_(new avro_value_t, AvroValueDestructor) {
-  reader_value_.get()->iface = nullptr;
-}
+  reader_value_(new avro_value_t, AvroValueDestructor) { }
 
+AvroResolvedMemReader::~AvroResolvedMemReader() {}
 
 // An example of resolved reading can be found in this test case test_avro_984.c
 // We follow that here
@@ -109,35 +108,6 @@ Status AvroResolvedMemReader::Create(AvroResolvedMemReader* reader, const std::u
 
   if (!resolve) {
     return Status(errors::InvalidArgument("No schema resolution requested!"));
-  }
-
-  // Open a memory mapped file
-  FILE* file = fmemopen(static_cast<void*>(mem_data.get()), mem_size, "rb");
-  if (file == nullptr) {
-    return Status(errors::InvalidArgument("Unable to open file ", filename, " for memory."));
-  }
-
-  // Closes the file handle
-  avro_file_reader_t file_reader; // use tmp not to clean up a partially created reader
-  if (avro_file_reader_fp(file, filename.c_str(), 1, &file_reader) != 0) {
-    return Status(errors::InvalidArgument("Unable to open file ", filename,
-                                          " in avro reader. ", avro_strerror()));
-  }
-  reader->file_reader_.reset(&file_reader);
-
-  // Get the writer schema
-  AvroSchemaPtr writer_schema(avro_file_reader_get_writer_schema(*reader->file_reader_),
-             AvroSchemaDestructor);
-  if (writer_schema.get() == nullptr) {
-    return Status(errors::InvalidArgument("Unable to retrieve schema from file ", filename));
-  }
-
-  // Get the writer interface and initialize the value for that interface
-  AvroInterfacePtr writer_iface(avro_generic_class_from_schema(writer_schema.get()),
-    AvroInterfaceDestructor);
-  if (writer_iface.get() == nullptr) {
-    // TODO(fraudies): Get a string representation of the schema, use avro_schema_to_json
-    return Status(errors::ResourceExhausted("Unable to create interface for schema"));
   }
 
   // Create a reader schema for the user passed string
@@ -152,38 +122,83 @@ Status AvroResolvedMemReader::Create(AvroResolvedMemReader* reader, const std::u
 
   // Create reader class
   AvroInterfacePtr reader_iface(
-    avro_resolved_reader_new(writer_schema.get(), reader_schema.get()),
+    avro_generic_class_from_schema(reader_schema.get()),
     AvroInterfaceDestructor
   );
-  if (writer_iface.get() == nullptr) {
+  if (reader_iface.get() == nullptr) {
     // TODO(fraudies): Print the schemas in the error message
-    return Status(errors::InvalidArgument("Schemas are incompatible. ",
-                                          avro_strerror()));
+    return Status(errors::ResourceExhausted("Unable to create interface for schema"));
   }
 
   // Initialize value for reader class
-  if (avro_resolved_reader_new_value(reader_iface.get(), reader->reader_value_.get()) != 0) {
+  if (avro_generic_value_new(reader_iface.get(), reader->reader_value_.get()) != 0) {
     return Status(errors::InvalidArgument(
         "Unable to create instance for generic reader class."));
   }
 
+  // Open a memory mapped file
+  FILE* file = fmemopen(static_cast<void*>(mem_data.get()), mem_size, "rb");
+  if (file == nullptr) {
+    return Status(errors::InvalidArgument("Unable to open file ", filename, " for memory."));
+  }
+
+  // Closes the file handle
+  avro_file_reader_t* file_reader = new avro_file_reader_t; // use tmp not to clean up a partially created reader
+  if (avro_file_reader_fp(file, filename.c_str(), 1, file_reader) != 0) {
+    return Status(errors::InvalidArgument("Unable to open file ", filename,
+                                          " in avro reader. ", avro_strerror()));
+  }
+  reader->file_reader_.reset(file_reader);
+
+  // Get the writer schema
+  AvroSchemaPtr writer_schema(avro_file_reader_get_writer_schema(*reader->file_reader_),
+             AvroSchemaDestructor);
+  if (writer_schema.get() == nullptr) {
+    return Status(errors::InvalidArgument("Unable to retrieve schema from file ", filename));
+  }
+
+  // Get the writer interface and initialize the value for that interface
+  AvroInterfacePtr writer_iface(avro_resolved_writer_new(writer_schema.get(), reader_schema.get()),
+    AvroInterfaceDestructor);
+  if (writer_iface.get() == nullptr) {
+    // TODO(fraudies): Get a string representation of the schema, use avro_schema_to_json
+    return Status(errors::InvalidArgument("Schemas are incompatible. ",
+                                          avro_strerror()));
+  }
+
   // Create instance for resolved writer class
-  if (avro_generic_value_new(writer_iface.get(), reader->writer_value_.get()) != 0) {
+  if (avro_resolved_writer_new_value(writer_iface.get(), reader->writer_value_.get()) != 0) {
     return Status(
         errors::InvalidArgument("Unable to create resolved writer value."));
   }
-  avro_resolved_reader_set_source(reader->reader_value_.get(), reader->writer_value_.get());
+  avro_resolved_writer_set_dest(reader->writer_value_.get(), reader->reader_value_.get());
 
   return Status::OK();
 }
 
-Status AvroResolvedMemReader::ReadNext(avro_value_t* value) {
-  // Read the writer value but use the reader value which is linked to the writer value
-  bool at_end =
-    avro_file_reader_read_value(*file_reader_, writer_value_.get()) != 0;
-  // Transfer ownership
-  avro_value_move_ref(value, reader_value_.get());
-  return at_end ? errors::OutOfRange("eof") : Status::OK();
+Status AvroResolvedMemReader::ReadNext(AvroValuePtr& value) {
+  avro_set_error("");
+  avro_value_reset(writer_value_.get());
+  int ret = avro_file_reader_read_value(*file_reader_, writer_value_.get());
+  // TODO(fraudies): Issue:
+  // When reading from a memory mapped file we get this error
+  // `Error reading file: Incorrect sync bytes`
+  // Instead of EOF
+  // Need to check why this is happening when opening the file with fmemopen and not with
+  // fopen
+  /*
+  if (ret == EOF) {
+    return errors::OutOfRange("eof");
+  }
+  if (ret != 0) {
+    return errors::InvalidArgument("Unable to read value due to: ", avro_strerror());
+  }
+  */
+  if (ret != 0) {
+    return errors::OutOfRange("eof");
+  }
+  value = reader_value_;
+  return Status::OK();
 }
 
 Status AvroResolvedMemReader::DoResolve(bool* resolve, const std::unique_ptr<char[]>& mem_data,
@@ -231,7 +246,6 @@ Status AvroResolvedMemReader::DoResolve(bool* resolve, const std::unique_ptr<cha
 
   return Status::OK();
 }
-*/
 
 }  // namespace data
 }  // namespace tensorflow

@@ -64,7 +64,7 @@ class AvroMemReader {
     AvroValuePtr writer_value_;
 };
 
-/*
+
 // Will only create a resolved reader IF
 // the reader schema is not empty AND
 // the reader schema is different from the writer schema
@@ -73,19 +73,19 @@ class AvroMemReader {
 class AvroResolvedMemReader : public AvroMemReader {
   public:
     AvroResolvedMemReader();
+    virtual ~AvroResolvedMemReader();
 
     static Status Create(AvroResolvedMemReader* reader, const std::unique_ptr<char[]>& mem_data,
       const uint64 mem_size, const string& reader_schema_str,
       const string& filename="generic.avro");
 
-    virtual Status ReadNext(avro_value_t* value);
+    virtual Status ReadNext(AvroValuePtr& value);
 
     static Status DoResolve(bool* resolve, const std::unique_ptr<char[]>& mem_data,
       const uint64 mem_size, const string& reader_schema_str, const string& filename);
   private:
     AvroValuePtr reader_value_;
 };
-*/
 
 }  // namespace data
 }  // namespace tensorflow
