@@ -340,15 +340,9 @@ TEST_F(AvroMemReaderTest, Read) {
   delete reader;
 }
 
-TEST_F(AvroMemReaderTest, CreateAndDeleteResolved) {
-  AvroResolvedMemReader* reader = new AvroResolvedMemReader();
-  TF_EXPECT_OK(AvroResolvedMemReader::Create(reader, mem_data_, mem_size_, resolved, filename_));
-  delete reader;
-}
-
 TEST_F(AvroMemReaderTest, ReadResolved) {
-  AvroResolvedMemReader* reader = new AvroResolvedMemReader();
-  TF_EXPECT_OK(AvroResolvedMemReader::Create(reader, mem_data_, mem_size_, resolved, filename_));
+  AvroMemReader* reader = new AvroMemReader();
+  TF_EXPECT_OK(AvroMemReader::Create(reader, mem_data_, mem_size_, resolved, filename_));
   AvroMemReader::AvroValuePtr value;
   for (int i_record = 0; i_record < n_record; ++i_record) {
     TF_EXPECT_OK(reader->ReadNext(value));

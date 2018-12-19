@@ -38,7 +38,7 @@ void AvroValueDestructor(avro_value_t* value) {
 // - header information for avro files
 // - schema information about the data
 // This reader uses the file reader on a memory mapped file
-// This reader does not support schema resolution
+// This reader can support schema resolution
 class AvroMemReader {
   public:
     using AvroFileReaderPtr = std::unique_ptr<avro_file_reader_t, void(*)(avro_file_reader_t*)>;
@@ -55,35 +55,18 @@ class AvroMemReader {
     virtual ~AvroMemReader();
     // Supply a filename if this memory is backed by a file
     static Status Create(AvroMemReader* reader, const std::unique_ptr<char[]>& mem_data,
-      const uint64 mem_size, const string& filename="generic.avro");
+      const uint64 mem_size, const string& filename);
+    static Status Create(AvroMemReader* reader, const std::unique_ptr<char[]>& mem_data,
+      const uint64 mem_size, const string& reader_schema_str,
+      const string& filename);
     // Note, value is only valid as long as no ReadNext is called since the internal method
     // re-uses the same memory for the next read
     virtual Status ReadNext(AvroValuePtr& value);
+    static Status DoResolve(bool* resolve, const std::unique_ptr<char[]>& mem_data,
+      const uint64 mem_size, const string& reader_schema_str, const string& filename);
   protected:
     AvroFileReaderPtr file_reader_; // will close the file
     AvroValuePtr writer_value_;
-};
-
-
-// Will only create a resolved reader IF
-// the reader schema is not empty AND
-// the reader schema is different from the writer schema
-// OTHERWISE
-// this will return a AvroMemReader
-class AvroResolvedMemReader : public AvroMemReader {
-  public:
-    AvroResolvedMemReader();
-    virtual ~AvroResolvedMemReader();
-
-    static Status Create(AvroResolvedMemReader* reader, const std::unique_ptr<char[]>& mem_data,
-      const uint64 mem_size, const string& reader_schema_str,
-      const string& filename="generic.avro");
-
-    virtual Status ReadNext(AvroValuePtr& value);
-
-    static Status DoResolve(bool* resolve, const std::unique_ptr<char[]>& mem_data,
-      const uint64 mem_size, const string& reader_schema_str, const string& filename);
-  private:
     AvroValuePtr reader_value_;
 };
 

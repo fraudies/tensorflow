@@ -18,7 +18,8 @@ namespace data {
 
 AvroMemReader::AvroMemReader() :
   file_reader_(nullptr, AvroFileReaderDestructor),
-  writer_value_(new avro_value_t, AvroValueDestructor) { }
+  writer_value_(new avro_value_t, AvroValueDestructor),
+  reader_value_(new avro_value_t, AvroValueDestructor) { }
 
 AvroMemReader::~AvroMemReader() { }
 
@@ -62,6 +63,7 @@ Status AvroMemReader::Create(AvroMemReader* reader, const std::unique_ptr<char[]
     return Status(errors::InvalidArgument(
         "Unable to create instance for generic class."));
   }
+  avro_value_copy_ref(reader->reader_value_.get(), reader->writer_value_.get());
 
   return Status::OK();
 }
@@ -87,28 +89,14 @@ Status AvroMemReader::ReadNext(AvroValuePtr& value) {
   if (ret != 0) {
     return errors::OutOfRange("eof");
   }
-  value = writer_value_;
+  value = reader_value_;
   return Status::OK();
 }
 
-
-AvroResolvedMemReader::AvroResolvedMemReader() :
-  AvroMemReader(),
-  reader_value_(new avro_value_t, AvroValueDestructor) { }
-
-AvroResolvedMemReader::~AvroResolvedMemReader() {}
-
 // An example of resolved reading can be found in this test case test_avro_984.c
 // We follow that here
-Status AvroResolvedMemReader::Create(AvroResolvedMemReader* reader, const std::unique_ptr<char[]>& mem_data,
+Status AvroMemReader::Create(AvroMemReader* reader, const std::unique_ptr<char[]>& mem_data,
   const uint64 mem_size, const string& reader_schema_str, const string& filename) {
-
-  bool resolve;
-  TF_RETURN_IF_ERROR(DoResolve(&resolve, mem_data, mem_size, reader_schema_str, filename));
-
-  if (!resolve) {
-    return Status(errors::InvalidArgument("No schema resolution requested!"));
-  }
 
   // Create a reader schema for the user passed string
   avro_schema_t reader_schema_tmp;
@@ -176,32 +164,7 @@ Status AvroResolvedMemReader::Create(AvroResolvedMemReader* reader, const std::u
   return Status::OK();
 }
 
-Status AvroResolvedMemReader::ReadNext(AvroValuePtr& value) {
-  avro_set_error("");
-  avro_value_reset(writer_value_.get());
-  int ret = avro_file_reader_read_value(*file_reader_, writer_value_.get());
-  // TODO(fraudies): Issue:
-  // When reading from a memory mapped file we get this error
-  // `Error reading file: Incorrect sync bytes`
-  // Instead of EOF
-  // Need to check why this is happening when opening the file with fmemopen and not with
-  // fopen
-  /*
-  if (ret == EOF) {
-    return errors::OutOfRange("eof");
-  }
-  if (ret != 0) {
-    return errors::InvalidArgument("Unable to read value due to: ", avro_strerror());
-  }
-  */
-  if (ret != 0) {
-    return errors::OutOfRange("eof");
-  }
-  value = reader_value_;
-  return Status::OK();
-}
-
-Status AvroResolvedMemReader::DoResolve(bool* resolve, const std::unique_ptr<char[]>& mem_data,
+Status AvroMemReader::DoResolve(bool* resolve, const std::unique_ptr<char[]>& mem_data,
   const uint64 mem_size, const string& reader_schema_str, const string& filename) {
 
   // No schema supplied => no schema resolution is necessary
