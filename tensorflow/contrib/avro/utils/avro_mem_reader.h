@@ -13,6 +13,7 @@ limitations under the License.
 #define TENSORFLOW_DATA_AVRO_MEM_READER_H_
 
 #include <avro.h>
+#include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/lib/core/status.h"
 
 namespace tensorflow {
@@ -20,6 +21,7 @@ namespace data {
 
 void AvroFileReaderDestructor(avro_file_reader_t* reader) {
   CHECK_GE(avro_file_reader_close(*reader), 0);
+  free(reader);
 }
 
 void AvroSchemaDestructor(avro_schema_t schema) {
@@ -31,7 +33,8 @@ void AvroInterfaceDestructor(avro_value_iface_t* iface)  {
 }
 
 void AvroValueDestructor(avro_value_t* value) {
-    avro_value_decref(value);
+  avro_value_decref(value);
+  free(value);
 }
 
 // Avro mem reader assumes that the memory block contains
@@ -49,25 +52,34 @@ class AvroMemReader {
     using AvroInterfacePtr = std::unique_ptr<avro_value_iface_t,
                                                   void(*)(avro_value_iface_t*)>;
 
-    using AvroValuePtr = std::shared_ptr<avro_value_t>;
+    using AvroValuePtr = std::unique_ptr<avro_value_t, void(*)(avro_value_t*)>;
 
     AvroMemReader();
     virtual ~AvroMemReader();
     // Supply a filename if this memory is backed by a file
     static Status Create(AvroMemReader* reader, const std::unique_ptr<char[]>& mem_data,
       const uint64 mem_size, const string& filename);
-    static Status Create(AvroMemReader* reader, const std::unique_ptr<char[]>& mem_data,
-      const uint64 mem_size, const string& reader_schema_str,
-      const string& filename);
     // Note, value is only valid as long as no ReadNext is called since the internal method
     // re-uses the same memory for the next read
     virtual Status ReadNext(AvroValuePtr& value);
+  protected:
+    mutex mu_;
+    AvroFileReaderPtr file_reader_ GUARDED_BY(mu_); // will close the file
+    AvroInterfacePtr writer_iface_ GUARDED_BY(mu_);
+};
+
+class AvroResolvedMemReader : public AvroMemReader {
+  public:
+    AvroResolvedMemReader();
+    virtual ~AvroResolvedMemReader();
+    static Status Create(AvroResolvedMemReader* reader, const std::unique_ptr<char[]>& mem_data,
+      const uint64 mem_size, const string& reader_schema_str,
+      const string& filename);
     static Status DoResolve(bool* resolve, const std::unique_ptr<char[]>& mem_data,
       const uint64 mem_size, const string& reader_schema_str, const string& filename);
+    virtual Status ReadNext(AvroValuePtr& value);
   protected:
-    AvroFileReaderPtr file_reader_; // will close the file
-    AvroValuePtr writer_value_;
-    AvroValuePtr reader_value_;
+    AvroInterfacePtr reader_iface_ GUARDED_BY(mu_);
 };
 
 }  // namespace data

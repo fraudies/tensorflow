@@ -13,6 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include <thread>
 #include "tensorflow/contrib/avro/utils/avro_mem_reader.h"
 #include "tensorflow/core/platform/test.h"
 #include "tensorflow/core/lib/core/errors.h"
@@ -349,12 +350,12 @@ std::unique_ptr<char[]> AvroMemReaderEmptyFileTest::mem_data_ = nullptr;
 uint64 AvroMemReaderEmptyFileTest::mem_size_ = 0;
 string AvroMemReaderEmptyFileTest::filename_ = "";
 
-
 TEST_F(AvroMemReaderTest, CreateAndDelete) {
   AvroMemReader* reader = new AvroMemReader();
   TF_EXPECT_OK(AvroMemReader::Create(reader, mem_data_, mem_size_, filename_));
   delete reader;
 }
+
 
 /*
 TODO(fraudies): Empty file seems to be bug in avroc in 1.7.7 since it returns
@@ -372,7 +373,7 @@ TEST_F(AvroMemReaderEmptyFileTest, ReadFromEmptyFile) {
 TEST_F(AvroMemReaderTest, Read) {
   AvroMemReader* reader = new AvroMemReader();
   TF_EXPECT_OK(AvroMemReader::Create(reader, mem_data_, mem_size_, filename_));
-  AvroMemReader::AvroValuePtr value;
+  AvroMemReader::AvroValuePtr value(nullptr, AvroValueDestructor);
   for (int i_record = 0; i_record < N_RECORD; ++i_record) {
     TF_EXPECT_OK(reader->ReadNext(value));
     AvroUtils::LogValue(*value);
@@ -383,10 +384,29 @@ TEST_F(AvroMemReaderTest, Read) {
   delete reader;
 }
 
-TEST_F(AvroMemReaderTest, ReadResolved) {
+TEST_F(AvroMemReaderTest, ReadMultiThreaded) {
   AvroMemReader* reader = new AvroMemReader();
-  TF_EXPECT_OK(AvroMemReader::Create(reader, mem_data_, mem_size_, resolved, filename_));
-  AvroMemReader::AvroValuePtr value;
+  TF_EXPECT_OK(AvroMemReader::Create(reader, mem_data_, mem_size_, filename_));
+  std::thread readers[N_RECORD];
+  for (int i_reader = 0; i_reader < N_RECORD; i_reader++) {
+    readers[i_reader] = std::thread([&reader] {
+      AvroMemReader::AvroValuePtr value(nullptr, AvroValueDestructor);
+      TF_EXPECT_OK(reader->ReadNext(value));
+      AvroUtils::LogValue(*value);
+      // Ensure the contents of the avro value match
+      TF_EXPECT_OK(AvroUtils::CheckValue(*value, fields_));
+    });
+  }
+  for (int i_reader = 0; i_reader < N_RECORD; i_reader++) {
+    readers[i_reader].join();
+  }
+  delete reader;
+}
+
+TEST_F(AvroMemReaderTest, ReadResolved) {
+  AvroResolvedMemReader* reader = new AvroResolvedMemReader();
+  TF_EXPECT_OK(AvroResolvedMemReader::Create(reader, mem_data_, mem_size_, resolved, filename_));
+  AvroMemReader::AvroValuePtr value(nullptr, AvroValueDestructor);
   for (int i_record = 0; i_record < N_RECORD; ++i_record) {
     TF_EXPECT_OK(reader->ReadNext(value));
     AvroUtils::LogValue(*value);
@@ -395,6 +415,37 @@ TEST_F(AvroMemReaderTest, ReadResolved) {
   }
   EXPECT_EQ(reader->ReadNext(value), Status(errors::OutOfRange("eof")));
   delete reader;
+}
+
+TEST_F(AvroMemReaderTest, ReadResolvedMultiThreaded) {
+  AvroResolvedMemReader* reader = new AvroResolvedMemReader();
+  TF_EXPECT_OK(AvroResolvedMemReader::Create(reader, mem_data_, mem_size_, resolved, filename_));
+  std::thread readers[N_RECORD];
+  for (int i_reader = 0; i_reader < N_RECORD; i_reader++) {
+    readers[i_reader] = std::thread([&reader] {
+      AvroMemReader::AvroValuePtr value(nullptr, AvroValueDestructor);
+      TF_EXPECT_OK(reader->ReadNext(value));
+      AvroUtils::LogValue(*value);
+      // Ensure the contents of the avro value match
+      TF_EXPECT_OK(AvroUtils::CheckResolvedValue(*value, *fields_[0]));
+    });
+  }
+  for (int i_reader = 0; i_reader < N_RECORD; i_reader++) {
+    readers[i_reader].join();
+  }
+  delete reader;
+}
+
+TEST_F(AvroMemReaderTest, DoNotResolve) {
+  bool resolve;
+  TF_EXPECT_OK(AvroResolvedMemReader::DoResolve(&resolve, mem_data_, mem_size_, schema, filename_));
+  EXPECT_FALSE(resolve);
+}
+
+TEST_F(AvroMemReaderTest, DoResolve) {
+  bool resolve;
+  TF_EXPECT_OK(AvroResolvedMemReader::DoResolve(&resolve, mem_data_, mem_size_, resolved, filename_));
+  EXPECT_TRUE(resolve);
 }
 
 }  // namespace data
