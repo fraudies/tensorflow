@@ -19,24 +19,6 @@ limitations under the License.
 namespace tensorflow {
 namespace data {
 
-void AvroFileReaderDestructor(avro_file_reader_t* reader) {
-  CHECK_GE(avro_file_reader_close(*reader), 0);
-  free(reader);
-}
-
-void AvroSchemaDestructor(avro_schema_t schema) {
-  CHECK_GE(avro_schema_decref(schema), 0);
-}
-
-void AvroInterfaceDestructor(avro_value_iface_t* iface)  {
-  avro_value_iface_decref(iface);
-}
-
-void AvroValueDestructor(avro_value_t* value) {
-  avro_value_decref(value);
-  free(value);
-}
-
 // Avro mem reader assumes that the memory block contains
 // - header information for avro files
 // - schema information about the data
@@ -62,6 +44,24 @@ class AvroMemReader {
     // Note, value is only valid as long as no ReadNext is called since the internal method
     // re-uses the same memory for the next read
     virtual Status ReadNext(AvroValuePtr& value);
+
+    static void AvroFileReaderDestructor(avro_file_reader_t* reader) {
+      CHECK_GE(avro_file_reader_close(*reader), 0);
+      free(reader);
+    }
+
+    static void AvroSchemaDestructor(avro_schema_t schema) {
+      CHECK_GE(avro_schema_decref(schema), 0);
+    }
+
+    static void AvroInterfaceDestructor(avro_value_iface_t* iface)  {
+      avro_value_iface_decref(iface);
+    }
+
+    static void AvroValueDestructor(avro_value_t* value) {
+      avro_value_decref(value);
+      free(value);
+    }
   protected:
     mutex mu_;
     AvroFileReaderPtr file_reader_ GUARDED_BY(mu_); // will close the file
