@@ -140,6 +140,10 @@ bool OrderedPrefixTree::Find(std::shared_ptr<TreeNode>& node,
   return false;
 }
 
+bool OrderedPrefixTree::Find(std::shared_ptr<TreeNode>& node,
+  const std::vector<std::string>& prefixes) const {
+  return Find(node, nullptr, prefixes);
+}
 
 }
 }

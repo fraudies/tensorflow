@@ -50,6 +50,7 @@ public:
   // If remaining is nullptr this method won't fill it
   bool Find(std::shared_ptr<TreeNode>& node, std::vector<std::string>* remaining,
     const std::vector<std::string>& prefixes) const;
+  bool Find(std::shared_ptr<TreeNode>& node, const std::vector<std::string>& prefixes) const;
 private:
   std::shared_ptr<TreeNode> root_;
 };

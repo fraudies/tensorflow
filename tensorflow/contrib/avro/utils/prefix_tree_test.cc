@@ -16,7 +16,7 @@ namespace tensorflow {
 namespace data {
 
 // ------------------------------------------------------------
-// Test for tree node
+// Tests for a tree node
 // ------------------------------------------------------------
 TEST(TreeNodeTest, IsTerminal) {
   TreeNode node("father");
@@ -78,7 +78,7 @@ TEST(TreeNodeTest, GetChildren) {
 }
 
 // ------------------------------------------------------------
-// Test for ordered prefix tree
+// Tests for an ordered prefix tree
 // ------------------------------------------------------------
 TEST(OrderedPrefixTree, GetRootPrefix) {
   string root_prefix;
@@ -108,18 +108,19 @@ TEST(OrderedPrefixTree, BuildSmall) {
   OrderedPrefixTree::Build(&tree, prefixes_list);
 
   // Check for present prefixes
-  EXPECT_TRUE(tree.Find(node, nullptr, present));
+  EXPECT_TRUE(tree.Find(node, present));
   (*node).GetPrefix(&prefix);
   EXPECT_EQ(prefix, "com");
 
   // Check for absent prefixes
-  EXPECT_TRUE(!tree.Find(node, nullptr, absent));
+  EXPECT_TRUE(!tree.Find(node, absent));
 }
 
 TEST(OrderedPrefixTree, BuildLarge) {
   std::vector< std::vector<std::string> > prefixes_list{{"com", "google", "search"},
     {"com", "linkedin", "jobs"}, {"com", "linkedin", "members"}};
   std::shared_ptr<TreeNode> node;
+  std::vector< std::string > present_with_remaining{"com", "google", "search", "cloud"};
   std::vector< std::string > present_partial_match{"com", "google"};
   std::vector< std::string > present_full_match{"com", "linkedin", "members"};
   std::vector< std::string > absent{"com", "linkedin", "members", "us"};
@@ -127,11 +128,18 @@ TEST(OrderedPrefixTree, BuildLarge) {
   OrderedPrefixTree::Build(&tree, prefixes_list);
 
   // Check for present prefixes
-  EXPECT_TRUE(tree.Find(node, nullptr, present_partial_match));
-  EXPECT_TRUE(tree.Find(node, nullptr, present_full_match));
+  EXPECT_TRUE(tree.Find(node, present_partial_match));
+  EXPECT_TRUE(tree.Find(node, present_full_match));
 
   // Check for absent prefixes
-  EXPECT_TRUE(!tree.Find(node, nullptr, absent));
+  EXPECT_TRUE(!tree.Find(node, absent));
+
+  // Check that the partial match returns the right remaining
+  std::vector< std::string > remaining;
+  // A partial match returns false and the remaining part matches cloud
+  EXPECT_TRUE(!tree.Find(node, &remaining, present_with_remaining));
+  EXPECT_EQ(remaining.size(), 1);
+  EXPECT_EQ(remaining.front(), "cloud");
 }
 
 }
