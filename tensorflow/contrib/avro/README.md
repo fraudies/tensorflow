@@ -1,7 +1,8 @@
-# Avro Record Dataset and Parser
-Why use the Avro Record Dataset and Parser?
-* You want to read Avro formatted data into TensorFlow.
-* You want to read data into TensorFlow as a sparse tensor.
+# Avro Dataset
+Why use the Avro Dataset?
+You want to read Avro formatted data into TensorFlow as
+* dense tensor or
+* sparse tensor.
 
 ## Installation
 We depend on the Avro C library, which has minimal dependencies:
@@ -18,12 +19,17 @@ git clone https://github.com/apache/avro.git
 cd avro/lang/c
 mkdir -p build
 cd build
-cmake .. -DCMAKE_INSTALL_PREFIX=avrolib -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTHREADSAFE=true
+cmake .. -DCMAKE_INSTALL_PREFIX=avrolib -DCMAKE_BUILD_TYPE=Release -DTHREADSAFE=true
 make
 make test
 make install
 ```
 Note, that `make install` by default will place header files and library files into default places if you did not specify the `MAKE_INSTALL_PREFIX` directory.
+
+When building avro 1.8.2 you may run into this issue https://issues.apache.org/jira/browse/AVRO-1844 with the jansson dependency. To pick up the bug fix I build from master. That is this hash a296ebc8894ad52ae7c0946e635b93cadc709e70.
+
+On my system (RHEL 7) I also had to manually compile & install jansson from here http://www.digip.org/jansson/releases/ (used 2.12). I've also set the pkg path variable for `pkg_check_modules` to pick up the non-standard location of the jansson install like that
+```export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig```.
 
 
 ### Why did we not add the compile and install of the avro library?

@@ -358,13 +358,13 @@ TEST_F(AvroMemReaderTest, CreateAndDelete) {
 
 
 /*
-TODO(fraudies): Empty file seems to be bug in avroc in 1.7.7 since it returns
+TODO(fraudies): Empty file with a memory mapped file seems to be a problem since it returns
 Cannot read file block count: Cannot read 1 bytes from file
-There seems to be a fix in 1.8.2 and I need to get to that later
+If an actual file handle is used then this test passes
 TEST_F(AvroMemReaderEmptyFileTest, ReadFromEmptyFile) {
   AvroMemReader* reader = new AvroMemReader();
   TF_EXPECT_OK(AvroMemReader::Create(reader, mem_data_, mem_size_, filename_));
-  AvroMemReader::AvroValuePtr value;
+  AvroMemReader::AvroValuePtr value(nullptr, AvroMemReader::AvroValueDestructor);
   EXPECT_EQ(reader->ReadNext(value), Status(errors::OutOfRange("eof")));
   delete reader;
 }
