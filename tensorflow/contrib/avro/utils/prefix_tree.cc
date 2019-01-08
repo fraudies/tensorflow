@@ -45,8 +45,8 @@ bool TreeNode::HasPrefix() const {
   return prefix_.size() > 0;
 }
 
-// TODO(fraudies): Could be optimized using a set instead of a std::vector--but not that we need
-// the std::vector for order
+// TODO(fraudies): Could be optimized using a set instead of a std::vector--but note that we need
+// the std::vector to preserve order
 bool TreeNode::Find(std::shared_ptr<TreeNode>& child, const std::string& child_prefix) const {
   LOG(INFO) << "Find " << child_prefix;
   std::string prefix;

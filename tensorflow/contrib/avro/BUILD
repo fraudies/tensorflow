@@ -23,7 +23,8 @@ cc_library(
     srcs = ["utils/avro_mem_reader.cc",
             "utils/prefix_tree.cc"],
     hdrs = ["utils/avro_mem_reader.h",
-            "utils/prefix_tree.h"],
+            "utils/prefix_tree.h",
+            "utils/value_buffer.h"],
     deps = [
         "//third_party/avro",
         "//tensorflow/core:protos_all_cc",
@@ -34,8 +35,29 @@ cc_library(
 
 tf_cc_test(
     name = "avro_mem_reader_test",
-    srcs = ["utils/avro_mem_reader_test.cc",
-            "utils/prefix_tree_test.cc"],
+    srcs = ["utils/avro_mem_reader_test.cc"],
+    deps = [
+        ":cc_utils",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
+tf_cc_test(
+    name = "prefix_tree_test",
+    srcs = ["utils/prefix_tree_test.cc"],
+    deps = [
+        ":cc_utils",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
+tf_cc_test(
+    name = "value_buffer_test",
+    srcs = ["utils/value_buffer_test.cc"],
     deps = [
         ":cc_utils",
         "//tensorflow/core:test",

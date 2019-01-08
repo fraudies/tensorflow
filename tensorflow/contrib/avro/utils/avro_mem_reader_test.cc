@@ -356,7 +356,6 @@ TEST_F(AvroMemReaderTest, CreateAndDelete) {
   delete reader;
 }
 
-
 /*
 TODO(fraudies): Empty file with a memory mapped file seems to be a problem since it returns
 Cannot read file block count: Cannot read 1 bytes from file

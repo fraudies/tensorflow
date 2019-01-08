@@ -117,6 +117,7 @@ class AvroDatasetOp : public DatasetOpKernel {
                       "] == ", DataTypeString(dense_types_[d])));
     }
 
+    // TODO(fraudies): Need to adjust this to our use case, FastParseExampleConfig may not cut it
     example::FastParseExampleConfig config;
     std::map<string, int> key_to_output_index;
     for (int d = 0; d < dense_keys_.size(); ++d) {
@@ -245,26 +246,6 @@ class AvroDatasetOp : public DatasetOpKernel {
                   << " (expected "
                   << output_shapes()[output_index].DebugString() << ", got "
                   << serialized_sparse.shape().DebugString() << ").";
-            }
-            // TODO(b/111553342): User provided tags instead of fixed tag.
-            if (stats_aggregator) {
-              stats_aggregator->IncrementCounter(
-                  "examples_count", "trainer",
-                  example_result.feature_stats.size());
-              for (example::PerExampleFeatureStats feature_stats :
-                   example_result.feature_stats) {
-                stats_aggregator->AddToHistogram(
-                    "features",
-                    {static_cast<double>(feature_stats.features_count)});
-                stats_aggregator->IncrementCounter(
-                    "features_count", "trainer", feature_stats.features_count);
-                stats_aggregator->IncrementCounter(
-                    "feature_values_count", "trainer",
-                    feature_stats.feature_values_count);
-                stats_aggregator->AddToHistogram(
-                    "feature-values",
-                    {static_cast<double>(feature_stats.feature_values_count)});
-              }
             }
           }
           done(s);

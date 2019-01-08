@@ -13,9 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "re2/re2.h"
 #include "tensorflow/core/platform/test.h"
-#include "tensorflow/core/lib/strings/str_util.h"
+#include "tensorflow/contrib/avro/utils/avro_parser_tree.h"
 
 // Note, these tests do not cover all avro types, because there are enough tests
 // in avroc for that. Instead these tests only cover the wrapping in the mem readers
@@ -23,11 +22,18 @@ namespace tensorflow {
 namespace data {
 
 TEST(RegexTest, SplitExpressions) {
-  std::vector<string> expressions = {"name.first", "friends[2].name.first",
-    "friends[*].name.first", "friends[*].address[*].street",
-    "friends[*].job[*].coworker[*].name.first", "car['nickname'].color",
-    "friends[gender='unknown'].name.first",
-    "friends[name.first=name.last].name.initial"};
+  std::vector<std::pair<string, DataType>> keys_and_types = {
+    std::make_pair("name.first", DT_STRING),
+    std::make_pair("friends[2].name.first", DT_STRING),
+    std::make_pair("friends[*].name.first", DT_STRING),
+    std::make_pair("friends[*].address[*].street", DT_STRING),
+    std::make_pair("friends[*].job[*].coworker[*].name.first", DT_STRING),
+    std::make_pair("car['nickname'].color", DT_STRING),
+    std::make_pair("friends[gender='unknown'].name.first", DT_STRING),
+    std::make_pair("friends[name.first=name.last].name.initial", DT_STRING),
+    std::make_pair("friends[name.first=@name.first].name.initial", DT_STRING)};
+  ParserTree parser_tree;
+  ParserTree::Build(&parser_tree, keys_and_types);
 }
 
 }

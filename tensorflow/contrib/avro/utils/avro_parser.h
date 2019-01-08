@@ -11,121 +11,104 @@ limitations under the License.
 ==============================================================================*/
 #include <avro.h>
 #include <vector>
-#include "tensorflow/contrib/avro/utils/avro_tensor.h"
+#include "tensorflow/core/lib/strings/str_util.h"
+#include "tensorflow/contrib/avro/utils/value_buffer.h"
 
 namespace tensorflow {
 namespace data {
 
-// Encapsulates all the logic to build a prefix tree
-// Encapsulates all the logic to build a prefix tree
-class TreeNode {
+class AvroParser {
 public:
-  TreeNode();
-  virtual ~TreeNode(const string& prefix);
-  void GetChildren(vector<std::shared_ptr<TreeNode>>* children) const;
-  void GetPrefix(string* prefix) const;
-  void GetName(string* name, const char separator) const; // returns the full name using the separator
-private:
-  string prefix_;
-  std::shared_ptr<TreeNode> father_;
-  vector<std::shared_ptr<TreeNode>> children_;
-};
-
-class PrefixTree {
-public:
-  PrefixTree(const string& root_name = "");
-  virtual ~PrefixTree();
-  void GetRootPrefix(string* root_prefix) const;
-  // Assumes tree != nullptr
-  static void Build(PrefixTree* tree, const vector<vector<string>>& prefixes);
-private:
-  std::unique_ptr<TreeNode> root;
-};
-
-
-class ValueParser {
-public:
-  ValueParser(const string& name);
-  virtual ~ValueParser();
-  // If is terminal calls ParseValue
-  // Otherwise add to the key and call parse on all children for all values
-  // Once done with all values end the dimension on the value buffer
-  Status Parse(const string& key, const avro_value_t& avro_value);
-protected:
+  AvroParser();
+  virtual ~AvroParser();
   // Default implementation returns error and does not alter the out_value
-  virtual Status ResolveValues(vector<avro_value_t*>* out_values, const avro_value_t& in_value);
+  virtual Status ResolveValues(std::stack<std:pair<AvroValueParser*, avro_value_t*>>* values, const avro_value_t& value);
+  inline bool IsTerminal() const { return children_.size() == 0; }
+private:
+  std::vector<std::unique_ptr<AvroParser>> children_;
+};
+
+class AvroValueParser : public AvroParser {
+public:
+  AvroValueParser(const string& key);
   // Default implementation does not do anything
-  virtual Status ParseValue(map<string, ValueBuffer*>* values, const avro_value_t& value);
-  string name_;
-  //set<avro_type_t> expected_types_; // this is a set because of unions, currently used for nulls
-  vector<std::unique_ptr<ValueParser>> children_;
+  virtual Status ParseValue(std::map<string, std::unique_ptr<ValueStore>>* values, const avro_value_t& value) = 0;
+private:
+  static Status CheckKey(const std::map<string, std::unique_ptr<ValueStore>>& values);
+  string key_;
 };
 
-class StringValueParser : public ValueParser {
+// -------------------------------------------------------------------------------------------------
+// Terminal types
+// -------------------------------------------------------------------------------------------------
+class BoolValueParser : public AvroValueParser {
+public:
+  BoolValueParser();
+  virtual ~BoolValueParser();
 protected:
-  // check that the type matches string
-  // add ref to value buffer
-  Status ParseValue(map<string, ValueBuffer*>* values, const avro_value_t& value);
+  Status ParseValue(std::map<string, ValueStore*>* values, const avro_value_t& value) override;
 };
 
-class IntValueParser : public ValueParser {
+class IntValueParser : public AvroValueParser {
+public:
+  IntValueParser();
+  virtual ~IntValueParser();
 protected:
-  // check that the type matches string
-  // add value to buffer
-  Status ParseValue(map<string, ValueBuffer*>* values, const avro_value_t& value);
+  Status ParseValue(std::map<string, ValueStore*>* values, const avro_value_t& value) override;
 };
 
-class AttributeParser : public ValueParser {
+
+// -------------------------------------------------------------------------------------------------
+// Intermediary types
+// -------------------------------------------------------------------------------------------------
+class ArrayAllParser : public AvroParser {
+protected:
+  Status ResolveValues(std::stack<std:pair<AvroValueParser*, avro_value_t*>>* values, const avro_value_t& value) override;
+};
+
+class ArrayIndexParser : public AvroParser {
+public:
+  ArrayIndexParser(int index);
+  virtual ~ArrayIndexParser();
+protected:
+  Status ResolveValues(std::stack<std:pair<AvroValueParser*, avro_value_t*>>* values, const avro_value_t& value) override;
+private:
+  int index_;
+};
+
+class ArrayFilterParser : public AvroParser {
+public:
+  ArrayFilterParser(const string& lhs, const string& rhs);
+  virtual ~ArrayFilterParser();
+protected:
+  Status ResolveValues(std::stack<std:pair<AvroValueParser*, avro_value_t*>>* values, const avro_value_t& value) override;
+private:
+  string lhs_;
+  string rhs_;
+};
+
+class MapKeyParser : public AvroParser {
+public:
+  MapAllParser(const string& key);
+  ~MapAllParser();
+protected:
+  Status ResolveValues(std::stack<std:pair<AvroValueParser*, avro_value_t*>>* values, const avro_value_t& value) override;
+private:
+  string key_;
+};
+
+class AttributeParser : public AvroParser {
+public:
+  AttributeParser(const string& name);
+  virtual ~AttributeParser();
 protected:
   // check that the in_value is of type record
   // check that an attribute with name exists
   // get the the attribute for the name and return it in the vector as single element
-  Status ResolveValue(vector<avro_value_t*>* out_values, const avro_value_t& in_value);
-};
-
-class ArrayParser : public ValueParser {
-protected:
-  Status ResolveValue(vector<avro_value_t*>* out_values, const avro_value_t& in_value);
-};
-
-class FilterArrayParser : public ArrayParser {
-protected:
-  Status ResolveValue(vector<avro_value_t*>* out_values, const avro_value_t& in_value);
-};
-
-class ParserTree {
-public:
-  ParserTree();
-  // creates all the correct parser nodes with
-  static Status Build(ParserTree* parser_tree, const vector<string>& keys, const vector<DataType>& expected_types);
-  Status ParseValue(vector<Tensor>* tensors, const avro_value_t& in_value);
+  Status ResolveValues(std::stack<std:pair<AvroValueParser*, avro_value_t*>>* values, const avro_value_t& value) override;
 private:
-  Build(ValueParser* father, const vector<std::shared_ptr<TreeNode>>& children);
-  Status InitValues(const vector<string>& keys, const vector<DataType>& expected_types);
-  std_unique_ptr<ValueParser> root_;
-  map<string, std::unique_ptr<ValueBuffer>> values_;
-};
-
-class AvroParser {
-public:
-  // Ensure the following
-  // 0. Check for duplicates in the definition of the keys
-  // 1. @ from filters are first
-  // 2. If we have a filter and the [*] expression does not appear, add it with resolving the lhs 2nd
-  // 3. Add all other keys
-  // Use the expected type to decide which value parser node to add
-  static Status Create(AvroParser* parser, const vector<pair<string, DataType>>& keys_and_types);
-  AvroParser();
-  virtual ~AvroParser();
-  // May add multiple elements and dimensions to the tensors or only a single value
-  // Avro tensor keeps track of the required size and supports filling in to transform into a tensor
-  // Will check the expected type against the actual type
-  // Return tensors in the same order the keys have been provided
-  Status ParseAll(vector<Tensor>* tensors, const avro_value_t& in_value);
-private:
-  std::unique_ptr<ValueParserTree> parser_tree_;
+  string name_;
 };
 
 }
 }
-
