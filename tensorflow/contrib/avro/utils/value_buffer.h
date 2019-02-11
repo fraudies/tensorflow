@@ -25,8 +25,7 @@ static constexpr size_t kFinishMark = std::numeric_limits<size_t>::max();
 class ValueStore {
 public:
   virtual Status MakeDense(Tensor* tensor, const PartialTensorShape& shape, const Tensor& defaults) const = 0;
-  virtual Status MakeSparse(Tensor* values, Tensor* indices) const = 0;
-protected:
+  virtual Status MakeSparse(Tensor* values, Tensor* indices, const PartialTensorShape& partial_shape) const = 0;
 };
 
 class ShapeBuilder {
@@ -35,16 +34,17 @@ public:
   void BeginMark();
   void FinishMark();
   inline void Increment() { element_counter_++; }
-  void GetNumberOfDimensions(size_t* num) const;
+  size_t GetNumberOfDimensions() const;
   void GetDenseShape(TensorShape* shape) const;
   bool HasAllElements(const TensorShape& shape) const; // indicates if the underlying buffer has all elements
   Status GetCopyInfo(std::vector<std::pair<size_t, size_t> >* copy_info, const TensorShape& shape) const;
   Status GetFillInfo(std::vector<std::pair<size_t, size_t> >* fill_info, const TensorShape& shape) const;
+  Status GetIndices(Tensor* indices) const;
 private:
   // Uses c++11 move semantics and is not part of the public API, so seems OK to me
   std::vector<size_t> CumulativeProductOfDimensionsWithOneAtEnd(const TensorShape& shape) const;
   std::vector<size_t> element_info_;
-  size_t element_counter_; // intermediate counter used when crating a buffer
+  size_t element_counter_; // intermediate counter used when creating a buffer
   bool has_begin;
 };
 
@@ -61,8 +61,9 @@ public:
   // Assumes tensor has been initialized with the proper dimensions & type through allocate in OpOutputList
   // TODO: Do we want to check this in MakeDense?
   Status MakeDense(Tensor* tensor, const PartialTensorShape& partial_shape, const Tensor& defaults) const override;
-  Status MakeSparse(Tensor* values, Tensor* indices) const override;
+  Status MakeSparse(Tensor* values, Tensor* indices, const PartialTensorShape& partial_shape) const override;
 private:
+  size_t GetNumberOfElements() const;
   //void InitTensor(Tensor* tensor, const TensorShape& shape) const;
   Status ResolveDenseShape(TensorShape* shape, const PartialTensorShape& partial_shape, const Tensor& defaults) const;
   // Assumes tensor has been initialized
@@ -76,6 +77,17 @@ private:
 };
 
 ShapeBuilder::ShapeBuilder() : element_counter_(0), has_begin(false) {}
+
+
+template <typename InputIterT, typename OutputIterT>
+void CopyOrMoveBlock(const InputIterT b, const InputIterT e, OutputIterT t) {
+  std::copy(b, e, t);
+}
+
+template <>
+void CopyOrMoveBlock(const string* b, const string* e, string* t) {
+  std::move(b, e, t);
+}
 
 // ========================================
 // Implementation
@@ -95,20 +107,20 @@ void ShapeBuilder::FinishMark() {
 }
 
 // Assumes that the value buffer has correct markers
-void ShapeBuilder::GetNumberOfDimensions(size_t* num) const {
-  *num = 0;
+size_t ShapeBuilder::GetNumberOfDimensions() const {
+  size_t num = 0;
   for (size_t info : element_info_) {
     if (info != kBeginMark) {
       break;
     }
-    (*num)++;
+    num++;
   }
+  return num;
 }
 
 // Assumes that the value buffer has correct markers
 void ShapeBuilder::GetDenseShape(TensorShape* shape) const {
-  size_t n_dim;
-  GetNumberOfDimensions(&n_dim);
+  size_t n_dim(GetNumberOfDimensions());
   std::vector<size_t> dimensions(n_dim, 0);
   std::vector<size_t> counts(n_dim+1, 0); // +1 to simplify logic of setting to 0
   size_t i_dim = -1; // -1 to make sure indices start from 0
@@ -132,8 +144,7 @@ void ShapeBuilder::GetDenseShape(TensorShape* shape) const {
 }
 
 bool ShapeBuilder::HasAllElements(const TensorShape& shape) const {
-  size_t n_dim;
-  GetNumberOfDimensions(&n_dim);
+  size_t n_dim(GetNumberOfDimensions());
   std::vector<size_t> counts(n_dim+1, 0); // +1 to simplify logic of setting to 0
   size_t i_dim = -1; // -1 to make sure indices start from 0
   for (size_t info : element_info_) {
@@ -161,7 +172,7 @@ Status ShapeBuilder::GetCopyInfo(std::vector<std::pair<size_t, size_t> >* copy_i
   size_t i_dim = 0; // -1 to make sure indices start from 0
   size_t n_dim = shape.dims();
   std::vector<size_t> counts(n_dim+1, 0);
-  std::vector<size_t> dims = CumulativeProductOfDimensionsWithOneAtEnd(shape);
+  std::vector<size_t> dims(CumulativeProductOfDimensionsWithOneAtEnd(shape));
 
   for (size_t info : element_info_) {
     // Open a group
@@ -211,11 +222,7 @@ Status ShapeBuilder::GetFillInfo(std::vector<std::pair<size_t, size_t> >* fill_i
   size_t n_dim = shape.dims();
 
   std::vector<size_t> counts(n_dim+1, 0);
-  std::vector<size_t> dims = CumulativeProductOfDimensionsWithOneAtEnd(shape);
-
-  for (size_t i_dim = n_dim; i_dim > 0; --i_dim) {
-    dims[i_dim-1] = shape.dim_size(i_dim-1)*dims[i_dim];
-  }
+  std::vector<size_t> dims(CumulativeProductOfDimensionsWithOneAtEnd(shape));
 
   for (size_t info : element_info_) {
     // Open a group
@@ -261,6 +268,38 @@ Status ShapeBuilder::GetFillInfo(std::vector<std::pair<size_t, size_t> >* fill_i
   return Status::OK();
 }
 
+Status ShapeBuilder::GetIndices(Tensor* indices) const {
+  size_t i_dim = 0;
+  size_t offset = 0;
+  size_t n_dim(GetNumberOfDimensions());
+  std::vector<int64> counts(n_dim+1, -1); // initialize -1, create +1 number of dimensions
+  auto counts_data = counts.begin();
+  auto indices_data = (*indices).flat<int64>().data();
+
+  for (size_t info : element_info_) {
+    // Open a group
+    if (info == kBeginMark) {
+      counts[i_dim]++;
+      i_dim++;
+
+    // Close a group
+    } else if (info == kFinishMark) {
+      counts[i_dim] = -1;
+      i_dim--;
+    } else {
+
+      // For each of the values create an index vector, while updating the inner-most index
+      for (size_t i_value = 0; i_value < info; ++i_value) {
+        counts[i_dim] = i_value;
+        CopyOrMoveBlock(counts_data+1, counts_data+n_dim+1, indices_data + offset);
+        offset += n_dim;
+      }
+    }
+  }
+
+  return Status::OK();
+}
+
 std::vector<size_t> ShapeBuilder::CumulativeProductOfDimensionsWithOneAtEnd(
   const TensorShape& shape) const {
 
@@ -288,14 +327,9 @@ void ValueBuffer<T>::AddByRef(const T& value) {
   Increment();
 }
 
-template <typename InputIterT, typename OutputIterT>
-void CopyOrMoveBlock(const InputIterT b, const InputIterT e, OutputIterT t) {
-  std::copy(b, e, t);
-}
-
-template <>
-void CopyOrMoveBlock(const string* b, const string* e, string* t) {
-  std::move(b, e, t);
+template <typename T>
+size_t ValueBuffer<T>::GetNumberOfElements() const {
+  return values_.size();
 }
 
 template<typename T>
@@ -345,13 +379,11 @@ Status ValueBuffer<T>::ResolveDenseShape(TensorShape* shape,
   return Status::OK();
 }
 
-// Honors
-// shape first
-// defaults second
-// value buffer's end indices 3rd
-//
-// 'tensor' The output tensor
-// 'shape' The tensor shape the
+// To infer the proper shape for this dense tensor honors:
+// 1st the user provided shape
+// 2nd the user provided defaults
+// 3rd the value buffer's end indices
+// In that order!
 template <typename T>
 Status ValueBuffer<T>::MakeDense(Tensor* tensor, const PartialTensorShape& partial_shape,
   const Tensor& defaults) const {
@@ -375,6 +407,39 @@ Status ValueBuffer<T>::MakeDense(Tensor* tensor, const PartialTensorShape& parti
   // Call the move and copy stuff to transfer the data from the buffer into the tensor
   return Status::OK();
 }
+
+// Assumes that values is pre-allocated with space for n_elements
+// Assumes that indices is pre-allocated with space for n_elements x n_dim
+template <typename T>
+Status ValueBuffer<T>::MakeSparse(Tensor* values, Tensor* indices,
+  const PartialTensorShape& partial_shape) const {
+
+  TensorShape dense_shape;
+  GetDenseShape(&dense_shape);
+  size_t n_dim_expected = dense_shape.dims();
+  size_t n_dim_actual = partial_shape.dims();
+  // Ensure the number of dimensions match
+  if (n_dim_actual != n_dim_expected) {
+    return errors::InvalidArgument("Expected ", n_dim_expected, " dimensions but got ",
+      n_dim_actual, " dimensions.");
+  }
+
+  // Copy values
+  auto tensor_data = (*values).flat<T>().data();
+  auto buffer_data = values_.begin();
+  size_t n_elements(GetNumberOfElements());
+  CopyOrMoveBlock(
+    buffer_data,
+    buffer_data + n_elements,
+    tensor_data);
+
+  // Create indices
+  TF_RETURN_IF_ERROR(GetIndices(indices));
+
+  // Build the tensor for the values and the indices from the value buffer
+  return Status::OK();
+}
+
 
 template <typename T>
 Status ValueBuffer<T>::FillInFromBuffer(Tensor* tensor) const {
@@ -423,12 +488,6 @@ Status ValueBuffer<T>::FillInFromDefault(Tensor* tensor, const Tensor& defaults)
     }
   }
 
-  return Status::OK();
-}
-
-template <typename T>
-Status ValueBuffer<T>::MakeSparse(Tensor* values, Tensor* indices) const {
-  // Build the tensor for the values and the indices from the value buffer
   return Status::OK();
 }
 

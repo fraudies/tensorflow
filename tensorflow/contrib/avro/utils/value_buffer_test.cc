@@ -29,8 +29,7 @@ namespace data {
 // ------------------------------------------------------------
 TEST(ShapeBuilderTest, ShapeBuilderEmpty) {
   ShapeBuilder builder;
-  size_t dim;
-  builder.GetNumberOfDimensions(&dim);
+  size_t dim(builder.GetNumberOfDimensions());
   EXPECT_TRUE(dim == 0);
 
   TensorShape shape;
@@ -45,8 +44,7 @@ TEST(ShapeBuilderTest, ShapeBuilderSingleDimension) {
   builder.BeginMark(); builder.Increment(); builder.Increment(); builder.FinishMark();
   builder.BeginMark(); builder.Increment(); builder.FinishMark();
 
-  size_t dim;
-  builder.GetNumberOfDimensions(&dim);
+  size_t dim(builder.GetNumberOfDimensions());
   EXPECT_EQ(dim, 1);
 
   TensorShape shape;
@@ -64,8 +62,7 @@ TEST(ShapeBuilderTest, ShapeBuilderTwoDimensions) {
     builder.BeginMark(); builder.FinishMark();
   builder.FinishMark();
 
-  size_t dim;
-  builder.GetNumberOfDimensions(&dim);
+  size_t dim(builder.GetNumberOfDimensions());
   EXPECT_EQ(dim, 2);
 
   TensorShape shape;
@@ -99,8 +96,7 @@ TEST(ShapeBuilderTest, ShapeBuilderManyDimensions) {
     builder.FinishMark();
   builder.FinishMark();
 
-  size_t dim;
-  builder.GetNumberOfDimensions(&dim);
+  size_t dim(builder.GetNumberOfDimensions());
   EXPECT_EQ(dim, 3);
 
   TensorShape shape;
@@ -255,7 +251,7 @@ TEST(ValueBufferTest, Dense3DWithTensorDefault) {
   // fifth block
   tensor_expected_write(1, 2, 0) = 12;
 
-  LOG(INFO) << "Tensor is:       " << tensor_actual.SummarizeValue(24);
+  LOG(INFO) << "Tensor actual:   " << tensor_actual.SummarizeValue(24);
   LOG(INFO) << "Tensor expected: " << tensor_expected.SummarizeValue(24);
 
   test::ExpectTensorEqual<int>(tensor_actual, tensor_expected);
@@ -332,7 +328,7 @@ TEST(ValueBufferTest, Dense4DWithTensorDefault) {
   // fifth block
   tensor_expected_write(1, 0, 2, 0) = 12;
 
-  LOG(INFO) << "Tensor is:       " << tensor_actual.SummarizeValue(24);
+  LOG(INFO) << "Tensor actual:   " << tensor_actual.SummarizeValue(24);
   LOG(INFO) << "Tensor expected: " << tensor_expected.SummarizeValue(24);
 
   test::ExpectTensorEqual<int>(tensor_actual, tensor_expected);
@@ -412,7 +408,7 @@ TEST(ValueBufferTest, ShapeFromDefault) {
 
 // Test with partial tensor shape, where the value buffer provides
 // the complete shape information
-TEST(ValueBufferTest, ShapeFromBuffer) {
+TEST(ValueBufferTest, DenseShapeFromBuffer) {
   // Define the default tensor
   const TensorShape defaults_shape({1});
   Tensor defaults(DT_INT32, defaults_shape);
@@ -446,7 +442,7 @@ TEST(ValueBufferTest, ShapeFromBuffer) {
 }
 
 // Test with string content -- since we use move instead of copy
-TEST(ValueBufferTest, StringContent) {
+TEST(ValueBufferTest, DenseStringContent) {
   const TensorShape defaults_shape({1});
   Tensor defaults(DT_STRING, defaults_shape);
   auto defaults_flat = defaults.flat<string>();
@@ -470,13 +466,178 @@ TEST(ValueBufferTest, StringContent) {
   test::ExpectTensorEqual<string>(tensor_actual, tensor_expected);
 }
 
+// ------------------------------------------------------------
+// Test Value buffer -- Sparse
+// ------------------------------------------------------------
+// Note, sparse does not make much sense in this case, but we support it for
+// completeness
+TEST(ValueBufferTest, Sparse1D) {
+  // Initialize the buffer
+  IntValueBuffer buffer;
+  buffer.BeginMark();
+    buffer.Add(1); buffer.Add(4);
+  buffer.FinishMark();
 
-// Test variants
-// dense, sparse
-// 1D, 2D
-// scalar default, tensor default
-// complete and partial
+  const PartialTensorShape shape({-1}); // the method does not use the end indices
+  const TensorShape values_shape({2});
+  const TensorShape indices_shape({2});
+  Tensor values_actual(DT_INT32, values_shape);
+  Tensor indices_actual(DT_INT64, indices_shape);
+  TF_EXPECT_OK(buffer.MakeSparse(&values_actual, &indices_actual, shape));
 
+  // Check that values match the expectation
+  Tensor values_expected(DT_INT32, values_shape);
+  auto values_expected_flat = values_expected.flat<int>();
+  values_expected_flat(0) = 1;
+  values_expected_flat(1) = 4;
+  test::ExpectTensorEqual<int>(values_actual, values_expected);
+
+  // Check that indices match the expectation
+  Tensor indices_expected(DT_INT64, indices_shape);
+  auto indices_expected_flat = indices_expected.flat<int64>();
+  indices_expected_flat(0) = 0;
+  indices_expected_flat(1) = 1;
+  test::ExpectTensorEqual<int64>(indices_actual, indices_expected);
+}
+
+TEST(ValueBufferTest, Sparse2D) {
+  // Initialize the buffer
+  IntValueBuffer buffer;
+  buffer.BeginMark();
+    buffer.BeginMark();
+      buffer.Add(1);
+    buffer.FinishMark();
+    buffer.BeginMark();
+      buffer.Add(4); buffer.Add(5); buffer.Add(7);
+    buffer.FinishMark();
+  buffer.FinishMark();
+
+  const PartialTensorShape shape({-1, -1}); // the method does not use the end indices
+  const TensorShape values_shape({4});
+  const TensorShape indices_shape({4, 2});
+  Tensor values_actual(DT_INT32, values_shape);
+  Tensor indices_actual(DT_INT64, indices_shape);
+  TF_EXPECT_OK(buffer.MakeSparse(&values_actual, &indices_actual, shape));
+
+  // Check that values match the expectation
+  Tensor values_expected(DT_INT32, values_shape);
+  auto values_expected_flat = values_expected.flat<int>();
+  values_expected_flat(0) = 1;
+  values_expected_flat(1) = 4;
+  values_expected_flat(2) = 5;
+  values_expected_flat(3) = 7;
+  test::ExpectTensorEqual<int>(values_actual, values_expected);
+
+  // Check that indices match the expectation
+  Tensor indices_expected(DT_INT64, indices_shape);
+  auto indices_expected_tensor = indices_expected.tensor<int64, 2>();
+  indices_expected_tensor(0, 0) = 0; indices_expected_tensor(0, 1) = 0;
+  indices_expected_tensor(1, 0) = 1; indices_expected_tensor(1, 1) = 0;
+  indices_expected_tensor(2, 0) = 1; indices_expected_tensor(2, 1) = 1;
+  indices_expected_tensor(3, 0) = 1; indices_expected_tensor(3, 1) = 2;
+  test::ExpectTensorEqual<int64>(indices_actual, indices_expected);
+}
+
+// Test multiple nestings for sparse tensors
+TEST(ValueBufferTest, Sparse4D) {
+  IntValueBuffer buffer;
+  buffer.BeginMark();
+    buffer.BeginMark();
+      buffer.BeginMark();
+        buffer.BeginMark();
+          buffer.Add(1); buffer.Add(2);
+        buffer.FinishMark();
+        buffer.BeginMark();
+          buffer.Add(5);
+        buffer.FinishMark();
+      buffer.FinishMark();
+    buffer.FinishMark();
+    buffer.BeginMark();
+      buffer.BeginMark();
+        buffer.BeginMark();
+          buffer.Add(4); buffer.Add(5); buffer.Add(7);
+        buffer.FinishMark();
+      buffer.FinishMark();
+      buffer.BeginMark();
+        buffer.BeginMark();
+          buffer.Add(8);
+        buffer.FinishMark();
+      buffer.FinishMark();
+    buffer.FinishMark();
+  buffer.FinishMark();
+
+  const PartialTensorShape shape({-1, -1, -1, -1}); // the method does not use the end indices
+  const TensorShape values_shape({7});
+  const TensorShape indices_shape({7, 4});
+  Tensor values_actual(DT_INT32, values_shape);
+  Tensor indices_actual(DT_INT64, indices_shape);
+  TF_EXPECT_OK(buffer.MakeSparse(&values_actual, &indices_actual, shape));
+
+  // Check that values match the expectation
+  Tensor values_expected(DT_INT32, values_shape);
+  auto values_expected_flat = values_expected.flat<int>();
+  values_expected_flat(0) = 1;
+  values_expected_flat(1) = 2;
+  values_expected_flat(2) = 5;
+  values_expected_flat(3) = 4;
+  values_expected_flat(4) = 5;
+  values_expected_flat(5) = 7;
+  values_expected_flat(6) = 8;
+  test::ExpectTensorEqual<int>(values_actual, values_expected);
+
+  // Check that indices match the expectation
+  Tensor indices_expected(DT_INT64, indices_shape);
+  auto indices_expected_tensor = indices_expected.tensor<int64, 2>();
+  // index for 1st value
+  indices_expected_tensor(0, 0) = 0;
+  indices_expected_tensor(0, 1) = 0;
+  indices_expected_tensor(0, 2) = 0;
+  indices_expected_tensor(0, 3) = 0;
+  // index for 2nd value
+  indices_expected_tensor(1, 0) = 0;
+  indices_expected_tensor(1, 1) = 0;
+  indices_expected_tensor(1, 2) = 0;
+  indices_expected_tensor(1, 3) = 1;
+  // index for 3rd value
+  indices_expected_tensor(2, 0) = 0;
+  indices_expected_tensor(2, 1) = 0;
+  indices_expected_tensor(2, 2) = 1;
+  indices_expected_tensor(2, 3) = 0;
+  // index for 4th value
+  indices_expected_tensor(3, 0) = 1;
+  indices_expected_tensor(3, 1) = 0;
+  indices_expected_tensor(3, 2) = 0;
+  indices_expected_tensor(3, 3) = 0;
+  // index for 5th value
+  indices_expected_tensor(4, 0) = 1;
+  indices_expected_tensor(4, 1) = 0;
+  indices_expected_tensor(4, 2) = 0;
+  indices_expected_tensor(4, 3) = 1;
+  // index for 6th value
+  indices_expected_tensor(5, 0) = 1;
+  indices_expected_tensor(5, 1) = 0;
+  indices_expected_tensor(5, 2) = 0;
+  indices_expected_tensor(5, 3) = 2;
+  // index for 7th value
+  indices_expected_tensor(6, 0) = 1;
+  indices_expected_tensor(6, 1) = 1;
+  indices_expected_tensor(6, 2) = 0;
+  indices_expected_tensor(6, 3) = 0;
+
+  LOG(INFO) << "Indices actual:   " << indices_actual.SummarizeValue(28);
+  LOG(INFO) << "Indices expected: " << indices_expected.SummarizeValue(28);
+
+  test::ExpectTensorEqual<int64>(indices_actual, indices_expected);
+}
+
+// TODO: Test cases where the nesting level of the value buffer does not match, e.g.
+//  buffer.BeginMark();
+//    buffer.BeginMark();
+//      buffer.Add(1);
+//    buffer.FinishMark();
+//    buffer.Add(4); buffer.Add(5); buffer.Add(7);
+//  buffer.FinishMark();
+// This should fail! probably in the add
 
 }
 }
