@@ -23,6 +23,7 @@ limitations under the License.
 namespace tensorflow {
 namespace data {
 
+
 // ------------------------------------------------------------
 // Test shape builder
 // ------------------------------------------------------------
@@ -122,7 +123,7 @@ TEST(ValueBufferTest, BufferCreateAndDestroy) {
 
 TEST(ValueBufferTest, DenseTensorForEmptyBuffer) {
   IntValueBuffer buffer;
-  TensorShape shape({0});
+  const TensorShape shape({0});
   Tensor tensor(DT_INT32, shape);
   Tensor defaults;
   TF_EXPECT_OK(buffer.MakeDense(&tensor, shape, defaults));
@@ -133,7 +134,7 @@ TEST(ValueBufferTest, DenseTensorForEmptyBuffer) {
 // ------------------------------------------------------------
 TEST(ValueBufferTest, Dense1DWithTensorDefault) {
   // Define the default tensor
-  TensorShape shape({3});
+  const TensorShape shape({3});
   Tensor defaults(DT_INT32, shape);
   auto defaults_flat = defaults.flat<int>();
   defaults_flat(0) = 11;
@@ -148,8 +149,8 @@ TEST(ValueBufferTest, Dense1DWithTensorDefault) {
   buffer.FinishMark();
 
   // Make the tensor from buffer
-  Tensor tensor_is(DT_INT32, shape);
-  TF_EXPECT_OK(buffer.MakeDense(&tensor_is, shape, defaults));
+  Tensor tensor_actual(DT_INT32, shape);
+  TF_EXPECT_OK(buffer.MakeDense(&tensor_actual, shape, defaults));
 
   // Create expected tensor and compare against the is tensor
   Tensor tensor_expected(DT_INT32, shape);
@@ -157,12 +158,12 @@ TEST(ValueBufferTest, Dense1DWithTensorDefault) {
   tensor_expected_flat(0) = 0;
   tensor_expected_flat(1) = 1;
   tensor_expected_flat(2) = 13;
-  test::ExpectTensorEqual<int>(tensor_is, tensor_expected);
+  test::ExpectTensorEqual<int>(tensor_actual, tensor_expected);
 }
 
 TEST(ValueBufferTest, Dense1DWithScalarDefault) {
   // Define the default tensor
-  TensorShape defaults_shape({1});
+  const TensorShape defaults_shape({1});
   Tensor defaults(DT_INT32, defaults_shape);
   auto defaults_flat = defaults.flat<int>();
   defaults_flat(0) = 100;
@@ -174,9 +175,9 @@ TEST(ValueBufferTest, Dense1DWithScalarDefault) {
   buffer.FinishMark();
 
   // Make the tensor from buffer
-  TensorShape shape({3});
-  Tensor tensor_is(DT_INT32, shape);
-  TF_EXPECT_OK(buffer.MakeDense(&tensor_is, shape, defaults));
+  const TensorShape shape({3});
+  Tensor tensor_actual(DT_INT32, shape);
+  TF_EXPECT_OK(buffer.MakeDense(&tensor_actual, shape, defaults));
 
   // Create expected tensor and compare against the is tensor
   Tensor tensor_expected(DT_INT32, shape);
@@ -184,14 +185,14 @@ TEST(ValueBufferTest, Dense1DWithScalarDefault) {
   tensor_expected_flat(0) = 1;
   tensor_expected_flat(1) = 100;
   tensor_expected_flat(2) = 100;
-  test::ExpectTensorEqual<int>(tensor_is, tensor_expected);
+  test::ExpectTensorEqual<int>(tensor_actual, tensor_expected);
 }
 
 // Test when missing a complete inner nested element
 // Test when missing elements in the innermost dimension
 TEST(ValueBufferTest, Dense3DWithTensorDefault) {
   // Define the default tensor
-  TensorShape shape({2, 3, 4});
+  const TensorShape shape({2, 3, 4});
   Tensor defaults(DT_INT32, shape);
   auto defaults_flat = defaults.flat<int>();
   for (int i_value = 0; i_value < shape.num_elements(); ++i_value) {
@@ -224,8 +225,8 @@ TEST(ValueBufferTest, Dense3DWithTensorDefault) {
   buffer.FinishMark();
 
   // Make the tensor from buffer
-  Tensor tensor_is(DT_INT32, shape);
-  TF_EXPECT_OK(buffer.MakeDense(&tensor_is, shape, defaults));
+  Tensor tensor_actual(DT_INT32, shape);
+  TF_EXPECT_OK(buffer.MakeDense(&tensor_actual, shape, defaults));
 
   LOG(INFO) << "Tensor defaults: " << defaults.SummarizeValue(24);
 
@@ -254,10 +255,10 @@ TEST(ValueBufferTest, Dense3DWithTensorDefault) {
   // fifth block
   tensor_expected_write(1, 2, 0) = 12;
 
-  LOG(INFO) << "Tensor is:       " << tensor_is.SummarizeValue(24);
+  LOG(INFO) << "Tensor is:       " << tensor_actual.SummarizeValue(24);
   LOG(INFO) << "Tensor expected: " << tensor_expected.SummarizeValue(24);
 
-  test::ExpectTensorEqual<int>(tensor_is, tensor_expected);
+  test::ExpectTensorEqual<int>(tensor_actual, tensor_expected);
 }
 
 
@@ -265,7 +266,7 @@ TEST(ValueBufferTest, Dense3DWithTensorDefault) {
 // and we miss more then one element in the outer dimensions
 TEST(ValueBufferTest, Dense4DWithTensorDefault) {
   // Define the default tensor
-  TensorShape shape({2, 3, 4, 5});
+  const TensorShape shape({2, 3, 4, 5});
   Tensor defaults(DT_INT32, shape);
   auto defaults_flat = defaults.flat<int>();
   for (int i_value = 0; i_value < shape.num_elements(); ++i_value) {
@@ -301,8 +302,8 @@ TEST(ValueBufferTest, Dense4DWithTensorDefault) {
   buffer.FinishMark();
 
   // Make the tensor from buffer
-  Tensor tensor_is(DT_INT32, shape);
-  TF_EXPECT_OK(buffer.MakeDense(&tensor_is, shape, defaults));
+  Tensor tensor_actual(DT_INT32, shape);
+  TF_EXPECT_OK(buffer.MakeDense(&tensor_actual, shape, defaults));
 
   LOG(INFO) << "Tensor defaults: " << defaults.SummarizeValue(24);
 
@@ -331,17 +332,17 @@ TEST(ValueBufferTest, Dense4DWithTensorDefault) {
   // fifth block
   tensor_expected_write(1, 0, 2, 0) = 12;
 
-  LOG(INFO) << "Tensor is:       " << tensor_is.SummarizeValue(24);
+  LOG(INFO) << "Tensor is:       " << tensor_actual.SummarizeValue(24);
   LOG(INFO) << "Tensor expected: " << tensor_expected.SummarizeValue(24);
 
-  test::ExpectTensorEqual<int>(tensor_is, tensor_expected);
+  test::ExpectTensorEqual<int>(tensor_actual, tensor_expected);
 }
 
 // Test empty dimension
 // Test dense 2D with scalar default
 TEST(ValueBufferTest, Dense2DWithScalarDefault) {
   // Define the default tensor
-  TensorShape defaults_shape({1});
+  const TensorShape defaults_shape({1});
   Tensor defaults(DT_INT32, defaults_shape);
   auto defaults_flat = defaults.flat<int>();
   defaults_flat(0) = 100;
@@ -357,9 +358,9 @@ TEST(ValueBufferTest, Dense2DWithScalarDefault) {
   buffer.FinishMark();
 
   // Make the tensor from buffer
-  TensorShape shape({2, 3});
-  Tensor tensor_is(DT_INT32, shape);
-  TF_EXPECT_OK(buffer.MakeDense(&tensor_is, shape, defaults));
+  const TensorShape shape({2, 3});
+  Tensor tensor_actual(DT_INT32, shape);
+  TF_EXPECT_OK(buffer.MakeDense(&tensor_actual, shape, defaults));
 
   // Create expected tensor and compare against the is tensor
   Tensor tensor_expected(DT_INT32, shape);
@@ -370,7 +371,103 @@ TEST(ValueBufferTest, Dense2DWithScalarDefault) {
   tensor_expected_write(1, 0) = 1;
   tensor_expected_write(1, 1) = 2;
   tensor_expected_write(1, 2) = 3;
-  test::ExpectTensorEqual<int>(tensor_is, tensor_expected);
+  test::ExpectTensorEqual<int>(tensor_actual, tensor_expected);
+}
+
+// Test with partial tensor shape, where the default provides
+// the complete shape information
+TEST(ValueBufferTest, ShapeFromDefault) {
+  // Define the default tensor
+  const TensorShape defaults_shape({2, 3});
+  Tensor defaults(DT_INT32, defaults_shape);
+  auto defaults_flat = defaults.flat<int>();
+  for (int i_value = 0; i_value < defaults_shape.num_elements(); ++i_value) {
+    defaults_flat(i_value) = i_value;
+  }
+
+  // Initialize the buffer
+  IntValueBuffer buffer;
+  buffer.BeginMark();
+    buffer.BeginMark();
+    buffer.FinishMark();
+    buffer.BeginMark();
+      buffer.Add(40); buffer.Add(50); buffer.Add(60);
+    buffer.FinishMark();
+  buffer.FinishMark();
+
+  // Make the tensor from buffer
+  Tensor tensor_actual(DT_INT32, defaults_shape);
+  const PartialTensorShape shape({-1, -1});
+  TF_EXPECT_OK(buffer.MakeDense(&tensor_actual, shape, defaults));
+
+  // Create expected tensor and compare against the is tensor
+  Tensor tensor_expected(defaults);
+  auto tensor_expected_write = tensor_expected.tensor<int, 2>();
+  tensor_expected_write(1, 0) = 40;
+  tensor_expected_write(1, 1) = 50;
+  tensor_expected_write(1, 2) = 60;
+  test::ExpectTensorEqual<int>(tensor_actual, tensor_expected);
+}
+
+
+// Test with partial tensor shape, where the value buffer provides
+// the complete shape information
+TEST(ValueBufferTest, ShapeFromBuffer) {
+  // Define the default tensor
+  const TensorShape defaults_shape({1});
+  Tensor defaults(DT_INT32, defaults_shape);
+  auto defaults_flat = defaults.flat<int>();
+  defaults_flat(0) = 100;
+
+  // Initialize the buffer
+  IntValueBuffer buffer;
+  buffer.BeginMark();
+    buffer.BeginMark();
+      buffer.Add(1); buffer.Add(2); buffer.Add(3);
+    buffer.FinishMark();
+    buffer.BeginMark();
+      buffer.Add(4); buffer.Add(5); buffer.Add(6);
+    buffer.FinishMark();
+  buffer.FinishMark();
+
+  // Make the tensor from buffer
+  const TensorShape full_shape({2, 3});
+  Tensor tensor_actual(DT_INT32, full_shape);
+  PartialTensorShape shape({-1, -1});
+  TF_EXPECT_OK(buffer.MakeDense(&tensor_actual, shape, defaults));
+
+  // to allocate the proper amount of memory
+  Tensor tensor_expected(DT_INT32, full_shape);
+  auto expected_flat = tensor_expected.flat<int>();
+  for (int i_value = 0; i_value < full_shape.num_elements(); ++i_value) {
+    expected_flat(i_value) = i_value + 1;
+  }
+  test::ExpectTensorEqual<int>(tensor_actual, tensor_expected);
+}
+
+// Test with string content -- since we use move instead of copy
+TEST(ValueBufferTest, StringContent) {
+  const TensorShape defaults_shape({1});
+  Tensor defaults(DT_STRING, defaults_shape);
+  auto defaults_flat = defaults.flat<string>();
+  defaults_flat(0) = "abc";
+
+  // Initialize the buffer
+  StringValueBuffer buffer;
+  buffer.BeginMark();
+    buffer.AddByRef("a"); buffer.AddByRef("b");
+  buffer.FinishMark();
+
+  const TensorShape shape({3});
+  Tensor tensor_actual(DT_STRING, shape);
+  TF_EXPECT_OK(buffer.MakeDense(&tensor_actual, shape, defaults));
+
+  Tensor tensor_expected(DT_STRING, shape);
+  auto expected_flat = tensor_expected.flat<string>();
+  expected_flat(0) = "a";
+  expected_flat(1) = "b";
+  expected_flat(2) = "abc";
+  test::ExpectTensorEqual<string>(tensor_actual, tensor_expected);
 }
 
 

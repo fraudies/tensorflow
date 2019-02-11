@@ -332,7 +332,7 @@ Status ValueBuffer<T>::ResolveDenseShape(TensorShape* shape,
     PartialTensorShape tmp_shape;
     // Honor any partially defined shape from user and supplement with that from data
     if (partial_shape.MergeWith(dense_shape, &tmp_shape) == Status::OK()) {
-      if (tmp_shape.AsTensorShape(shape)) {
+      if (!tmp_shape.AsTensorShape(shape)) {
         return errors::InvalidArgument("Expected ", tmp_shape, " to be fully defined"
           " and convertible into a dense shape.");
       }
@@ -358,8 +358,6 @@ Status ValueBuffer<T>::MakeDense(Tensor* tensor, const PartialTensorShape& parti
 
   TensorShape dense_shape;
   TF_RETURN_IF_ERROR(ResolveDenseShape(&dense_shape, partial_shape, defaults));
-
-  LOG(INFO) << "Dense shape: " << dense_shape.DebugString();
 
   // Get the dense shape
   bool doFillFromDefault = !HasAllElements(dense_shape);
