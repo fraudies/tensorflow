@@ -13,6 +13,7 @@ limitations under the License.
 #define TENSORFLOW_DATA_AVRO_MEM_READER_H_
 
 #include <avro.h>
+#include "tensorflow/contrib/avro/utils/avro_value.h"
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/lib/core/status.h"
 
@@ -26,16 +27,6 @@ namespace data {
 // This reader can support schema resolution
 class AvroMemReader {
   public:
-    using AvroFileReaderPtr = std::unique_ptr<avro_file_reader_t, void(*)(avro_file_reader_t*)>;
-
-    using AvroSchemaPtr = std::unique_ptr<struct avro_obj_t,
-                                           void(*)(avro_schema_t)>;
-
-    using AvroInterfacePtr = std::unique_ptr<avro_value_iface_t,
-                                                  void(*)(avro_value_iface_t*)>;
-
-    using AvroValuePtr = std::unique_ptr<avro_value_t, void(*)(avro_value_t*)>;
-
     AvroMemReader();
     virtual ~AvroMemReader();
     // Supply a filename if this memory is backed by a file
@@ -48,19 +39,6 @@ class AvroMemReader {
     static void AvroFileReaderDestructor(avro_file_reader_t* reader) {
       CHECK_GE(avro_file_reader_close(*reader), 0);
       free(reader);
-    }
-
-    static void AvroSchemaDestructor(avro_schema_t schema) {
-      CHECK_GE(avro_schema_decref(schema), 0);
-    }
-
-    static void AvroInterfaceDestructor(avro_value_iface_t* iface)  {
-      avro_value_iface_decref(iface);
-    }
-
-    static void AvroValueDestructor(avro_value_t* value) {
-      avro_value_decref(value);
-      free(value);
     }
   protected:
     mutex mu_;

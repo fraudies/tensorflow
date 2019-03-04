@@ -9,8 +9,10 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-#include <stack>
+#ifndef TENSORFLOW_DATA_VALUE_BUFFER_H_
+#define TENSORFLOW_DATA_VALUE_BUFFER_H_
 
+#include <stack>
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_shape.h"
@@ -26,6 +28,9 @@ class ValueStore {
 public:
   virtual Status MakeDense(Tensor* tensor, const PartialTensorShape& shape, const Tensor& defaults) const = 0;
   virtual Status MakeSparse(Tensor* values, Tensor* indices, const PartialTensorShape& partial_shape) const = 0;
+  virtual bool LatestValuesMatch(const ValueStore& store) const = 0;
+  virtual bool LatestValueMatches(const string& value) const = 0;
+  virtual bool IsEmpty() const = 0;
 };
 
 class ShapeBuilder {
@@ -62,6 +67,11 @@ public:
   // TODO: Do we want to check this in MakeDense?
   Status MakeDense(Tensor* tensor, const PartialTensorShape& partial_shape, const Tensor& defaults) const override;
   Status MakeSparse(Tensor* values, Tensor* indices, const PartialTensorShape& partial_shape) const override;
+  virtual bool LatestValuesMatch(const ValueStore& store) const override;
+  virtual bool LatestValueMatches(const string& value) const override;
+  inline bool IsEmpty() const {
+    return GetNumberOfElements() == 0;
+  }
 private:
   size_t GetNumberOfElements() const;
   //void InitTensor(Tensor* tensor, const TensorShape& shape) const;
@@ -70,7 +80,7 @@ private:
   Status FillInFromBuffer(Tensor* tensor) const;
   // Assumes tensor has been initialized
   Status FillInFromDefault(Tensor* tensor, const Tensor& defaults) const;
-  inline bool IsScalar(const Tensor& tensor) const {
+  inline bool IsScalarTensor(const Tensor& tensor) const {
     return tensor.dims() == 1 && tensor.dim_size(0) == 1;
   }
   gtl::InlinedVector<T, 4> values_; // For up to 4 values use inline
@@ -336,7 +346,7 @@ template<typename T>
 Status ValueBuffer<T>::ResolveDenseShape(TensorShape* shape,
   const PartialTensorShape& partial_shape, const Tensor& defaults) const {
 
-  bool isScalarDefault = IsScalar(defaults);
+  bool isScalarDefault = IsScalarTensor(defaults);
 
   // Honor user defined shape if fully defined
   if (partial_shape.IsFullyDefined()) {
@@ -472,7 +482,7 @@ Status ValueBuffer<T>::FillInFromDefault(Tensor* tensor, const Tensor& defaults)
   TensorShape shape = (*tensor).shape();
   auto tensor_data = (*tensor).flat<T>().data();
   auto buffer_data = defaults.flat<T>().data();
-  if (IsScalar(defaults)) {
+  if (IsScalarTensor(defaults)) {
     // Fill tensor with default to create padding
     std::fill(tensor_data, tensor_data + shape.num_elements(), defaults.flat<T>()(0));
   } else {
@@ -491,6 +501,32 @@ Status ValueBuffer<T>::FillInFromDefault(Tensor* tensor, const Tensor& defaults)
   return Status::OK();
 }
 
+template <typename T>
+bool ValueBuffer<T>::LatestValuesMatch(const ValueStore& store) const {
+  // If both stores are empty, then there is a match
+  if (IsEmpty() && store.IsEmpty()) {
+    return true;
+  }
+  // Note, buffer will be nullptr if the types don't match
+  const ValueBuffer* buffer = dynamic_cast<const ValueBuffer*>(&store);
+  return buffer != nullptr && values_.back() == (*buffer).values_.back();
+}
+
+template <typename T>
+bool ValueBuffer<T>::LatestValueMatches(const string& value) const {
+  // TODO(fraudies): Check if we want to match other types through parsing of string
+  return false;
+}
+
+template <>
+bool ValueBuffer<string>::LatestValueMatches(const string& value) const {
+  // If there is no value to match there is no match
+  if (IsEmpty()) {
+    return false;
+  }
+  return values_.back() == value;
+}
+
 // Template specializations for value buffer
 typedef ValueBuffer<bool> BoolValueBuffer;
 typedef ValueBuffer<int> IntValueBuffer;
@@ -500,3 +536,4 @@ typedef ValueBuffer<string> StringValueBuffer;
 }
 }
 
+#endif // TENSORFLOW_DATA_VALUE_BUFFER_H_

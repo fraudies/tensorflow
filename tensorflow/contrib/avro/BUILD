@@ -22,7 +22,8 @@ cc_library(
     name = "cc_utils",
     srcs = ["utils/avro_mem_reader.cc",
             "utils/prefix_tree.cc"],
-    hdrs = ["utils/avro_mem_reader.h",
+    hdrs = ["utils/avro_value.h",
+            "utils/avro_mem_reader.h",
             "utils/prefix_tree.h",
             "utils/value_buffer.h"],
     deps = [

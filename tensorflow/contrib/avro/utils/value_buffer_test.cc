@@ -639,5 +639,43 @@ TEST(ValueBufferTest, Sparse4D) {
 //  buffer.FinishMark();
 // This should fail! probably in the add
 
+// ------------------------------------------------------------
+// Test Value buffer --
+// ------------------------------------------------------------
+TEST(ValueBufferTest, LatestValuesDoMatch) {
+  IntValueBuffer buffer;
+  buffer.Add(1);
+  EXPECT_TRUE(buffer.LatestValuesMatch(buffer));
+}
+
+TEST(ValueBufferTest, LatestValuesDoNotMatchValue) {
+  IntValueBuffer this_buffer;
+  this_buffer.Add(1);
+  IntValueBuffer that_buffer;
+  that_buffer.Add(2);
+  EXPECT_TRUE(!this_buffer.LatestValuesMatch(that_buffer));
+}
+
+TEST(ValueBufferTest, LatestValuesDoNotMatchType) {
+  IntValueBuffer this_buffer;
+  this_buffer.Add(1);
+  FloatValueBuffer that_buffer;
+  that_buffer.Add(2.0f);
+  EXPECT_TRUE(!this_buffer.LatestValuesMatch(that_buffer));
+}
+
+TEST(ValueBufferTest, LatestValueMatches) {
+  StringValueBuffer buffer;
+  buffer.Add("abc");
+  EXPECT_TRUE(buffer.LatestValueMatches("abc"));
+  EXPECT_TRUE(!buffer.LatestValueMatches("abcd"));
+}
+
+TEST(ValueBufferTest, LatestValueDoesNotMatchType) {
+  IntValueBuffer buffer;
+  buffer.Add(1);
+  EXPECT_TRUE(!buffer.LatestValueMatches("abc"));
+}
+
 }
 }
