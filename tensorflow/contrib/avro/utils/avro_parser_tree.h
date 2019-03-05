@@ -26,7 +26,7 @@ public:
   static Status Build(ParserTree* parser_tree,
     const std::vector<std::pair<string, DataType>>& keys_and_types);
   // pointers are only valid as long as the object exists
-  Status ParseValue(std::vector<ValueStore*>* values, const avro_value_t& value);
+  Status ParseValue(std::vector<ValueStorePtr>* values, const AvroValuePtr& value);
 private:
   Build(AvroValueParser* father, const std::vector<std::shared_ptr<TreeNode>>& children);
 
@@ -45,7 +45,7 @@ private:
   static bool IsAttribute(const string& infix);
   static bool IsStringConstant(string* constant, const string& infix);
 
-  Status InitValueBuffers(map<string, std::unique_ptr<ValueStore>>* key_to_value);
+  Status InitValueBuffers(map<string, ValueStorePtr>* key_to_value);
   std::unique_ptr<AvroParser> root_;
   vector<string> keys_and_types_; // we need this here to preserve the order in the parse value method, and run InitValueBuffers before each parse call
 };

@@ -11,7 +11,6 @@ limitations under the License.
 ==============================================================================*/
 #include "re2/re2.h"
 #include "tensorflow/core/lib/strings/str_util.h"
-
 #include "tensorflow/contrib/avro/utils/prefix_tree.h"
 #include "tensorflow/contrib/avro/utils/avro_parser_tree.h"
 #include "tensorflow/contrib/avro/utils/avro_parser.h"
@@ -47,27 +46,27 @@ bool Re2Match(std::vector<string>* results, const string& pattern, const string&
     return RE2::FullMatchN(StringPiece(str), regex, args_pointers.data(), n_args);
 }
 
-Status AvroParserTree::ParseValue(std::vector<std::unique_ptr<ValueStore>>* values, const avro_value_t& value) {
+Status AvroParserTree::ParseValue(std::vector<ValueStorePtr>* values, const AvroValuePtr& value) {
 
-  map<string, std::unique_ptr<ValueStore>> key_to_value; // will also be used to get the data type for the node
+  std::map<string, ValueStorePtr> key_to_value; // will also be used to get the data type for the node
   TF_RETURN_IF_ERROR(InitValueBuffers(&key_to_value));
-
-  std::stack<std:pair<AvroValueParser*, avro_value_t*>> parser_for_value;
-  parser_for_value.push(std::make_pair(root_.get(), &value));
+  // Note, avro_value_t* will be valid as long as value is
+  std::stack<std:pair<AvroParserPtr, avro_value_t*>> parser_for_value;
+  parser_for_value.push(std::make_pair(root_.get(), value.get()));
   // TODO(fraudies): Have threads working on the queue as performance optimization
   // Note, this is not easy because resolve values may access what has happened before,
   // we can only parallelize all expressions between two filters in the stack
   while (!parser_for_value.empty()) {
     auto current = parser_for_value.top();
-    avro_value_t* v = current.first;
-    AvroValueParser* p = current.second;
+    AvroParserPtr p = current.first;
+    avro_value_t* v = std::move(current.second);
     parser_for_value.pop();
     if ((*p).IsTerminal()) {
-      TF_RETURN_IF_ERROR(*(static_cast<AvroValueParser*>(p)).ParseValue(values_, *v));
+      TF_RETURN_IF_ERROR((*p).ParseValue(key_to_value, *v));
     //} else if ((*p).UsesParsedValues()) {  // This is the boundary for threading
     //  TF_RETURN_IF_ERROR((*p).ResolveValues(&parser_for_value, *v, *values));
     } else {
-      TF_RETURN_IF_ERROR((*p).ResolveValues(&parser_for_value, *v, *values));
+      TF_RETURN_IF_ERROR((*p).ResolveValues(&parser_for_value, *v, *key_to_value));
     }
   }
 
@@ -184,13 +183,13 @@ Status AvroParserTree::CreateAvroParser(std::unique_ptr<AvroParser>& avro_parser
   const string& infix) {
 
   if (IsArrayAll(infix)) {
-    avro_parser.reset(std::make_unique<ArrayAllParser>());
+    avro_parser.reset(new ArrayAllParser());
     return Status::OK();
   }
 
   int index;
   if (IsArrayIndex(&index, infix)) {
-    avro_parser.reset(std::make_unique<ArrayIndexParser(index));
+    avro_parser.reset(new ArrayIndexParser());
     return Status::OK();
   }
 
@@ -201,9 +200,9 @@ Status AvroParserTree::CreateAvroParser(std::unique_ptr<AvroParser>& avro_parser
   if (IsFilter(&lhs, &rhs, infix)) {
 
     if (IsStringConstant(constant, rhs)) {
-      avro_parser.reset(std::make_unique<ArrayFilterParser>(lhs, constant, kRhsIsConstant));
+      avro_parser.reset(new ArrayFilterParser(lhs, constant, kRhsIsConstant));
     } else {
-      avro_parser.reset(std::make_unique<ArrayFilterParser>(lhs, rhs, kRhsIsValue));
+      avro_parser.reset(new ArrayFilterParser(lhs, rhs, kRhsIsValue));
     }
 
     return Status::OK();
@@ -211,14 +210,14 @@ Status AvroParserTree::CreateAvroParser(std::unique_ptr<AvroParser>& avro_parser
 
   string key;
   if (IsMapKey(&key, infix)) {
-    avro_parser.reset(std::make_unique<MapKeyParser>(key));
+    avro_parser.reset(new MapKeyParser(key));
     return Status::OK();
   }
 
   string name;
   // TODO(fraudies): Check that the name appears in the prefix tree
   if (IsAttribute(&name, infix)) {
-    avro_parser.reset(std::make_unique<AttributeParser>(name));
+    avro_parser.reset(new AttributeParser(name));
     return Status::OK();
   }
 
@@ -230,10 +229,10 @@ Status AvroParserTree::CreateValueParser(std::unique_ptr<AvroValueParser>& value
 
   switch (data_type) {
     case DT_BOOL:
-      value_parser.reset(std::make_unique<BoolValueParser>(name));
+      value_parser.reset(new BoolValueParser(name));
       break;
     case DT_INT32:
-      value_parser.reset(std::make_unique<IntValueParser>(name));
+      value_parser.reset(new IntValueParser(name));
       break;
     case DT_INT64:
       return Status(errors::Unimplemented("Long value parser not supported yet"));
@@ -242,7 +241,7 @@ Status AvroParserTree::CreateValueParser(std::unique_ptr<AvroValueParser>& value
     case DT_DOUBLE:
       return Status(errors::Unimplemented("Double value parser not supported yet"));
     case DT_STRING:
-      value_parser.reset(std::make_unique<StringValueParser>(name));
+      value_parser.reset(new StringValueParser(name));
     default:
       return Status(errors::Unimplemented("Type ", data_type, " not supported!"));
   }
@@ -280,10 +279,12 @@ Status AvroParserTree::InitValueBuffers(map<string, std::unique_ptr<ValueStore>>
     switch (data_type) {
       // Fill in the ValueBuffer
       case DT_BOOL:
-        key_to_value.insert(std::make_pair(key, std::make_unique<BoolValueBuffer>());
+        key_to_value.insert(
+          std::make_pair(key, std::unique_ptr<BoolValueBuffer>(new BoolValueBuffer())));
         break;
       case DT_INT32:
-        key_to_value.insert(std::make_pair(key, std::make_unique<IntValueBuffer>()));
+        key_to_value.insert(
+          std::make_pair(key, std::unique_ptr<IntValueBuffer>(new IntValueBuffer()))));
         break;
       case DT_INT64:
         return Status(errors::Unimplemented("Long value buffer not supported yet"));
@@ -292,7 +293,8 @@ Status AvroParserTree::InitValueBuffers(map<string, std::unique_ptr<ValueStore>>
       case DT_DOUBLE:
         return Status(errors::Unimplemented("Double value buffer not supported yet"));
       case DT_STRING:
-        key_to_value.insert(std::make_pair(key, std::make_unique<StringValueBuffer>()));
+        key_to_value.insert(
+          std::make_pair(key, std::unique_ptr<StringValueBuffer>(new StringValueBuffer())));
       default:
         return Status(errors::Unimplemented("Type ", data_type, " not supported!"));
     }

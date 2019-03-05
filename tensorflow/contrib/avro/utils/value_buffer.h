@@ -46,7 +46,7 @@ public:
   Status GetFillInfo(std::vector<std::pair<size_t, size_t> >* fill_info, const TensorShape& shape) const;
   Status GetIndices(Tensor* indices) const;
 private:
-  // Uses c++11 move semantics and is not part of the public API, so seems OK to me
+  // Not recommended by google style guide but this is not part of the public API
   std::vector<size_t> CumulativeProductOfDimensionsWithOneAtEnd(const TensorShape& shape) const;
   std::vector<size_t> element_info_;
   size_t element_counter_; // intermediate counter used when creating a buffer
@@ -62,6 +62,7 @@ public:
   // in certain cases 0 dimensions might be desired in the shape
   void Add(T value); // use for bool, int, long, float, double, specialized implementation for string
   void AddByRef(const T& value);
+  inline const T back() const { return values_.back(); }
   // May move the contents of this buffer into the tensor; hence not const
   // Assumes tensor has been initialized with the proper dimensions & type through allocate in OpOutputList
   // TODO: Do we want to check this in MakeDense?
@@ -198,7 +199,7 @@ Status ShapeBuilder::GetCopyInfo(std::vector<std::pair<size_t, size_t> >* copy_i
       // Handle the inner most element count
       if (i_dim == n_dim) {
 
-        // If the user data contained more elements than expected
+        // If the user data has more elements than expected
         if (count > length) {
           return errors::InvalidArgument("Per shape ", shape, " for dimension ", i_dim-1,
             " expected at most ", length, " elements but received ", count, " elements");
@@ -249,7 +250,7 @@ Status ShapeBuilder::GetFillInfo(std::vector<std::pair<size_t, size_t> >* fill_i
 
       // Handle the inner most element count
       if (i_dim == n_dim) {
-        // If the user data contained more elements than expected
+        // If the user data has more elements than expected
         if (count > length) {
           return errors::InvalidArgument("Per shape ", shape, " for dimension ", i_dim-1,
             " expected at most ", length, " elements but received ", count, " elements");
@@ -526,6 +527,9 @@ bool ValueBuffer<string>::LatestValueMatches(const string& value) const {
   }
   return values_.back() == value;
 }
+
+// Pointer type
+using ValueStorePtr = std::unique_ptr<ValueStore>;
 
 // Template specializations for value buffer
 typedef ValueBuffer<bool> BoolValueBuffer;
