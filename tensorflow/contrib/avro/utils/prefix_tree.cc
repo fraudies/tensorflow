@@ -51,8 +51,8 @@ bool TreeNode::Find(std::shared_ptr<TreeNode>& child, const std::string& child_p
   LOG(INFO) << "Find " << child_prefix;
   std::string prefix;
   for (auto child_ : children_) {
-    LOG(INFO) << "Checking child";
     (*child_).GetPrefix(&prefix);
+    LOG(INFO) << "Checking child: " << prefix;
     if (prefix.compare(child_prefix) == 0) {
       child = child_;
       return true;

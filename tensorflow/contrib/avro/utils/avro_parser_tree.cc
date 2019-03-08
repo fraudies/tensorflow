@@ -46,21 +46,21 @@ bool Re2Match(std::vector<string>* results, const string& pattern, const string&
     return RE2::FullMatchN(StringPiece(str), regex, args_pointers.data(), n_args);
 }
 
-Status AvroParserTree::ParseValue(std::vector<ValueStorePtr>* values, const AvroValuePtr& value) {
+Status AvroParserTree::ParseValue(std::vector<ValueStorePtr>* values, const AvroValueUniquePtr& value) {
 
   std::map<string, ValueStorePtr> key_to_value; // will also be used to get the data type for the node
   TF_RETURN_IF_ERROR(InitValueBuffers(&key_to_value));
   // Note, avro_value_t* will be valid as long as value is
-  std::stack<std:pair<AvroParserPtr, avro_value_t*>> parser_for_value;
+  std::queue<std:pair<AvroParserPtr, avro_value_t*>> parser_for_value;
   parser_for_value.push(std::make_pair(root_.get(), value.get()));
   // TODO(fraudies): Have threads working on the queue as performance optimization
   // Note, this is not easy because resolve values may access what has happened before,
-  // we can only parallelize all expressions between two filters in the stack
+  // we can only parallelize all expressions between two filters in the queue
   while (!parser_for_value.empty()) {
-    auto current = parser_for_value.top();
+    auto current = parser_for_value.front();
     AvroParserPtr p = current.first;
     avro_value_t* v = std::move(current.second);
-    parser_for_value.pop();
+    parser_for_value.pop_front();
     if ((*p).IsTerminal()) {
       TF_RETURN_IF_ERROR((*p).ParseValue(key_to_value, *v));
     //} else if ((*p).UsesParsedValues()) {  // This is the boundary for threading
@@ -143,7 +143,7 @@ Status AvroParserTree::Build(ParserTree* parser_tree,
 
 Status AvroParserTree::Build(AvroValueParser* father, const std::vector<std::shared_ptr<TreeNode>>& children) {
   for (std::shared_ptr<TreeNode> child : children) {
-    std::unique_ptr<AvroParser> avro_parser(nullptr);
+    AvroParserPtr avro_parser(nullptr);
     TF_RETURN_IF_ERROR(CreateAvroParser(avro_parser, (*child).GetPrefix()));
     (*father).children_.push_back(std::move(avro_parser));
     if ((*child).IsTerminal()) {

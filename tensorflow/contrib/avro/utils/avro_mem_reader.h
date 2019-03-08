@@ -34,7 +34,7 @@ class AvroMemReader {
       const uint64 mem_size, const string& filename);
     // Note, value is only valid as long as no ReadNext is called since the internal method
     // re-uses the same memory for the next read
-    virtual Status ReadNext(AvroValuePtr& value);
+    virtual Status ReadNext(AvroValueUniquePtr& value);
 
     static void AvroFileReaderDestructor(avro_file_reader_t* reader) {
       CHECK_GE(avro_file_reader_close(*reader), 0);
@@ -55,7 +55,7 @@ class AvroResolvedMemReader : public AvroMemReader {
       const string& filename);
     static Status DoResolve(bool* resolve, const std::unique_ptr<char[]>& mem_data,
       const uint64 mem_size, const string& reader_schema_str, const string& filename);
-    virtual Status ReadNext(AvroValuePtr& value);
+    virtual Status ReadNext(AvroValueUniquePtr& value);
   protected:
     AvroInterfacePtr reader_iface_ GUARDED_BY(mu_);
 };

@@ -363,7 +363,7 @@ If an actual file handle is used then this test passes
 TEST_F(AvroMemReaderEmptyFileTest, ReadFromEmptyFile) {
   AvroMemReader* reader = new AvroMemReader();
   TF_EXPECT_OK(AvroMemReader::Create(reader, mem_data_, mem_size_, filename_));
-  AvroMemReader::AvroValuePtr value(nullptr, AvroMemReader::AvroValueDestructor);
+  AvroMemReader::AvroValueUniquePtr value(nullptr, AvroMemReader::AvroValueDestructor);
   EXPECT_EQ(reader->ReadNext(value), Status(errors::OutOfRange("eof")));
   delete reader;
 }
@@ -372,7 +372,7 @@ TEST_F(AvroMemReaderEmptyFileTest, ReadFromEmptyFile) {
 TEST_F(AvroMemReaderTest, Read) {
   AvroMemReader* reader = new AvroMemReader();
   TF_EXPECT_OK(AvroMemReader::Create(reader, mem_data_, mem_size_, filename_));
-  AvroValuePtr value(nullptr, AvroValueDestructor);
+  AvroValueUniquePtr value(nullptr, AvroValueDestructor);
   for (int i_record = 0; i_record < N_RECORD; ++i_record) {
     TF_EXPECT_OK(reader->ReadNext(value));
     AvroUtils::LogValue(*value);
@@ -389,7 +389,7 @@ TEST_F(AvroMemReaderTest, ReadMultiThreaded) {
   std::thread readers[N_RECORD];
   for (int i_reader = 0; i_reader < N_RECORD; i_reader++) {
     readers[i_reader] = std::thread([&reader] {
-      AvroValuePtr value(nullptr, AvroValueDestructor);
+      AvroValueUniquePtr value(nullptr, AvroValueDestructor);
       TF_EXPECT_OK(reader->ReadNext(value));
       AvroUtils::LogValue(*value);
       // Ensure the contents of the avro value match
@@ -405,7 +405,7 @@ TEST_F(AvroMemReaderTest, ReadMultiThreaded) {
 TEST_F(AvroMemReaderTest, ReadResolved) {
   AvroResolvedMemReader* reader = new AvroResolvedMemReader();
   TF_EXPECT_OK(AvroResolvedMemReader::Create(reader, mem_data_, mem_size_, resolved, filename_));
-  AvroValuePtr value(nullptr, AvroValueDestructor);
+  AvroValueUniquePtr value(nullptr, AvroValueDestructor);
   for (int i_record = 0; i_record < N_RECORD; ++i_record) {
     TF_EXPECT_OK(reader->ReadNext(value));
     AvroUtils::LogValue(*value);
@@ -422,7 +422,7 @@ TEST_F(AvroMemReaderTest, ReadResolvedMultiThreaded) {
   std::thread readers[N_RECORD];
   for (int i_reader = 0; i_reader < N_RECORD; i_reader++) {
     readers[i_reader] = std::thread([&reader] {
-      AvroValuePtr value(nullptr, AvroValueDestructor);
+      AvroValueUniquePtr value(nullptr, AvroValueDestructor);
       TF_EXPECT_OK(reader->ReadNext(value));
       AvroUtils::LogValue(*value);
       // Ensure the contents of the avro value match

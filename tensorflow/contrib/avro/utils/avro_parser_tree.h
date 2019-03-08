@@ -26,7 +26,7 @@ public:
   static Status Build(ParserTree* parser_tree,
     const std::vector<std::pair<string, DataType>>& keys_and_types);
   // pointers are only valid as long as the object exists
-  Status ParseValue(std::vector<ValueStorePtr>* values, const AvroValuePtr& value);
+  Status ParseValue(std::vector<ValueStorePtr>* values, const AvroValueUniquePtr& value);
 private:
   Build(AvroValueParser* father, const std::vector<std::shared_ptr<TreeNode>>& children);
 

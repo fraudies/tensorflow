@@ -15,6 +15,7 @@ limitations under the License.
 #include <avro.h>
 #include <vector>
 #include <map>
+#include <queue>
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/contrib/avro/utils/avro_value.h"
 #include "tensorflow/contrib/avro/utils/value_buffer.h"
@@ -23,7 +24,11 @@ namespace tensorflow {
 namespace data {
 
 class AvroParser; // forward declare for pointer definition
+class AvroValueParser;
+
 using AvroParserPtr = std::shared_ptr<AvroParser>;
+using AvroValueParserPtr = std::shared_ptr<AvroValueParser>;
+
 
 class AvroParser {
 public:
@@ -31,8 +36,10 @@ public:
   virtual ~AvroParser();
 
   // Default implementation returns error
-  virtual Status ResolveValues(std::stack<std::pair<AvroParserPtr, AvroValuePtr> >* values,
-    const avro_value_t& value, const std::map<string, ValueStorePtr>& parsed_values) const;
+  virtual Status ResolveValues(
+    std::queue<std::pair<AvroParserPtr, AvroValueSharedPtr> >* values,
+    const avro_value_t& value,
+    const std::map<string, ValueStorePtr>& parsed_values) const;
 
   // Default implementation returns error
   virtual Status ParseValue(std::map<string, ValueStorePtr>* values, const avro_value_t& value) const;
@@ -41,7 +48,13 @@ public:
   inline bool IsTerminal() const { return children_.size() == 0; }
   inline void AddChild(const AvroParserPtr& child) { children_.push_back(child); }
 protected:
+  const std::vector<AvroParserPtr>& GetChildren() const;
+  const std::vector<AvroValueParserPtr>& GetFinalDescendents() const;
+  void AddBeginMarkersToFinalDescendents(std::map<string, ValueStorePtr>* parsed_values) const;
+  void AddFinishMarkersToFinalDescendents(std::map<string, ValueStorePtr>* parsed_values) const;
+private:
   std::vector<AvroParserPtr> children_;
+  mutable std::vector<AvroValueParserPtr> final_descendents_; // computed upon first call and then cached
 };
 
 
@@ -49,6 +62,7 @@ class AvroValueParser : public AvroParser {
 public:
   AvroValueParser(const string& key);
   virtual ~AvroValueParser();
+  inline const string& GetKey() const { return key_; }
 protected:
   //static Status CheckKey(const std::map<string, std::unique_ptr<ValueStore> >& values);
   string key_;
@@ -61,29 +75,52 @@ class BoolValueParser : public AvroValueParser {
 public:
   BoolValueParser(const string& key);
   virtual ~BoolValueParser();
-  Status ParseValue(std::map<string, ValueStorePtr>* values, const avro_value_t& value) const override;
+  Status ParseValue(std::map<string, ValueStorePtr>* values,
+    const avro_value_t& value) const override;
 };
 
 class IntValueParser : public AvroValueParser {
 public:
   IntValueParser(const string& key);
   virtual ~IntValueParser();
-  Status ParseValue(std::map<string, ValueStorePtr>* values, const avro_value_t& value) const override;
+  Status ParseValue(std::map<string, ValueStorePtr>* values,
+    const avro_value_t& value) const override;
 };
 
 class StringValueParser : public AvroValueParser {
 public:
   StringValueParser(const string& key);
   virtual ~StringValueParser();
-  Status ParseValue(std::map<string, ValueStorePtr>* values, const avro_value_t& value) const override;
+  Status ParseValue(std::map<string, ValueStorePtr>* values,
+    const avro_value_t& value) const override;
+};
+
+class ArrayBeginMarkerParser : public AvroValueParser {
+public:
+  ArrayBeginMarkerParser(const std::vector<AvroValueParserPtr>& final_descendents);
+  Status ParseValue(std::map<string, ValueStorePtr>* values,
+    const avro_value_t& value) const override;
+private:
+  const std::vector<AvroValueParserPtr> final_descendents_;
+};
+
+class ArrayFinishMarkerParser : public AvroValueParser {
+public:
+  ArrayFinishMarkerParser(const std::vector<AvroValueParserPtr>& final_descendents);
+  Status ParseValue(std::map<string, ValueStorePtr>* values,
+    const avro_value_t& value) const override;
+private:
+  const std::vector<AvroValueParserPtr> final_descendents_;
 };
 
 // -------------------------------------------------------------------------------------------------
 // Intermediary types
 // -------------------------------------------------------------------------------------------------
 class ArrayAllParser : public AvroParser {
-protected:
-  Status ResolveValues(std::stack<std::pair<AvroParserPtr, AvroValuePtr> >* values, const avro_value_t& value,
+public:
+  Status ResolveValues(
+    std::queue<std::pair<AvroParserPtr, AvroValueSharedPtr> >* values,
+    const avro_value_t& value,
     const std::map<string, ValueStorePtr>& parsed_values) const override;
 };
 
@@ -91,7 +128,9 @@ class ArrayIndexParser : public AvroParser {
 public:
   ArrayIndexParser(size_t index);
   virtual ~ArrayIndexParser();
-  Status ResolveValues(std::stack<std::pair<AvroParserPtr, AvroValuePtr> >* values, const avro_value_t& value,
+  Status ResolveValues(
+    std::queue<std::pair<AvroParserPtr, AvroValueSharedPtr> >* values,
+    const avro_value_t& value,
     const std::map<string, ValueStorePtr>& parsed_values) const override;
 private:
   size_t index_;
@@ -104,8 +143,10 @@ public:
   ArrayFilterParser(const string& lhs, const string& rhs, ArrayFilterType type);
   virtual ~ArrayFilterParser();
   inline virtual bool UsesParsedValues() const { return true; }
-  Status ResolveValues(std::stack<std::pair<AvroParserPtr, AvroValuePtr> >* values,
-    const avro_value_t& value, const std::map<string, ValueStorePtr>& parsed_values) const override;
+  Status ResolveValues(
+    std::queue<std::pair<AvroParserPtr, AvroValueSharedPtr> >* values,
+    const avro_value_t& value,
+    const std::map<string, ValueStorePtr>& parsed_values) const override;
 private:
   string lhs_;
   string rhs_;
@@ -116,7 +157,9 @@ class MapKeyParser : public AvroParser {
 public:
   MapKeyParser(const string& key);
   ~MapKeyParser();
-  Status ResolveValues(std::stack<std::pair<AvroParserPtr, AvroValuePtr> >* values, const avro_value_t& value,
+  Status ResolveValues(
+    std::queue<std::pair<AvroParserPtr, AvroValueSharedPtr> >* values,
+    const avro_value_t& value,
     const std::map<string, ValueStorePtr>& parsed_values) const override;
 private:
   string key_;
@@ -129,7 +172,9 @@ public:
   // check that the in_value is of type record
   // check that an attribute with name exists
   // get the the attribute for the name and return it in the vector as single element
-  Status ResolveValues(std::stack<std::pair<AvroParserPtr, AvroValuePtr> >* values, const avro_value_t& value,
+  Status ResolveValues(
+    std::queue<std::pair<AvroParserPtr, AvroValueSharedPtr> >* values,
+    const avro_value_t& value,
     const std::map<string, ValueStorePtr>& parsed_values) const override;
 private:
   string name_;

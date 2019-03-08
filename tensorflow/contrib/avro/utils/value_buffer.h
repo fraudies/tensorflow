@@ -31,6 +31,8 @@ public:
   virtual bool LatestValuesMatch(const ValueStore& store) const = 0;
   virtual bool LatestValueMatches(const string& value) const = 0;
   virtual bool IsEmpty() const = 0;
+  virtual void BeginMark() = 0;
+  virtual void FinishMark() = 0;
 };
 
 class ShapeBuilder {
@@ -55,9 +57,10 @@ private:
 
 // Up to 4 items are stored without allocating heap memory
 template <typename T>
-class ValueBuffer : public ValueStore, public ShapeBuilder {
+class ValueBuffer : public ValueStore {
 public:
-  ValueBuffer();
+  void BeginMark() override;
+  void FinishMark() override;
   // Make sure to finish dimensions, also add the end, Make will not call finish dimension because
   // in certain cases 0 dimensions might be desired in the shape
   void Add(T value); // use for bool, int, long, float, double, specialized implementation for string
@@ -85,6 +88,7 @@ private:
     return tensor.dims() == 1 && tensor.dim_size(0) == 1;
   }
   gtl::InlinedVector<T, 4> values_; // For up to 4 values use inline
+  ShapeBuilder shape_builder_;
 };
 
 ShapeBuilder::ShapeBuilder() : element_counter_(0), has_begin(false) {}
@@ -324,18 +328,25 @@ std::vector<size_t> ShapeBuilder::CumulativeProductOfDimensionsWithOneAtEnd(
 }
 
 template <typename T>
-ValueBuffer<T>::ValueBuffer() : ShapeBuilder() { }
+void ValueBuffer<T>::BeginMark() {
+  shape_builder_.BeginMark();
+}
+
+template <typename T>
+void ValueBuffer<T>::FinishMark() {
+  shape_builder_.FinishMark();
+}
 
 template <typename T>
 void ValueBuffer<T>::Add(T value) {
   values_.push_back(value);
-  Increment();
+  shape_builder_.Increment();
 }
 
 template <typename T>
 void ValueBuffer<T>::AddByRef(const T& value) {
   values_.push_back(value);
-  Increment();
+  shape_builder_.Increment();
 }
 
 template <typename T>
@@ -373,7 +384,7 @@ Status ValueBuffer<T>::ResolveDenseShape(TensorShape* shape,
   // If the shape is not defined by the user nor the default, infer from provided data
   } else {
     TensorShape dense_shape;
-    GetDenseShape(&dense_shape);
+    shape_builder_.GetDenseShape(&dense_shape);
     PartialTensorShape tmp_shape;
     // Honor any partially defined shape from user and supplement with that from data
     if (partial_shape.MergeWith(dense_shape, &tmp_shape) == Status::OK()) {
@@ -403,7 +414,7 @@ Status ValueBuffer<T>::MakeDense(Tensor* tensor, const PartialTensorShape& parti
   TF_RETURN_IF_ERROR(ResolveDenseShape(&dense_shape, partial_shape, defaults));
 
   // Get the dense shape
-  bool doFillFromDefault = !HasAllElements(dense_shape);
+  bool doFillFromDefault = !shape_builder_.HasAllElements(dense_shape);
 
   // Check that shape matches, with the dimensions
   if (doFillFromDefault) {
@@ -426,7 +437,7 @@ Status ValueBuffer<T>::MakeSparse(Tensor* values, Tensor* indices,
   const PartialTensorShape& partial_shape) const {
 
   TensorShape dense_shape;
-  GetDenseShape(&dense_shape);
+  shape_builder_.GetDenseShape(&dense_shape);
   size_t n_dim_expected = dense_shape.dims();
   size_t n_dim_actual = partial_shape.dims();
   // Ensure the number of dimensions match
@@ -445,7 +456,7 @@ Status ValueBuffer<T>::MakeSparse(Tensor* values, Tensor* indices,
     tensor_data);
 
   // Create indices
-  TF_RETURN_IF_ERROR(GetIndices(indices));
+  TF_RETURN_IF_ERROR(shape_builder_.GetIndices(indices));
 
   // Build the tensor for the values and the indices from the value buffer
   return Status::OK();
@@ -459,7 +470,7 @@ Status ValueBuffer<T>::FillInFromBuffer(Tensor* tensor) const {
   auto buffer_data = values_.begin();
   // These offsets are per fragment of data
   std::vector<std::pair<size_t, size_t> > copy_info;
-  TF_RETURN_IF_ERROR(GetCopyInfo(&copy_info, shape));
+  TF_RETURN_IF_ERROR(shape_builder_.GetCopyInfo(&copy_info, shape));
   size_t source_offset = 0;
   for (const auto& info : copy_info) {
     size_t target_offset = info.first;
@@ -488,7 +499,7 @@ Status ValueBuffer<T>::FillInFromDefault(Tensor* tensor, const Tensor& defaults)
     std::fill(tensor_data, tensor_data + shape.num_elements(), defaults.flat<T>()(0));
   } else {
     std::vector<std::pair<size_t, size_t> > fill_info;
-    TF_RETURN_IF_ERROR(GetFillInfo(&fill_info, shape));
+    TF_RETURN_IF_ERROR(shape_builder_.GetFillInfo(&fill_info, shape));
     for (const auto& info : fill_info) {
       size_t offset = info.first;
       size_t length = info.second;

@@ -25,7 +25,9 @@ using AvroSchemaPtr = std::unique_ptr<struct avro_obj_t, void(*)(avro_schema_t)>
 
 using AvroInterfacePtr = std::unique_ptr<avro_value_iface_t, void(*)(avro_value_iface_t*)>;
 
-using AvroValuePtr = std::unique_ptr<avro_value_t, void(*)(avro_value_t*)>;
+using AvroValueUniquePtr = std::unique_ptr<avro_value_t, void(*)(avro_value_t*)>;
+
+using AvroValueSharedPtr = std::shared_ptr<avro_value_t>;
 
 static void AvroSchemaDestructor(avro_schema_t schema) {
   avro_schema_decref(schema);

@@ -65,7 +65,7 @@ Status AvroMemReader::Create(AvroMemReader* reader, const std::unique_ptr<char[]
   return Status::OK();
 }
 
-Status AvroMemReader::ReadNext(AvroValuePtr& value) {
+Status AvroMemReader::ReadNext(AvroValueUniquePtr& value) {
   mutex_lock l(mu_);
 
   avro_set_error("");
@@ -168,7 +168,7 @@ Status AvroResolvedMemReader::Create(AvroResolvedMemReader* reader, const std::u
   return Status::OK();
 }
 
-Status AvroResolvedMemReader::ReadNext(AvroValuePtr& value) {
+Status AvroResolvedMemReader::ReadNext(AvroValueUniquePtr& value) {
   mutex_lock l(mu_);
 
   avro_value_t* reader_value = new avro_value_t;

@@ -23,6 +23,7 @@ class TreeNode {
 public:
   TreeNode(const std::string& prefix = "", TreeNode* father = nullptr);
   virtual ~TreeNode();
+  // TODO(fraudies): For better performance convert this into an iterator
   void GetChildren(std::vector<std::shared_ptr<TreeNode>>* children) const;
   void GetPrefix(std::string* prefix) const;
   // returns the full name using the separator
