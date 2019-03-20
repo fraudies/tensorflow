@@ -29,7 +29,7 @@ TEST(AvroParserTest, BoolValueParser) {
   std::vector<bool> field_values = {true, false};
   for (bool field_value : field_values) {
     BoolValueParser parser(key);
-    std::map<string, ValueStorePtr> values;
+    std::map<string, ValueStoreUniquePtr> values;
     values.insert(std::make_pair(key, std::unique_ptr<BoolValueBuffer>(new BoolValueBuffer())));
     avro_value_t value;
     avro_generic_boolean_new(&value, field_value);
@@ -44,7 +44,7 @@ TEST(AvroParserTest, IntValueParser) {
     std::numeric_limits<int>::max()};
   for (int field_value : field_values) {
     IntValueParser parser(key);
-    std::map<string, ValueStorePtr> values;
+    std::map<string, ValueStoreUniquePtr> values;
     values.insert(std::make_pair(key, std::unique_ptr<IntValueBuffer>(new IntValueBuffer())));
     avro_value_t value;
     avro_generic_int_new(&value, field_value);
@@ -58,7 +58,7 @@ TEST(AvroParserTest, StringValueParser) {
   std::vector<string> field_values = {"", "a", "abc", "328983"};
   for (const string& field_value : field_values) {
     StringValueParser parser(key);
-    std::map<string, ValueStorePtr> values;
+    std::map<string, ValueStoreUniquePtr> values;
     values.insert(std::make_pair(key, std::unique_ptr<StringValueBuffer>(new StringValueBuffer())));
     avro_value_t value;
     avro_generic_string_new(&value, field_value.c_str());
@@ -105,15 +105,15 @@ TEST(AttributeParserTest, ResolveValues) {
   AttributeParser parser("name");
   parser.AddChild(std::unique_ptr<StringValueParser>(new StringValueParser("person.name")));
 
-  std::map<string, ValueStorePtr> parsed_values; // empty on purpose
-  std::queue<std::pair<AvroParserPtr, AvroValueSharedPtr> > parser_for_value;
+  std::map<string, ValueStoreUniquePtr> parsed_values; // empty on purpose
+  std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> > parser_for_value;
 
   TF_EXPECT_OK(parser.ResolveValues(&parser_for_value, value, parsed_values));
 
   // Ensure we have exactly one parser
   EXPECT_EQ(parser_for_value.size(), 1);
   const auto& current = parser_for_value.front();
-  AvroParserPtr avro_parser = current.first;
+  AvroParserSharedPtr avro_parser = current.first;
   StringValueParser* string_parser = dynamic_cast<StringValueParser*>(avro_parser.get());
   EXPECT_TRUE(string_parser != nullptr);
 
@@ -169,13 +169,13 @@ TEST(ArrayAllParser, ResolveValues) {
 
   // Define the parsers for the socials
   AttributeParser socials_parser("socials");
-  AvroParserPtr parse_all_items = std::make_shared<ArrayAllParser>();
-  AvroValueParserPtr parse_ints = std::make_shared<IntValueParser>(person_socials_key);
+  AvroParserSharedPtr parse_all_items = std::make_shared<ArrayAllParser>();
+  AvroValueParserSharedPtr parse_ints = std::make_shared<IntValueParser>(person_socials_key);
   socials_parser.AddChild(parse_all_items);
   (*parse_all_items).AddChild(parse_ints);
 
-  std::map<string, ValueStorePtr> parsed_values; // empty on purpose
-  std::queue<std::pair<AvroParserPtr, AvroValueSharedPtr> > parser_for_value;
+  std::map<string, ValueStoreUniquePtr> parsed_values; // empty on purpose
+  std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> > parser_for_value;
   parsed_values.insert(std::make_pair(
     person_socials_key,
     std::unique_ptr<IntValueBuffer>(new IntValueBuffer())));
@@ -283,20 +283,20 @@ TEST(ArrayFilterParser, ResolveValues) {
 
   // persons[*].name
   AttributeParser persons_parser(persons_name);
-  AvroParserPtr parse_names_items = std::make_shared<ArrayAllParser>();
-  AvroParserPtr parse_names = std::make_shared<AttributeParser>(name_name);
+  AvroParserSharedPtr parse_names_items = std::make_shared<ArrayAllParser>();
+  AvroParserSharedPtr parse_names = std::make_shared<AttributeParser>(name_name);
   (*parse_names_items).AddChild(parse_names);
 
   // persons[name='Carl'].age
-  AvroParserPtr parse_carls_items = std::make_shared<ArrayFilterParser>(persons_name_key, "Carl", kRhsIsConstant);
-  AvroParserPtr parse_ages = std::make_shared<AttributeParser>(age_name);
+  AvroParserSharedPtr parse_carls_items = std::make_shared<ArrayFilterParser>(persons_name_key, "Carl", kRhsIsConstant);
+  AvroParserSharedPtr parse_ages = std::make_shared<AttributeParser>(age_name);
   (*parse_carls_items).AddChild(parse_ages);
 
   persons_parser.AddChild(parse_names_items);
   persons_parser.AddChild(parse_carls_items);
 
-  std::map<string, ValueStorePtr> parsed_values; // empty on purpose
-  std::queue<std::pair<AvroParserPtr, AvroValueSharedPtr> > parser_for_value;
+  std::map<string, ValueStoreUniquePtr> parsed_values; // empty on purpose
+  std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> > parser_for_value;
   parsed_values.insert(std::make_pair(
     persons_name_key,
     std::unique_ptr<StringValueBuffer>(new StringValueBuffer())));
@@ -371,13 +371,13 @@ TEST(MapKeyParser, ResolveValues) {
   EXPECT_EQ(avro_value_set_int(&serial_value_field, serial_value), 0);
 
   AttributeParser cars_parser(cars_name);
-  AvroParserPtr map_key_parser = std::make_shared<MapKeyParser>(serial_key);
-  AvroParserPtr map_value_parser = std::make_shared<IntValueParser>(car_in_map_key);
+  AvroParserSharedPtr map_key_parser = std::make_shared<MapKeyParser>(serial_key);
+  AvroParserSharedPtr map_value_parser = std::make_shared<IntValueParser>(car_in_map_key);
   (*map_key_parser).AddChild(map_value_parser);
   cars_parser.AddChild(map_key_parser);
 
-  std::map<string, ValueStorePtr> parsed_values; // empty on purpose
-  std::queue<std::pair<AvroParserPtr, AvroValueSharedPtr> > parser_for_value;
+  std::map<string, ValueStoreUniquePtr> parsed_values; // empty on purpose
+  std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> > parser_for_value;
   parsed_values.insert(std::make_pair(
     car_in_map_key,
     std::unique_ptr<IntValueBuffer>(new IntValueBuffer())));
@@ -387,7 +387,7 @@ TEST(MapKeyParser, ResolveValues) {
   // Ensure we have exactly one parser
   EXPECT_EQ(parser_for_value.size(), 1);
   const auto& current = parser_for_value.front();
-  AvroParserPtr avro_parser = current.first;
+  AvroParserSharedPtr avro_parser = current.first;
   IntValueParser* int_parser = dynamic_cast<IntValueParser*>(avro_parser.get());
   EXPECT_TRUE(int_parser != nullptr);
 

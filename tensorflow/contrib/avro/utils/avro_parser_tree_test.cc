@@ -22,7 +22,7 @@ namespace tensorflow {
 namespace data {
 
 TEST(RegexTest, SplitExpressions) {
-  std::vector<std::pair<string, DataType>> keys_and_types = {
+  std::vector<std::pair<string, DataType> > keys_and_types = {
     std::make_pair("name.first", DT_STRING),
     std::make_pair("friends[2].name.first", DT_STRING),
     std::make_pair("friends[*].name.first", DT_STRING),
@@ -32,8 +32,8 @@ TEST(RegexTest, SplitExpressions) {
     std::make_pair("friends[gender='unknown'].name.first", DT_STRING),
     std::make_pair("friends[name.first=name.last].name.initial", DT_STRING),
     std::make_pair("friends[name.first=@name.first].name.initial", DT_STRING)};
-  ParserTree parser_tree;
-  ParserTree::Build(&parser_tree, keys_and_types);
+  AvroParserTree parser_tree;
+  AvroParserTree::Build(&parser_tree, keys_and_types);
 }
 
 }

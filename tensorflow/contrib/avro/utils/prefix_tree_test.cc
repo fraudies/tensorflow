@@ -18,32 +18,32 @@ namespace data {
 // ------------------------------------------------------------
 // Tests for a tree node
 // ------------------------------------------------------------
-TEST(TreeNodeTest, IsTerminal) {
-  TreeNode node("father");
+TEST(PrefixTreeNodeTest, IsTerminal) {
+  PrefixTreeNode node("father");
   EXPECT_TRUE(node.IsTerminal());
-  std::shared_ptr<TreeNode> child;
+  std::shared_ptr<PrefixTreeNode> child;
   node.FindOrAddChild(child, "child");
   EXPECT_TRUE(!node.IsTerminal());
 }
 
-TEST(TreeNodeTest, HasPrefix) {
-  TreeNode wout;
+TEST(PrefixTreeNodeTest, HasPrefix) {
+  PrefixTreeNode wout;
   EXPECT_TRUE(!wout.HasPrefix());
-  TreeNode with("name");
+  PrefixTreeNode with("name");
   EXPECT_TRUE(with.HasPrefix());
 }
 
-TEST(TreeNodeTest, GetPrefix) {
-  TreeNode node("name");
+TEST(PrefixTreeNodeTest, GetPrefix) {
+  PrefixTreeNode node("name");
   string prefix;
   node.GetPrefix(&prefix);
   EXPECT_EQ(prefix, "name");
 }
 
 // Tests: Find, FindOrAdd, GetPrefix
-TEST(TreeNodeTest, SingleChild) {
-  TreeNode node("father");
-  std::shared_ptr<TreeNode> child;
+TEST(PrefixTreeNodeTest, SingleChild) {
+  PrefixTreeNode node("father");
+  std::shared_ptr<PrefixTreeNode> child;
   // Expect the child does not exist
   EXPECT_TRUE(!node.Find(child, "child"));
   // Insert the child
@@ -59,13 +59,13 @@ TEST(TreeNodeTest, SingleChild) {
   EXPECT_EQ(name, "father.child");
 }
 
-TEST(TreeNodeTest, GetChildren) {
-  TreeNode node("father");
-  std::shared_ptr<TreeNode> child;
+TEST(PrefixTreeNodeTest, GetChildren) {
+  PrefixTreeNode node("father");
+  std::shared_ptr<PrefixTreeNode> child;
   node.FindOrAddChild(child, "child1");
   node.FindOrAddChild(child, "child2");
   node.FindOrAddChild(child, "child3");
-  std::vector<std::shared_ptr<TreeNode>> children;
+  std::vector<std::shared_ptr<PrefixTreeNode>> children;
   std::vector< std::string > names{"child1", "child2", "child3"};
   node.GetChildren(&children);
   int n_child = 3;
@@ -76,6 +76,7 @@ TEST(TreeNodeTest, GetChildren) {
     EXPECT_EQ(prefix, names[i_child]);
   }
 }
+
 
 // ------------------------------------------------------------
 // Tests for an ordered prefix tree
@@ -100,7 +101,7 @@ TEST(OrderedPrefixTree, BuildEmpty) {
 
 TEST(OrderedPrefixTree, BuildSmall) {
   std::vector< std::vector<std::string> > prefixes_list{{"com"}};
-  std::shared_ptr<TreeNode> node;
+  std::shared_ptr<PrefixTreeNode> node;
   std::vector< std::string > present{"com"};
   std::vector< std::string > absent{"nothing"};
   string prefix;
@@ -119,7 +120,7 @@ TEST(OrderedPrefixTree, BuildSmall) {
 TEST(OrderedPrefixTree, BuildLarge) {
   std::vector< std::vector<std::string> > prefixes_list{{"com", "google", "search"},
     {"com", "linkedin", "jobs"}, {"com", "linkedin", "members"}};
-  std::shared_ptr<TreeNode> node;
+  std::shared_ptr<PrefixTreeNode> node;
   std::vector< std::string > present_with_remaining{"com", "google", "search", "cloud"};
   std::vector< std::string > present_partial_match{"com", "google"};
   std::vector< std::string > present_full_match{"com", "linkedin", "members"};

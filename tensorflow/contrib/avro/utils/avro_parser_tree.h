@@ -14,6 +14,8 @@ limitations under the License.
 
 #include <avro.h>
 #include <vector>
+#include "tensorflow/contrib/avro/utils/avro_parser.h"
+#include "tensorflow/contrib/avro/utils/prefix_tree.h"
 #include "tensorflow/contrib/avro/utils/value_buffer.h"
 
 namespace tensorflow {
@@ -22,16 +24,18 @@ namespace data {
 class AvroParserTree {
 public:
   AvroParserTree();
+  virtual ~AvroParserTree();
   // creates all the correct parser nodes with
-  static Status Build(ParserTree* parser_tree,
+  static Status Build(AvroParserTree* parser_tree,
     const std::vector<std::pair<string, DataType>>& keys_and_types);
+
   // pointers are only valid as long as the object exists
-  Status ParseValue(std::vector<ValueStorePtr>* values, const AvroValueUniquePtr& value);
+  Status ParseValue(std::vector<ValueStoreUniquePtr>* values, const AvroValueSharedPtr& value);
 private:
-  Build(AvroValueParser* father, const std::vector<std::shared_ptr<TreeNode>>& children);
+  Status Build(AvroValueParser* parent, const std::vector<std::shared_ptr<PrefixTreeNode>>& children);
 
   static Status GetUniqueKeys(std::unordered_set<string>* keys,
-    const std::vector<pair<string, DataType>>& keys_and_types);
+    const std::vector<std::pair<string, DataType>>& keys_and_types);
 
   static Status CreateAvroParser(std::unique_ptr<AvroParser>& value_parser, const string& infix);
 
@@ -45,9 +49,10 @@ private:
   static bool IsAttribute(const string& infix);
   static bool IsStringConstant(string* constant, const string& infix);
 
-  Status InitValueBuffers(map<string, ValueStorePtr>* key_to_value);
-  std::unique_ptr<AvroParser> root_;
-  vector<string> keys_and_types_; // we need this here to preserve the order in the parse value method, and run InitValueBuffers before each parse call
+  Status InitValueBuffers(std::map<string, ValueStoreUniquePtr>* key_to_value);
+
+  AvroParserSharedPtr root_;
+  std::vector<std::pair<string, DataType> > keys_and_types_; // we need this here to preserve the order in the parse value method, and run InitValueBuffers before each parse call
 };
 
 }

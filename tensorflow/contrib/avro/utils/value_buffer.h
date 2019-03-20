@@ -23,6 +23,13 @@ namespace data {
 static constexpr size_t kBeginMark = std::numeric_limits<size_t>::max() - 1;
 static constexpr size_t kFinishMark = std::numeric_limits<size_t>::max();
 
+// Class type forward declare
+class ValueStore;
+
+// Pointer type
+using ValueStoreUniquePtr = std::unique_ptr<ValueStore>;
+
+
 // Non template base class
 class ValueStore {
 public:
@@ -538,9 +545,6 @@ bool ValueBuffer<string>::LatestValueMatches(const string& value) const {
   }
   return values_.back() == value;
 }
-
-// Pointer type
-using ValueStorePtr = std::unique_ptr<ValueStore>;
 
 // Template specializations for value buffer
 typedef ValueBuffer<bool> BoolValueBuffer;

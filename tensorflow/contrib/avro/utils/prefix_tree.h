@@ -19,24 +19,24 @@ limitations under the License.
 namespace tensorflow {
 namespace data {
 
-class TreeNode {
+class PrefixTreeNode {
 public:
-  TreeNode(const std::string& prefix = "", TreeNode* father = nullptr);
-  virtual ~TreeNode();
+  PrefixTreeNode(const std::string& prefix = "", PrefixTreeNode* father = nullptr);
+  virtual ~PrefixTreeNode();
   // TODO(fraudies): For better performance convert this into an iterator
-  void GetChildren(std::vector<std::shared_ptr<TreeNode>>* children) const;
+  void GetChildren(std::vector<std::shared_ptr<PrefixTreeNode>>* children) const;
   void GetPrefix(std::string* prefix) const;
   // returns the full name using the separator
   void GetName(std::string* name, char separator) const;
   bool IsTerminal() const;
   // We define the prefix to exist if it is != "", which might be the case for the root
   bool HasPrefix() const;
-  bool Find(std::shared_ptr<TreeNode>& child, const std::string& child_prefix) const; // true if found, otherwise false and child is not altered
-  void FindOrAddChild(std::shared_ptr<TreeNode>& child, const std::string& child_prefix); // Child is ALWAYS assigned
+  bool Find(std::shared_ptr<PrefixTreeNode>& child, const std::string& child_prefix) const; // true if found, otherwise false and child is not altered
+  void FindOrAddChild(std::shared_ptr<PrefixTreeNode>& child, const std::string& child_prefix); // Child is ALWAYS assigned
 private:
   std::string prefix_;
-  TreeNode* father_; // Used to construct the full name
-  std::vector<std::shared_ptr<TreeNode>> children_; // I use raw pointers because these are encapsulated and not exposed
+  PrefixTreeNode* father_; // Used to construct the full name
+  std::vector<std::shared_ptr<PrefixTreeNode>> children_; // I use raw pointers because these are encapsulated and not exposed
 };
 
 // An ordered prefix tree maintains the order of it's children
@@ -52,11 +52,12 @@ public:
   // Will return the node as far as the prefixes could be matched
   // Will only return true for a full match
   // If remaining is nullptr this method won't fill it
-  bool Find(std::shared_ptr<TreeNode>& node, std::vector<std::string>* remaining,
+  bool Find(std::shared_ptr<PrefixTreeNode>& node, std::vector<std::string>* remaining,
     const std::vector<std::string>& prefixes) const;
-  bool Find(std::shared_ptr<TreeNode>& node, const std::vector<std::string>& prefixes) const;
+  bool Find(std::shared_ptr<PrefixTreeNode>& node, const std::vector<std::string>& prefixes) const;
+  std::shared_ptr<PrefixTreeNode> GetRoot() const;
 private:
-  std::shared_ptr<TreeNode> root_;
+  std::shared_ptr<PrefixTreeNode> root_;
 };
 
 }

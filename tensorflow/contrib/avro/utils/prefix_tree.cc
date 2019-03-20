@@ -15,39 +15,39 @@ limitations under the License.
 namespace tensorflow {
 namespace data {
 
-TreeNode::TreeNode(const std::string& prefix, TreeNode* father)
+PrefixTreeNode::PrefixTreeNode(const std::string& prefix, PrefixTreeNode* father)
   : prefix_(prefix), father_(father) { }
 
-TreeNode::~TreeNode() { }
+PrefixTreeNode::~PrefixTreeNode() { }
 
-void TreeNode::GetChildren(std::vector<std::shared_ptr<TreeNode>>* children) const {
+void PrefixTreeNode::GetChildren(std::vector<std::shared_ptr<PrefixTreeNode>>* children) const {
   *children = children_;
 }
 
-void TreeNode::GetPrefix(std::string* prefix) const {
+void PrefixTreeNode::GetPrefix(std::string* prefix) const {
   *prefix = prefix_;
 }
 
-void TreeNode::GetName(std::string* name, char separator) const {
+void PrefixTreeNode::GetName(std::string* name, char separator) const {
   *name += prefix_;
-  TreeNode* father = father_;
+  PrefixTreeNode* father = father_;
   while (father != nullptr) {
     *name = father->prefix_ + separator + *name;
     father = father->father_;
   }
 }
 
-bool TreeNode::IsTerminal() const {
+bool PrefixTreeNode::IsTerminal() const {
   return children_.size() == 0;
 }
 
-bool TreeNode::HasPrefix() const {
+bool PrefixTreeNode::HasPrefix() const {
   return prefix_.size() > 0;
 }
 
 // TODO(fraudies): Could be optimized using a set instead of a std::vector--but note that we need
 // the std::vector to preserve order
-bool TreeNode::Find(std::shared_ptr<TreeNode>& child, const std::string& child_prefix) const {
+bool PrefixTreeNode::Find(std::shared_ptr<PrefixTreeNode>& child, const std::string& child_prefix) const {
   LOG(INFO) << "Find " << child_prefix;
   std::string prefix;
   for (auto child_ : children_) {
@@ -61,11 +61,11 @@ bool TreeNode::Find(std::shared_ptr<TreeNode>& child, const std::string& child_p
   return false;
 }
 
-void TreeNode::FindOrAddChild(std::shared_ptr<TreeNode>& child, const std::string& child_prefix) {
+void PrefixTreeNode::FindOrAddChild(std::shared_ptr<PrefixTreeNode>& child, const std::string& child_prefix) {
   // If we could not find it make it, add it, and assign it; otherwise we assigned it
   if (!Find(child, child_prefix)) {
     // Note, the child we found will be the father
-    children_.push_back(std::make_shared<TreeNode>(child_prefix, this));
+    children_.push_back(std::make_shared<PrefixTreeNode>(child_prefix, this));
     child = children_.back();
   }
 }
@@ -74,7 +74,7 @@ void TreeNode::FindOrAddChild(std::shared_ptr<TreeNode>& child, const std::strin
 // Ordered prefix tree
 // -------------------------------------------------------------------------------------------------
 OrderedPrefixTree::OrderedPrefixTree(const std::string& root_name)
-  : root_(new TreeNode(root_name)) { }
+  : root_(new PrefixTreeNode(root_name)) { }
 
 OrderedPrefixTree::~OrderedPrefixTree() { }
 
@@ -83,7 +83,7 @@ void OrderedPrefixTree::GetRootPrefix(std::string* root_prefix) const {
 }
 
 void OrderedPrefixTree::Insert(const std::vector<std::string>& prefixes) {
-  std::shared_ptr<TreeNode> node = root_;
+  std::shared_ptr<PrefixTreeNode> node = root_;
   for (auto prefix = prefixes.begin(); prefix != prefixes.end(); ++prefix) {
     (*node).FindOrAddChild(node, *prefix);
   }
@@ -96,7 +96,7 @@ void OrderedPrefixTree::Build(OrderedPrefixTree* tree,
   }
 }
 
-bool OrderedPrefixTree::Find(std::shared_ptr<TreeNode>& node,
+bool OrderedPrefixTree::Find(std::shared_ptr<PrefixTreeNode>& node,
   std::vector<std::string>* remaining,
   const std::vector<std::string>& prefixes) const {
 
@@ -140,9 +140,13 @@ bool OrderedPrefixTree::Find(std::shared_ptr<TreeNode>& node,
   return false;
 }
 
-bool OrderedPrefixTree::Find(std::shared_ptr<TreeNode>& node,
+bool OrderedPrefixTree::Find(std::shared_ptr<PrefixTreeNode>& node,
   const std::vector<std::string>& prefixes) const {
   return Find(node, nullptr, prefixes);
+}
+
+std::shared_ptr<PrefixTreeNode> OrderedPrefixTree::GetRoot() const {
+  return root_;
 }
 
 }
