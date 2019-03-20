@@ -130,7 +130,7 @@ Status AvroParserTree::Build(AvroParserTree* parser_tree,
   OrderedPrefixTree::Build(&prefix_tree, prefixes);
 
   // Use the expected type to decide which value parser node to add
-  string root_prefix;
+  string root_prefix();
   prefix_tree.GetRootPrefix(&root_prefix);
   (*parser_tree).root_ = std::make_shared<AttributeParser>(root_prefix);
   std::shared_ptr<PrefixTreeNode> root(prefix_tree.GetRootNode());

@@ -20,21 +20,23 @@ PrefixTreeNode::PrefixTreeNode(const std::string& prefix, PrefixTreeNode* father
 
 PrefixTreeNode::~PrefixTreeNode() { }
 
-void PrefixTreeNode::GetChildren(std::vector<std::shared_ptr<PrefixTreeNode>>* children) const {
-  *children = children_;
+std::vector<PrefixTreeNodeSharedPtr> PrefixTreeNode::GetChildren() const {
+  return children_;
 }
 
-void PrefixTreeNode::GetPrefix(std::string* prefix) const {
-  *prefix = prefix_;
+std::string PrefixTreeNode::GetPrefix() const {
+  return prefix_;
 }
 
-void PrefixTreeNode::GetName(std::string* name, char separator) const {
-  *name += prefix_;
+std::string PrefixTreeNode::GetName(char separator) const {
+  std::string name;
+  name += prefix_;
   PrefixTreeNode* father = father_;
   while (father != nullptr) {
-    *name = father->prefix_ + separator + *name;
+    name = father->prefix_ + separator + name;
     father = father->father_;
   }
+  return name;
 }
 
 bool PrefixTreeNode::IsTerminal() const {
@@ -47,26 +49,27 @@ bool PrefixTreeNode::HasPrefix() const {
 
 // TODO(fraudies): Could be optimized using a set instead of a std::vector--but note that we need
 // the std::vector to preserve order
-bool PrefixTreeNode::Find(std::shared_ptr<PrefixTreeNode>& child, const std::string& child_prefix) const {
+PrefixTreeNodeSharedPtr PrefixTreeNode::Find(const std::string& child_prefix) const {
   LOG(INFO) << "Find " << child_prefix;
-  std::string prefix;
-  for (auto child_ : children_) {
-    (*child_).GetPrefix(&prefix);
+  for (auto child : children_) {
+    std::string prefix((*child).GetPrefix());
     LOG(INFO) << "Checking child: " << prefix;
     if (prefix.compare(child_prefix) == 0) {
-      child = child_;
-      return true;
+      return child;
     }
   }
-  return false;
+  return nullptr;
 }
 
-void PrefixTreeNode::FindOrAddChild(std::shared_ptr<PrefixTreeNode>& child, const std::string& child_prefix) {
+PrefixTreeNodeSharedPtr PrefixTreeNode::FindOrAddChild(const std::string& child_prefix) {
   // If we could not find it make it, add it, and assign it; otherwise we assigned it
-  if (!Find(child, child_prefix)) {
+  PrefixTreeNodeSharedPtr child(Find(child_prefix));
+  if (child == nullptr) {
     // Note, the child we found will be the father
     children_.push_back(std::make_shared<PrefixTreeNode>(child_prefix, this));
-    child = children_.back();
+    return children_.back();
+  } else {
+    return child;
   }
 }
 
@@ -76,16 +79,18 @@ void PrefixTreeNode::FindOrAddChild(std::shared_ptr<PrefixTreeNode>& child, cons
 OrderedPrefixTree::OrderedPrefixTree(const std::string& root_name)
   : root_(new PrefixTreeNode(root_name)) { }
 
-OrderedPrefixTree::~OrderedPrefixTree() { }
+std::string OrderedPrefixTree::GetRootPrefix() const {
+  return (*root_).GetPrefix();
+}
 
-void OrderedPrefixTree::GetRootPrefix(std::string* root_prefix) const {
-  (*root_).GetPrefix(root_prefix);
+PrefixTreeNodeSharedPtr OrderedPrefixTree::GetRoot() const {
+  return root_;
 }
 
 void OrderedPrefixTree::Insert(const std::vector<std::string>& prefixes) {
-  std::shared_ptr<PrefixTreeNode> node = root_;
+  PrefixTreeNodeSharedPtr node = root_;
   for (auto prefix = prefixes.begin(); prefix != prefixes.end(); ++prefix) {
-    (*node).FindOrAddChild(node, *prefix);
+    node = (*node).FindOrAddChild(*prefix);
   }
 }
 
@@ -96,57 +101,42 @@ void OrderedPrefixTree::Build(OrderedPrefixTree* tree,
   }
 }
 
-bool OrderedPrefixTree::Find(std::shared_ptr<PrefixTreeNode>& node,
-  std::vector<std::string>* remaining,
+PrefixTreeNodeSharedPtr OrderedPrefixTree::FindNearest(std::vector<std::string>* remaining,
   const std::vector<std::string>& prefixes) const {
-
+  // copy vector elements
+  *remaining = prefixes;
   // If the root has a prefix
-  auto prefix = prefixes.begin();
+  auto prefix = (*remaining).begin();
   if ((*root_).HasPrefix()) {
     // If we dont have any prefixes then we can't match the root
-    if (prefix == prefixes.end()) {
-      return false;
+    if (prefix == (*remaining).end()) {
+      return nullptr;
     } else {
-      std::string root_prefix;
-      GetRootPrefix(&root_prefix);
+      std::string root_prefix(GetRootPrefix());
       // If the root prefix does not match we can't find the node
       if (root_prefix.compare(*prefix) != 0) {
-        return false;
+        return nullptr;
       }
       // We matched
-      prefix++;
+      prefix = (*remaining).erase(prefix);
     }
   }
 
-  node = root_;
+  PrefixTreeNodeSharedPtr node(root_);
+  PrefixTreeNodeSharedPtr next_node;
   // We don't have a root with prefix, then start with the children
-  while (prefix != prefixes.end() && (*node).Find(node, *prefix)) {
-    prefix++;
+  while (prefix != (*remaining).end() && (next_node = (*node).Find(*prefix))) {
+    prefix = (*remaining).erase(prefix);
+    node = next_node;
   }
 
-  // If we exhausted all prefixes we found the node
-  if (prefix == prefixes.end()) {
-    return true;
-  }
-
-  // We still have further prefixes
-  if (remaining == nullptr) {
-    return false;
-  }
-  do {
-    (*remaining).push_back(*prefix);
-  } while (++prefix != prefixes.end());
-
-  return false;
+  return node;
 }
 
-bool OrderedPrefixTree::Find(std::shared_ptr<PrefixTreeNode>& node,
-  const std::vector<std::string>& prefixes) const {
-  return Find(node, nullptr, prefixes);
-}
-
-std::shared_ptr<PrefixTreeNode> OrderedPrefixTree::GetRoot() const {
-  return root_;
+PrefixTreeNodeSharedPtr OrderedPrefixTree::Find(const std::vector<std::string>& prefixes) const {
+  std::vector<std::string> remaining;
+  PrefixTreeNodeSharedPtr node = FindNearest(&remaining, prefixes);
+  return remaining.size() == 0 ? node : nullptr;
 }
 
 }

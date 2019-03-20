@@ -21,8 +21,7 @@ namespace data {
 TEST(PrefixTreeNodeTest, IsTerminal) {
   PrefixTreeNode node("father");
   EXPECT_TRUE(node.IsTerminal());
-  std::shared_ptr<PrefixTreeNode> child;
-  node.FindOrAddChild(child, "child");
+  node.FindOrAddChild("child");
   EXPECT_TRUE(!node.IsTerminal());
 }
 
@@ -35,45 +34,35 @@ TEST(PrefixTreeNodeTest, HasPrefix) {
 
 TEST(PrefixTreeNodeTest, GetPrefix) {
   PrefixTreeNode node("name");
-  string prefix;
-  node.GetPrefix(&prefix);
-  EXPECT_EQ(prefix, "name");
+  EXPECT_EQ(node.GetPrefix(), "name");
 }
 
 // Tests: Find, FindOrAdd, GetPrefix
 TEST(PrefixTreeNodeTest, SingleChild) {
   PrefixTreeNode node("father");
-  std::shared_ptr<PrefixTreeNode> child;
   // Expect the child does not exist
-  EXPECT_TRUE(!node.Find(child, "child"));
+  EXPECT_TRUE(!node.Find("child"));
   // Insert the child
-  node.FindOrAddChild(child, "child");
+  node.FindOrAddChild("child");
   // Child must be present now
-  EXPECT_TRUE(node.Find(child, "child"));
-  string prefix;
-  (*child).GetPrefix(&prefix);
-  EXPECT_EQ(prefix, "child");
+  PrefixTreeNodeSharedPtr child(node.Find("child"));
+  EXPECT_TRUE(child != nullptr);
+  EXPECT_EQ((*child).GetPrefix(), "child");
   // Check the name
-  string name;
-  (*child).GetName(&name, '.');
-  EXPECT_EQ(name, "father.child");
+  EXPECT_EQ((*child).GetName('.'), "father.child");
 }
 
 TEST(PrefixTreeNodeTest, GetChildren) {
   PrefixTreeNode node("father");
-  std::shared_ptr<PrefixTreeNode> child;
-  node.FindOrAddChild(child, "child1");
-  node.FindOrAddChild(child, "child2");
-  node.FindOrAddChild(child, "child3");
-  std::vector<std::shared_ptr<PrefixTreeNode>> children;
-  std::vector< std::string > names{"child1", "child2", "child3"};
-  node.GetChildren(&children);
+  node.FindOrAddChild("child1");
+  node.FindOrAddChild("child2");
+  node.FindOrAddChild("child3");
+  std::vector<PrefixTreeNodeSharedPtr> children(node.GetChildren());
   int n_child = 3;
   EXPECT_EQ(children.size(), n_child);
-  string prefix;
+  std::vector<std::string > names{"child1", "child2", "child3"};
   for (int i_child = 0; i_child < n_child; ++i_child) {
-    (*children[i_child]).GetPrefix(&prefix);
-    EXPECT_EQ(prefix, names[i_child]);
+    EXPECT_EQ((*children[i_child]).GetPrefix(), names[i_child]);
   }
 }
 
@@ -82,15 +71,11 @@ TEST(PrefixTreeNodeTest, GetChildren) {
 // Tests for an ordered prefix tree
 // ------------------------------------------------------------
 TEST(OrderedPrefixTree, GetRootPrefix) {
-  string root_prefix;
-
   OrderedPrefixTree wout;
-  wout.GetRootPrefix(&root_prefix);
-  EXPECT_EQ(root_prefix, "");
+  EXPECT_EQ(wout.GetRootPrefix(), "");
 
   OrderedPrefixTree with("namespace");
-  with.GetRootPrefix(&root_prefix);
-  EXPECT_EQ(root_prefix, "namespace");
+  EXPECT_EQ(with.GetRootPrefix(), "namespace");
 }
 
 TEST(OrderedPrefixTree, BuildEmpty) {
@@ -101,26 +86,24 @@ TEST(OrderedPrefixTree, BuildEmpty) {
 
 TEST(OrderedPrefixTree, BuildSmall) {
   std::vector< std::vector<std::string> > prefixes_list{{"com"}};
-  std::shared_ptr<PrefixTreeNode> node;
   std::vector< std::string > present{"com"};
   std::vector< std::string > absent{"nothing"};
-  string prefix;
   OrderedPrefixTree tree;
   OrderedPrefixTree::Build(&tree, prefixes_list);
 
   // Check for present prefixes
-  EXPECT_TRUE(tree.Find(node, present));
-  (*node).GetPrefix(&prefix);
-  EXPECT_EQ(prefix, "com");
+  PrefixTreeNodeSharedPtr node(tree.Find(present));
+
+  EXPECT_TRUE(node);
+  EXPECT_EQ((*node).GetPrefix(), "com");
 
   // Check for absent prefixes
-  EXPECT_TRUE(!tree.Find(node, absent));
+  EXPECT_TRUE(!tree.Find(absent));
 }
 
 TEST(OrderedPrefixTree, BuildLarge) {
   std::vector< std::vector<std::string> > prefixes_list{{"com", "google", "search"},
     {"com", "linkedin", "jobs"}, {"com", "linkedin", "members"}};
-  std::shared_ptr<PrefixTreeNode> node;
   std::vector< std::string > present_with_remaining{"com", "google", "search", "cloud"};
   std::vector< std::string > present_partial_match{"com", "google"};
   std::vector< std::string > present_full_match{"com", "linkedin", "members"};
@@ -129,16 +112,16 @@ TEST(OrderedPrefixTree, BuildLarge) {
   OrderedPrefixTree::Build(&tree, prefixes_list);
 
   // Check for present prefixes
-  EXPECT_TRUE(tree.Find(node, present_partial_match));
-  EXPECT_TRUE(tree.Find(node, present_full_match));
+  EXPECT_TRUE(tree.Find(present_partial_match));
+  EXPECT_TRUE(tree.Find(present_full_match));
 
   // Check for absent prefixes
-  EXPECT_TRUE(!tree.Find(node, absent));
+  EXPECT_TRUE(!tree.Find(absent));
 
   // Check that the partial match returns the right remaining
-  std::vector< std::string > remaining;
+  std::vector<std::string> remaining;
   // A partial match returns false and the remaining part matches cloud
-  EXPECT_TRUE(!tree.Find(node, &remaining, present_with_remaining));
+  EXPECT_TRUE(tree.FindNearest(&remaining, present_with_remaining));
   EXPECT_EQ(remaining.size(), 1);
   EXPECT_EQ(remaining.front(), "cloud");
 }
