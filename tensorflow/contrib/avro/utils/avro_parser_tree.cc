@@ -12,19 +12,13 @@ limitations under the License.
 #include "re2/re2.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/strings/str_util.h"
-#include "tensorflow/contrib/avro/utils/prefix_tree.h"
 #include "tensorflow/contrib/avro/utils/avro_parser_tree.h"
-#include "tensorflow/contrib/avro/utils/avro_parser.h"
 
 namespace tensorflow {
 namespace data {
 
 // RE2 https://github.com/google/re2/blob/master/re2/re2.h
 // str_util https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/lib/strings/str_util.h
-
-AvroParserTree::AvroParserTree() : root_(nullptr) {}
-AvroParserTree::~AvroParserTree() { }
-
 bool Re2Match(std::vector<string>* results, const string& pattern, const string& str) {
     RE2::Options opt;
     opt.set_log_errors(false);
@@ -46,6 +40,9 @@ bool Re2Match(std::vector<string>* results, const string& pattern, const string&
     }
     return RE2::FullMatchN(str, regex, args_pointers.data(), n_args);
 }
+
+AvroParserTree::AvroParserTree() : root_(nullptr) { }
+AvroParserTree::~AvroParserTree() { }
 
 Status AvroParserTree::ParseValue(std::vector<ValueStoreUniquePtr>* values, const AvroValueSharedPtr& value) {
   // will also be used to get the data type for the node
@@ -130,59 +127,55 @@ Status AvroParserTree::Build(AvroParserTree* parser_tree,
   OrderedPrefixTree::Build(&prefix_tree, prefixes);
 
   // Use the expected type to decide which value parser node to add
-  string root_prefix();
-  prefix_tree.GetRootPrefix(&root_prefix);
-  (*parser_tree).root_ = std::make_shared<AttributeParser>(root_prefix);
-  std::shared_ptr<PrefixTreeNode> root(prefix_tree.GetRootNode());
-  std::vector<std::shared_ptr<PrefixTreeNode> > children;
-  root.GetChildren(&children);
+  (*parser_tree).root_ = std::make_shared<NamespaceParser>(prefix_tree.GetRootPrefix());
 
   // Use the prefix tree to build the parser tree
-  TF_RETURN_IF_ERROR(Build((*parser_tree).root_.get(), children));
+  TF_RETURN_IF_ERROR((*parser_tree).Build(
+    (*parser_tree).root_.get(),
+    (*prefix_tree.GetRoot()).GetChildren()));
 
-  // Set keys_and_types using the keys
+  // Set keys and types using the keys
   (*parser_tree).keys_and_types_ = keys_and_types;
+  // Set key to type for fast type access based on key
+  for (const auto& key_and_type : keys_and_types) {
+    (*parser_tree).key_to_type_[key_and_type.first] = key_and_type.second;
+  }
 }
 
-Status AvroParserTree::Build(AvroValueParser* parent, const std::vector<std::shared_ptr<PrefixTreeNode>>& children) {
-  for (std::shared_ptr<PrefixTreeNode> child : children) {
-    AvroParserSharedPtr avro_parser(nullptr);
+Status AvroParserTree::Build(AvroParser* parent, const std::vector<PrefixTreeNodeSharedPtr>& children) {
+  for (PrefixTreeNodeSharedPtr child : children) {
+    AvroParserUniquePtr avro_parser(nullptr);
     TF_RETURN_IF_ERROR(CreateAvroParser(avro_parser, (*child).GetPrefix()));
-    (*parent).children_.push_back(avro_parser);
+    (*parent).AddChild(std::move(avro_parser));
     if ((*child).IsTerminal()) {
-      const string name;
-      (*child).GetName(&name, '.');
-      auto key_and_type = values_.find(name);
-      if (key_and_type == values_.end()) {
+      const string name((*child).GetName('.'));
+      auto key_and_type = key_to_type_.find(name);
+      if (key_and_type == key_to_type_.end()) {
         return Status(errors::NotFound("Could not find ", name, " as key"));
       }
-      DataType data_type = key_and_type->second;
-      std::unique_ptr<AvroParser> child_parser(nullptr);
-      TF_RETURN_IF_ERROR(CreateValueParser(child_parser, name, data_type));
-      value_parser.AddChild(child_parser);
+      AvroParserUniquePtr child_parser(nullptr);
+      TF_RETURN_IF_ERROR(CreateValueParser(child_parser, name, (*key_and_type).second));
     } else {
-      std::vector<std::shared_ptr<PrefixTreeNode> > child_children;
-      (*child).GetChildren(child_children);
-      TF_RETURN_IF_ERROR(Build(avro_parser, child_children));
+      TF_RETURN_IF_ERROR(Build(avro_parser.get(), (*child).GetChildren()));
     }
   }
   return Status::OK();
 }
 
 Status AvroParserTree::GetUniqueKeys(std::unordered_set<string>* keys,
-  const std::vector<pair<string, DataType>>& keys_and_types) {
+  const std::vector<std::pair<string, DataType>>& keys_and_types) {
 
-  for (auto& key_and_type : keys_and_types) {
+  for (const auto& key_and_type : keys_and_types) {
     const string& key = key_and_type.first;
     auto inserted = (*keys).insert(key);
     if (!inserted.second) {
-      return Status(error::InvalidArgument("Found duplicate key ", key));
+      return Status(errors::InvalidArgument("Found duplicate key ", key));
     }
   }
   return Status::OK();
 }
 
-Status AvroParserTree::CreateAvroParser(std::unique_ptr<AvroParser>& avro_parser,
+Status AvroParserTree::CreateAvroParser(AvroParserUniquePtr& avro_parser,
   const string& infix) {
 
   if (IsArrayAll(infix)) {
@@ -192,7 +185,7 @@ Status AvroParserTree::CreateAvroParser(std::unique_ptr<AvroParser>& avro_parser
 
   int index;
   if (IsArrayIndex(&index, infix)) {
-    avro_parser.reset(new ArrayIndexParser());
+    avro_parser.reset(new ArrayIndexParser(index));
     return Status::OK();
   }
 
@@ -202,7 +195,7 @@ Status AvroParserTree::CreateAvroParser(std::unique_ptr<AvroParser>& avro_parser
   // TODO(fraudies): Check that lhs and rhs are valid using the prefix tree and current node
   if (IsFilter(&lhs, &rhs, infix)) {
 
-    if (IsStringConstant(constant, rhs)) {
+    if (IsStringConstant(&constant, rhs)) {
       avro_parser.reset(new ArrayFilterParser(lhs, constant, kRhsIsConstant));
     } else {
       avro_parser.reset(new ArrayFilterParser(lhs, rhs, kRhsIsValue));
@@ -217,17 +210,16 @@ Status AvroParserTree::CreateAvroParser(std::unique_ptr<AvroParser>& avro_parser
     return Status::OK();
   }
 
-  string name;
   // TODO(fraudies): Check that the name appears in the prefix tree
-  if (IsAttribute(&name, infix)) {
-    avro_parser.reset(new AttributeParser(name));
+  if (IsAttribute(infix)) {
+    avro_parser.reset(new AttributeParser(infix));
     return Status::OK();
   }
 
-  return Status(error::InvalidArgument("Unable to match ", infix, " to valid internal avro parser"));
+  return Status(errors::InvalidArgument("Unable to match ", infix, " to valid internal avro parser"));
 }
 
-Status AvroParserTree::CreateValueParser(std::unique_ptr<AvroValueParser>& value_parser,
+Status AvroParserTree::CreateValueParser(AvroParserUniquePtr& value_parser,
   const string& name, DataType data_type) {
 
   switch (data_type) {
@@ -256,7 +248,7 @@ inline bool AvroParserTree::IsFilter(string* lhs, string* rhs, const string& key
 }
 
 inline bool AvroParserTree::IsArrayAll(const string& infix) {
-  return "[*]".compare(infix) == 0;
+  return string("[*]").compare(infix) == 0;
 }
 
 inline bool AvroParserTree::IsArrayIndex(int* index, const string& infix) {
@@ -275,19 +267,19 @@ inline bool AvroParserTree::IsStringConstant(string* constant, const string& inf
   return RE2::FullMatch(infix, "'(\\S+)'", constant);
 }
 
-Status AvroParserTree::InitValueBuffers(std::map<string, std::unique_ptr<ValueStore>>* key_to_value) {
-  for (auto& key_and_type : keys_and_types_) {
+Status AvroParserTree::InitValueBuffers(std::map<string, ValueStoreUniquePtr>* key_to_value) {
+  for (const auto& key_and_type : keys_and_types_) {
     const string& key = key_and_type.first;
     DataType data_type = key_and_type.second;
     switch (data_type) {
       // Fill in the ValueBuffer
       case DT_BOOL:
-        key_to_value.insert(
+        (*key_to_value).insert(
           std::make_pair(key, std::unique_ptr<BoolValueBuffer>(new BoolValueBuffer())));
         break;
       case DT_INT32:
-        key_to_value.insert(
-          std::make_pair(key, std::unique_ptr<IntValueBuffer>(new IntValueBuffer()))));
+        (*key_to_value).insert(
+          std::make_pair(key, std::unique_ptr<IntValueBuffer>(new IntValueBuffer())));
         break;
       case DT_INT64:
         return Status(errors::Unimplemented("Long value buffer not supported yet"));
@@ -296,7 +288,7 @@ Status AvroParserTree::InitValueBuffers(std::map<string, std::unique_ptr<ValueSt
       case DT_DOUBLE:
         return Status(errors::Unimplemented("Double value buffer not supported yet"));
       case DT_STRING:
-        key_to_value.insert(
+        (*key_to_value).insert(
           std::make_pair(key, std::unique_ptr<StringValueBuffer>(new StringValueBuffer())));
       default:
         return Status(errors::Unimplemented("Type ", data_type, " not supported!"));

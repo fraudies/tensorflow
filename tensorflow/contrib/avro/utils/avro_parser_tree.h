@@ -16,7 +16,6 @@ limitations under the License.
 #include <vector>
 #include "tensorflow/contrib/avro/utils/avro_parser.h"
 #include "tensorflow/contrib/avro/utils/prefix_tree.h"
-#include "tensorflow/contrib/avro/utils/value_buffer.h"
 
 namespace tensorflow {
 namespace data {
@@ -32,14 +31,14 @@ public:
   // pointers are only valid as long as the object exists
   Status ParseValue(std::vector<ValueStoreUniquePtr>* values, const AvroValueSharedPtr& value);
 private:
-  Status Build(AvroValueParser* parent, const std::vector<std::shared_ptr<PrefixTreeNode>>& children);
+  Status Build(AvroParser* parent, const std::vector<PrefixTreeNodeSharedPtr>& children);
 
   static Status GetUniqueKeys(std::unordered_set<string>* keys,
     const std::vector<std::pair<string, DataType>>& keys_and_types);
 
-  static Status CreateAvroParser(std::unique_ptr<AvroParser>& value_parser, const string& infix);
+  static Status CreateAvroParser(AvroParserUniquePtr& value_parser, const string& infix);
 
-  static Status CreateValueParser(std::unique_ptr<AvroValueParser>& value_parser,
+  static Status CreateValueParser(AvroParserUniquePtr& value_parser,
     const string& name, DataType data_type);
 
   static bool IsFilter(string* lhs, string* rhs, const string& key);
@@ -52,7 +51,11 @@ private:
   Status InitValueBuffers(std::map<string, ValueStoreUniquePtr>* key_to_value);
 
   AvroParserSharedPtr root_;
-  std::vector<std::pair<string, DataType> > keys_and_types_; // we need this here to preserve the order in the parse value method, and run InitValueBuffers before each parse call
+
+  // used to preserve the order in the parse value method, InitValueBuffers before each parse call
+  std::vector<std::pair<string, DataType> > keys_and_types_;
+  // This map is a helper for fast access of the data type that corresponds to the key
+  std::map<string, DataType> key_to_type_;
 };
 
 }

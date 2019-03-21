@@ -26,6 +26,7 @@ namespace data {
 class AvroParser; // forward declare for pointer definition
 class AvroValueParser;
 
+using AvroParserUniquePtr = std::unique_ptr<AvroParser>;
 using AvroParserSharedPtr = std::shared_ptr<AvroParser>;
 using AvroValueParserSharedPtr = std::shared_ptr<AvroValueParser>;
 
@@ -179,6 +180,22 @@ public:
 private:
   string name_;
 };
+
+class NamespaceParser : public AvroParser {
+public:
+  NamespaceParser(const string& name);
+  virtual ~NamespaceParser();
+  // checks namespace of value against given namespace
+  // - if matches passes avro value to all it's child parsers
+  // - if does not match returns error with actual and expected namespace
+  Status ResolveValues(
+    std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
+    const avro_value_t& value,
+    const std::map<string, ValueStoreUniquePtr>& parsed_values) const override;
+private:
+  string name_;
+};
+
 
 }
 }

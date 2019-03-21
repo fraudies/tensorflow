@@ -159,8 +159,8 @@ Status ArrayAllParser::ResolveValues(
 
   size_t n_elements = 0;
   avro_value_get_size(&value, &n_elements);
-  const std::vector<AvroParserSharedPtr>& children = GetChildren();
-  const std::vector<AvroValueParserSharedPtr>& final_descendents = GetFinalDescendents();
+  const std::vector<AvroParserSharedPtr>& children(GetChildren());
+  const std::vector<AvroValueParserSharedPtr>& final_descendents(GetFinalDescendents());
 
   // Add a begin mark to all value buffers under this array
   AvroValueSharedPtr begin_value(new avro_value_t);
@@ -202,8 +202,8 @@ Status ArrayIndexParser::ResolveValues(
       ". Range [", 0, ", ", n_elements, ")."));
   }
 
-  const std::vector<AvroParserSharedPtr>& children = GetChildren();
-  const std::vector<AvroValueParserSharedPtr>& final_descendents = GetFinalDescendents();
+  const std::vector<AvroParserSharedPtr>& children(GetChildren());
+  const std::vector<AvroValueParserSharedPtr>& final_descendents(GetFinalDescendents());
 
   // Add a begin mark to all value buffers under this array
   AvroValueSharedPtr begin_value(new avro_value_t);
@@ -259,7 +259,7 @@ Status ArrayFilterParser::ResolveValues(
   avro_value_get_size(&value, &n_elements);
 
   if (addValue) {
-    const std::vector<AvroParserSharedPtr>& children = GetChildren();
+    const std::vector<AvroParserSharedPtr>& children(GetChildren());
     // shuttle it through the parser tree to add all these marks.
     for (size_t i_elements = 0; i_elements < n_elements; ++i_elements) {
       AvroValueSharedPtr next_value(new avro_value_t);
@@ -292,7 +292,7 @@ Status MapKeyParser::ResolveValues(
   if (avro_value_get_by_name(&value, key_.c_str(), next_value.get(), NULL) != 0) {
     return errors::InvalidArgument("Unable to find key '", key_, "'.");
   }
-  const std::vector<AvroParserSharedPtr>& children = GetChildren();
+  const std::vector<AvroParserSharedPtr>& children(GetChildren());
   for (const AvroParserSharedPtr& child : children) {
     (*values).push(std::make_pair(child, next_value));
   }
@@ -310,9 +310,26 @@ Status AttributeParser::ResolveValues(
   if (avro_value_get_by_name(&value, name_.c_str(), next_value.get(), NULL) != 0) {
     return errors::InvalidArgument("Unable to find name '", name_, "'.");
   }
-  const std::vector<AvroParserSharedPtr>& children = GetChildren();
+  const std::vector<AvroParserSharedPtr>& children(GetChildren());
   for (const AvroParserSharedPtr& child : children) {
-    // TODO: Check if need to do more for memory management
+    (*values).push(std::make_pair(child, next_value));
+  }
+  return Status::OK();
+}
+
+NamespaceParser::NamespaceParser(const string& name) : name_(name) { }
+NamespaceParser::~NamespaceParser() { }
+Status NamespaceParser::ResolveValues(
+  std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
+  const avro_value_t& value,
+  const std::map<string, ValueStoreUniquePtr>& parsed_values) const {
+
+  // TODO(fraudies): Check namespace match
+  AvroValueSharedPtr next_value(new avro_value_t);
+  avro_value_copy_ref(next_value.get(), &value);
+
+  const std::vector<AvroParserSharedPtr>& children(GetChildren());
+  for (const AvroParserSharedPtr& child : children) {
     (*values).push(std::make_pair(child, next_value));
   }
   return Status::OK();

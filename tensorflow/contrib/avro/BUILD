@@ -22,12 +22,15 @@ cc_library(
     name = "cc_utils",
     srcs = ["utils/avro_mem_reader.cc",
             "utils/prefix_tree.cc",
-            "utils/avro_parser.cc"],
+            "utils/value_buffer.cc",
+            "utils/avro_parser.cc",
+            "utils/avro_parser_tree.cc"],
     hdrs = ["utils/avro_value.h",
             "utils/avro_mem_reader.h",
             "utils/prefix_tree.h",
             "utils/value_buffer.h",
-            "utils/avro_parser.h"],
+            "utils/avro_parser.h",
+            "utils/avro_parser_tree.h"],
     deps = [
         "//third_party/avro",
         "//tensorflow/core:protos_all_cc",
@@ -72,6 +75,17 @@ tf_cc_test(
 tf_cc_test(
     name = "avro_parser_test",
     srcs = ["utils/avro_parser_test.cc"],
+    deps = [
+        ":cc_utils",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
+tf_cc_test(
+    name = "avro_parser_tree_test",
+    srcs = ["utils/avro_parser_tree_test.cc"],
     deps = [
         ":cc_utils",
         "//tensorflow/core:test",
