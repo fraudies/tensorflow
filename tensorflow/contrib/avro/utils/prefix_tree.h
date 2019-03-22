@@ -38,6 +38,7 @@ public:
   bool HasPrefix() const;
   PrefixTreeNodeSharedPtr Find(const std::string& child_prefix) const; // true if found, otherwise false and child is not altered
   PrefixTreeNodeSharedPtr FindOrAddChild(const std::string& child_prefix); // Child is ALWAYS assigned
+  string ToString(int level) const;
 private:
   std::string prefix_;
   PrefixTreeNode* father_; // Used to construct the full name
@@ -61,6 +62,9 @@ public:
 
   // Returns tree node if found otherwise nullptr
   PrefixTreeNodeSharedPtr Find(const std::vector<std::string>& prefixes) const;
+
+  // Return a the ordered prefix tree in a human readable format
+  string ToString() const;
 private:
   PrefixTreeNodeSharedPtr root_;
 };

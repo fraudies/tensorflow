@@ -48,11 +48,16 @@ public:
   inline virtual bool UsesParsedValues() const { return false; }
   inline bool IsTerminal() const { return children_.size() == 0; }
   inline void AddChild(const AvroParserSharedPtr& child) { children_.push_back(child); }
-protected:
+
+  // public for testing
   const std::vector<AvroParserSharedPtr>& GetChildren() const;
+  virtual string ToString(int level = 0) const = 0;
+protected:
   const std::vector<AvroValueParserSharedPtr>& GetFinalDescendents() const;
   void AddBeginMarkersToFinalDescendents(std::map<string, ValueStoreUniquePtr>* parsed_values) const;
   void AddFinishMarkersToFinalDescendents(std::map<string, ValueStoreUniquePtr>* parsed_values) const;
+  string ChildrenToString(int level) const;
+  string LevelToString(int level) const;
 private:
   std::vector<AvroParserSharedPtr> children_;
   mutable std::vector<AvroValueParserSharedPtr> final_descendents_; // computed upon first call and then cached
@@ -78,6 +83,7 @@ public:
   virtual ~BoolValueParser();
   Status ParseValue(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
+  virtual string ToString(int level = 0) const;
 };
 
 class IntValueParser : public AvroValueParser {
@@ -86,6 +92,7 @@ public:
   virtual ~IntValueParser();
   Status ParseValue(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
+  virtual string ToString(int level = 0) const;
 };
 
 class StringValueParser : public AvroValueParser {
@@ -94,6 +101,7 @@ public:
   virtual ~StringValueParser();
   Status ParseValue(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
+  virtual string ToString(int level = 0) const;
 };
 
 class ArrayBeginMarkerParser : public AvroValueParser {
@@ -101,6 +109,7 @@ public:
   ArrayBeginMarkerParser(const std::vector<AvroValueParserSharedPtr>& final_descendents);
   Status ParseValue(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
+  virtual string ToString(int level = 0) const;
 private:
   const std::vector<AvroValueParserSharedPtr> final_descendents_;
 };
@@ -110,6 +119,7 @@ public:
   ArrayFinishMarkerParser(const std::vector<AvroValueParserSharedPtr>& final_descendents);
   Status ParseValue(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
+  virtual string ToString(int level = 0) const;
 private:
   const std::vector<AvroValueParserSharedPtr> final_descendents_;
 };
@@ -123,6 +133,7 @@ public:
     std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
     const avro_value_t& value,
     const std::map<string, ValueStoreUniquePtr>& parsed_values) const override;
+  virtual string ToString(int level = 0) const;
 };
 
 class ArrayIndexParser : public AvroParser {
@@ -133,6 +144,7 @@ public:
     std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
     const avro_value_t& value,
     const std::map<string, ValueStoreUniquePtr>& parsed_values) const override;
+  virtual string ToString(int level = 0) const;
 private:
   size_t index_;
 };
@@ -148,6 +160,7 @@ public:
     std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
     const avro_value_t& value,
     const std::map<string, ValueStoreUniquePtr>& parsed_values) const override;
+  virtual string ToString(int level = 0) const;
 private:
   string lhs_;
   string rhs_;
@@ -162,6 +175,7 @@ public:
     std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
     const avro_value_t& value,
     const std::map<string, ValueStoreUniquePtr>& parsed_values) const override;
+  virtual string ToString(int level = 0) const;
 private:
   string key_;
 };
@@ -177,6 +191,7 @@ public:
     std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
     const avro_value_t& value,
     const std::map<string, ValueStoreUniquePtr>& parsed_values) const override;
+  virtual string ToString(int level = 0) const;
 private:
   string name_;
 };
@@ -192,6 +207,7 @@ public:
     std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
     const avro_value_t& value,
     const std::map<string, ValueStoreUniquePtr>& parsed_values) const override;
+  virtual string ToString(int level = 0) const;
 private:
   string name_;
 };

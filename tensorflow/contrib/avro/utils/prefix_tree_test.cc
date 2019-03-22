@@ -126,5 +126,22 @@ TEST(OrderedPrefixTree, BuildLarge) {
   EXPECT_EQ(remaining.front(), "cloud");
 }
 
+TEST(OrderedPrefixTree, ToString) {
+  std::vector< std::vector<std::string> > prefixes_list{{"com", "google", "search"},
+    {"com", "linkedin", "jobs"}, {"com", "linkedin", "members"}};
+  OrderedPrefixTree tree("namespace");
+  OrderedPrefixTree::Build(&tree, prefixes_list);
+  const string expected =
+    "|---namespace\n"
+    "|   |---com\n"
+    "|   |   |---google\n"
+    "|   |   |   |---search\n"
+    "|   |   |---linkedin\n"
+    "|   |   |   |---jobs\n"
+    "|   |   |   |---members\n";
+
+  EXPECT_EQ(tree.ToString(), expected);
+}
+
 }
 }

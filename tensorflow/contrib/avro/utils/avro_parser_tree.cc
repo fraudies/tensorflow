@@ -10,6 +10,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 #include "re2/re2.h"
+#include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/contrib/avro/utils/avro_parser_tree.h"
@@ -40,9 +41,6 @@ bool Re2Match(std::vector<string>* results, const string& pattern, const string&
     }
     return RE2::FullMatchN(str, regex, args_pointers.data(), n_args);
 }
-
-AvroParserTree::AvroParserTree() : root_(nullptr) { }
-AvroParserTree::~AvroParserTree() { }
 
 Status AvroParserTree::ParseValue(std::vector<ValueStoreUniquePtr>* values, const AvroValueSharedPtr& value) {
   // will also be used to get the data type for the node
@@ -78,6 +76,7 @@ Status AvroParserTree::Build(AvroParserTree* parser_tree,
   // Get all the keys and check for uniqueness
   std::unordered_set<string> keys;
   TF_RETURN_IF_ERROR(GetUniqueKeys(&keys, keys_and_types));
+  LOG(INFO) << "Created set of unique keys";
 
   // Ensure that we have keys for lhs/rhs of all filters first
   // Note, some keys in all_keys may not be used for the output but by filter expressions
@@ -123,8 +122,12 @@ Status AvroParserTree::Build(AvroParserTree* parser_tree,
       return Status(errors::InvalidArgument("Unable to parse key ", key));
     }
   }
+  LOG(INFO) << "Parsed keys into prefixes";
+
   OrderedPrefixTree prefix_tree;
   OrderedPrefixTree::Build(&prefix_tree, prefixes);
+  LOG(INFO) << "Built prefix tree";
+  LOG(INFO) << prefix_tree.ToString();
 
   // Use the expected type to decide which value parser node to add
   (*parser_tree).root_ = std::make_shared<NamespaceParser>(prefix_tree.GetRootPrefix());
@@ -133,6 +136,7 @@ Status AvroParserTree::Build(AvroParserTree* parser_tree,
   TF_RETURN_IF_ERROR((*parser_tree).Build(
     (*parser_tree).root_.get(),
     (*prefix_tree.GetRoot()).GetChildren()));
+  LOG(INFO) << "Built parser tree";
 
   // Set keys and types using the keys
   (*parser_tree).keys_and_types_ = keys_and_types;
@@ -140,6 +144,9 @@ Status AvroParserTree::Build(AvroParserTree* parser_tree,
   for (const auto& key_and_type : keys_and_types) {
     (*parser_tree).key_to_type_[key_and_type.first] = key_and_type.second;
   }
+  LOG(INFO) << "Built avro parser tree";
+
+  return Status::OK();
 }
 
 Status AvroParserTree::Build(AvroParser* parent, const std::vector<PrefixTreeNodeSharedPtr>& children) {

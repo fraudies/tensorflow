@@ -9,6 +9,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
+#include <sstream>
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/contrib/avro/utils/prefix_tree.h"
 
@@ -71,6 +72,18 @@ PrefixTreeNodeSharedPtr PrefixTreeNode::FindOrAddChild(const std::string& child_
   } else {
     return child;
   }
+}
+
+string PrefixTreeNode::ToString(int level) const {
+  std::stringstream ss;
+  for (int l = 0; l < level; ++l) {
+    ss << "|   ";
+  }
+  ss << "|---" << prefix_ << std::endl;
+  for (const auto child : children_) {
+    ss << (*child).ToString(level + 1);
+  }
+  return ss.str();
 }
 
 // -------------------------------------------------------------------------------------------------
@@ -137,6 +150,10 @@ PrefixTreeNodeSharedPtr OrderedPrefixTree::Find(const std::vector<std::string>& 
   std::vector<std::string> remaining;
   PrefixTreeNodeSharedPtr node = FindNearest(&remaining, prefixes);
   return remaining.size() == 0 ? node : nullptr;
+}
+
+string OrderedPrefixTree::ToString() const {
+  return root_.get() != nullptr ? (*root_).ToString(0) : "empty";
 }
 
 }

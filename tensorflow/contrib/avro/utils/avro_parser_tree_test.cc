@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensorflow/core/platform/test.h"
 #include "tensorflow/contrib/avro/utils/avro_parser_tree.h"
+#include "tensorflow/core/lib/core/status_test_util.h"
 
 // Note, these tests do not cover all avro types, because there are enough tests
 // in avroc for that. Instead these tests only cover the wrapping in the mem readers
@@ -33,7 +34,13 @@ TEST(RegexTest, SplitExpressions) {
     std::make_pair("friends[name.first=name.last].name.initial", DT_STRING),
     std::make_pair("friends[name.first=@name.first].name.initial", DT_STRING)};
   AvroParserTree parser_tree;
-  AvroParserTree::Build(&parser_tree, keys_and_types);
+  TF_EXPECT_OK(AvroParserTree::Build(&parser_tree, keys_and_types));
+  AvroParserSharedPtr root_parser = parser_tree.getRoot();
+  NamespaceParser* namespace_parser = dynamic_cast<NamespaceParser*>(root_parser.get());
+  EXPECT_TRUE(namespace_parser != nullptr);
+  const std::vector<AvroParserSharedPtr>& children((*root_parser).GetChildren());
+  EXPECT_EQ(children.size(), 3);
+  LOG(INFO) << (*root_parser).ToString();
 }
 
 }

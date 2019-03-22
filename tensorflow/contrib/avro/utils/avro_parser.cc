@@ -10,6 +10,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 #include <queue>
+#include <sstream>
 #include "tensorflow/contrib/avro/utils/avro_parser.h"
 
 namespace tensorflow {
@@ -68,6 +69,22 @@ const std::vector<AvroValueParserSharedPtr>& AvroParser::GetFinalDescendents() c
   return final_descendents_;
 }
 
+string AvroParser::ChildrenToString(int level) const {
+  std::stringstream ss;
+  for (const auto child : children_) {
+    ss << (*child).ToString(level + 1) << std::endl;
+  }
+  return ss.str();
+}
+
+string AvroParser::LevelToString(int level) const {
+  std::stringstream ss;
+  for (int l = 0; l < level; ++l) {
+    ss << "|   ";
+  }
+  return ss.str();
+}
+
 
 // ------------------------------------------------------------
 // AvroValueParser
@@ -93,6 +110,9 @@ Status BoolValueParser::ParseValue(std::map<string, ValueStoreUniquePtr>* values
   //(*(*values)[key_]).Add<bool>(field_value ? true : false);
   return Status::OK();
 }
+string BoolValueParser::ToString(int level) const {
+  return LevelToString(level) + "|---BoolValue";
+}
 
 IntValueParser::IntValueParser(const string& key) : AvroValueParser(key) { }
 IntValueParser::~IntValueParser() { }
@@ -105,6 +125,9 @@ Status IntValueParser::ParseValue(std::map<string, ValueStoreUniquePtr>* values,
   // Assume the key exists and cast is possible
   (*reinterpret_cast<IntValueBuffer*>((*values)[key_].get())).Add(field_value);
   return Status::OK();
+}
+string IntValueParser::ToString(int level) const {
+  return LevelToString(level) + "|---IntValue";
 }
 
 StringValueParser::StringValueParser(const string& key) : AvroValueParser(key) { }
@@ -121,6 +144,9 @@ Status StringValueParser::ParseValue(std::map<string, ValueStoreUniquePtr>* valu
   // (*(*values)[key_]).AddByRef<string>(string(field_value, field_size - 1));
   return Status::OK();
 }
+string StringValueParser::ToString(int level) const {
+  return LevelToString(level) + "|---StringValue";
+}
 
 ArrayBeginMarkerParser::ArrayBeginMarkerParser(const std::vector<AvroValueParserSharedPtr>& final_descendents)
   : AvroValueParser("BeginMarker"), final_descendents_(final_descendents) { }
@@ -133,6 +159,9 @@ Status ArrayBeginMarkerParser::ParseValue(std::map<string, ValueStoreUniquePtr>*
   }
 
   return Status::OK();
+}
+string ArrayBeginMarkerParser::ToString(int level) const {
+  return LevelToString(level) + "|---ArrayBeginMarkerParser";
 }
 
 ArrayFinishMarkerParser::ArrayFinishMarkerParser(const std::vector<AvroValueParserSharedPtr>& final_descendents)
@@ -147,7 +176,9 @@ Status ArrayFinishMarkerParser::ParseValue(std::map<string, ValueStoreUniquePtr>
 
   return Status::OK();
 }
-
+string ArrayFinishMarkerParser::ToString(int level) const {
+  return LevelToString(level) + "|---ArrayFinishMarkerParser";
+}
 
 // ------------------------------------------------------------
 // Concrete implementations of value parsers
@@ -185,6 +216,12 @@ Status ArrayAllParser::ResolveValues(
       std::make_shared<ArrayFinishMarkerParser>(final_descendents), finish_value));
 
   return Status::OK();
+}
+string ArrayAllParser::ToString(int level) const {
+  std::stringstream ss;
+  ss << LevelToString(level) << "|---ArrayAllParser" << std::endl;
+  ss << ChildrenToString(level);
+  return ss.str();
 }
 
 ArrayIndexParser::ArrayIndexParser(size_t index) : index_(index) { }
@@ -227,11 +264,16 @@ Status ArrayIndexParser::ResolveValues(
 
   return Status::OK();
 }
+string ArrayIndexParser::ToString(int level) const {
+  std::stringstream ss;
+  ss << LevelToString(level) << "|---ArrayIndexParser(" << index_ << ")" << std::endl;
+  ss << ChildrenToString(level);
+  return ss.str();
+}
 
 ArrayFilterParser::ArrayFilterParser(const string& lhs, const string& rhs, ArrayFilterType type)
   : lhs_(lhs), rhs_(rhs), type_(type) { }
 ArrayFilterParser::~ArrayFilterParser() { }
-
 Status ArrayFilterParser::ResolveValues(
   std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
   const avro_value_t& value,
@@ -279,6 +321,14 @@ Status ArrayFilterParser::ResolveValues(
 
   return Status::OK();
 }
+string ArrayFilterParser::ToString(int level) const {
+  std::stringstream ss;
+  ss << LevelToString(level) << "|---ArrayFilterParser(" << lhs_ << "=" << rhs_ << ") with type ";
+  ss << type_ << std::endl;
+  ss << ChildrenToString(level);
+  return ss.str();
+}
+
 
 MapKeyParser::MapKeyParser(const string& key) : key_(key) { }
 MapKeyParser::~MapKeyParser() { }
@@ -298,6 +348,13 @@ Status MapKeyParser::ResolveValues(
   }
   return Status::OK();
 }
+string MapKeyParser::ToString(int level) const {
+  std::stringstream ss;
+  ss << LevelToString(level) << "|---MapKeyParser(" << key_ << ")" << std::endl;
+  ss << ChildrenToString(level);
+  return ss.str();
+}
+
 
 AttributeParser::AttributeParser(const string& name) : name_(name) { }
 AttributeParser::~AttributeParser() { }
@@ -316,6 +373,13 @@ Status AttributeParser::ResolveValues(
   }
   return Status::OK();
 }
+string AttributeParser::ToString(int level) const {
+  std::stringstream ss;
+  ss << LevelToString(level) << "|---AttributeParser(" << name_ << ")" << std::endl;
+  ss << ChildrenToString(level);
+  return ss.str();
+}
+
 
 NamespaceParser::NamespaceParser(const string& name) : name_(name) { }
 NamespaceParser::~NamespaceParser() { }
@@ -334,6 +398,13 @@ Status NamespaceParser::ResolveValues(
   }
   return Status::OK();
 }
+string NamespaceParser::ToString(int level) const {
+  std::stringstream ss;
+  ss << LevelToString(level) << "|---NamespaceParser(" << name_ << ")" << std::endl;
+  ss << ChildrenToString(level);
+  return ss.str();
+}
+
 
 }
 }

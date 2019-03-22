@@ -22,14 +22,15 @@ namespace data {
 
 class AvroParserTree {
 public:
-  AvroParserTree();
-  virtual ~AvroParserTree();
   // creates all the correct parser nodes with
   static Status Build(AvroParserTree* parser_tree,
     const std::vector<std::pair<string, DataType>>& keys_and_types);
 
   // pointers are only valid as long as the object exists
   Status ParseValue(std::vector<ValueStoreUniquePtr>* values, const AvroValueSharedPtr& value);
+
+  // exposed for testing
+  inline AvroParserSharedPtr getRoot() const { return root_; }
 private:
   Status Build(AvroParser* parent, const std::vector<PrefixTreeNodeSharedPtr>& children);
 
