@@ -72,7 +72,7 @@ const std::vector<AvroValueParserSharedPtr>& AvroParser::GetFinalDescendents() c
 string AvroParser::ChildrenToString(int level) const {
   std::stringstream ss;
   for (const auto child : children_) {
-    ss << (*child).ToString(level + 1) << std::endl;
+    ss << (*child).ToString(level + 1);
   }
   return ss.str();
 }
@@ -111,7 +111,7 @@ Status BoolValueParser::ParseValue(std::map<string, ValueStoreUniquePtr>* values
   return Status::OK();
 }
 string BoolValueParser::ToString(int level) const {
-  return LevelToString(level) + "|---BoolValue";
+  return LevelToString(level) + "|---BoolValue(" + key_ + ")\n";
 }
 
 IntValueParser::IntValueParser(const string& key) : AvroValueParser(key) { }
@@ -127,7 +127,7 @@ Status IntValueParser::ParseValue(std::map<string, ValueStoreUniquePtr>* values,
   return Status::OK();
 }
 string IntValueParser::ToString(int level) const {
-  return LevelToString(level) + "|---IntValue";
+  return LevelToString(level) + "|---IntValue(" + key_ + ")\n";
 }
 
 StringValueParser::StringValueParser(const string& key) : AvroValueParser(key) { }
@@ -145,7 +145,7 @@ Status StringValueParser::ParseValue(std::map<string, ValueStoreUniquePtr>* valu
   return Status::OK();
 }
 string StringValueParser::ToString(int level) const {
-  return LevelToString(level) + "|---StringValue";
+  return LevelToString(level) + "|---StringValue(" + key_ + ")\n";
 }
 
 ArrayBeginMarkerParser::ArrayBeginMarkerParser(const std::vector<AvroValueParserSharedPtr>& final_descendents)
@@ -161,7 +161,7 @@ Status ArrayBeginMarkerParser::ParseValue(std::map<string, ValueStoreUniquePtr>*
   return Status::OK();
 }
 string ArrayBeginMarkerParser::ToString(int level) const {
-  return LevelToString(level) + "|---ArrayBeginMarkerParser";
+  return LevelToString(level) + "|---ArrayBeginMarkerParser\n";
 }
 
 ArrayFinishMarkerParser::ArrayFinishMarkerParser(const std::vector<AvroValueParserSharedPtr>& final_descendents)
@@ -177,7 +177,7 @@ Status ArrayFinishMarkerParser::ParseValue(std::map<string, ValueStoreUniquePtr>
   return Status::OK();
 }
 string ArrayFinishMarkerParser::ToString(int level) const {
-  return LevelToString(level) + "|---ArrayFinishMarkerParser";
+  return LevelToString(level) + "|---ArrayFinishMarkerParser\n";
 }
 
 // ------------------------------------------------------------
@@ -279,13 +279,7 @@ Status ArrayFilterParser::ResolveValues(
   const avro_value_t& value,
   const std::map<string, ValueStoreUniquePtr>& parsed_values) const {
 
-  bool addValue = false;
-  // Note, here we assume that entries for the lhs and rhs exist in the map!
-  if (type_ == kRhsIsConstant) {
-    addValue = (*parsed_values.at(lhs_)).LatestValueMatches(rhs_);
-  } else if (type_ == kRhsIsValue) {
-    addValue = (*parsed_values.at(lhs_)).LatestValuesMatch(*parsed_values.at(rhs_));
-  } else {
+  if (type_ != kRhsIsConstant && type_ != kRhsIsValue) {
     return Status(errors::Internal("Unknown constant type ", type_));
   }
 
@@ -300,10 +294,17 @@ Status ArrayFilterParser::ResolveValues(
   size_t n_elements = 0;
   avro_value_get_size(&value, &n_elements);
 
-  if (addValue) {
-    const std::vector<AvroParserSharedPtr>& children(GetChildren());
-    // shuttle it through the parser tree to add all these marks.
-    for (size_t i_elements = 0; i_elements < n_elements; ++i_elements) {
+  const std::vector<AvroParserSharedPtr>& children(GetChildren());
+
+  for (size_t i_elements = 0; i_elements < n_elements; ++i_elements) {
+
+    size_t reverse_index = n_elements - i_elements;
+
+    if (type_ == kRhsIsConstant
+          && (*parsed_values.at(lhs_)).ValueMatchesAtReverseIndex(rhs_, reverse_index)
+      || type_ == kRhsIsValue
+          && (*parsed_values.at(lhs_)).ValuesMatchAtReverseIndex(*parsed_values.at(rhs_), reverse_index)) {
+
       AvroValueSharedPtr next_value(new avro_value_t);
       avro_value_get_by_index(&value, i_elements, next_value.get(), NULL);
       // For all children

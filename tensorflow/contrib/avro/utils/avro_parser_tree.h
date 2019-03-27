@@ -32,7 +32,12 @@ public:
   // exposed for testing
   inline AvroParserSharedPtr getRoot() const { return root_; }
 private:
+  static const char kSeparator = '.';
+  static const string kArrayAllElements;
+  static const string kDefaultNamespace;
+
   Status Build(AvroParser* parent, const std::vector<PrefixTreeNodeSharedPtr>& children);
+  Status BuildKeys(const std::vector<std::pair<string, DataType>>& keys_and_types);
 
   static Status GetUniqueKeys(std::unordered_set<string>* keys,
     const std::vector<std::pair<string, DataType>>& keys_and_types);
@@ -42,6 +47,7 @@ private:
   static Status CreateValueParser(AvroParserUniquePtr& value_parser,
     const string& name, DataType data_type);
 
+  static bool ContainsFilter(string* lhs, string* rhs, const string& key);
   static bool IsFilter(string* lhs, string* rhs, const string& key);
   static bool IsArrayAll(const string& infix);
   static bool IsArrayIndex(int* index, const string& infix);
@@ -58,6 +64,9 @@ private:
   // This map is a helper for fast access of the data type that corresponds to the key
   std::map<string, DataType> key_to_type_;
 };
+
+const string AvroParserTree::kArrayAllElements = "[*]";
+const string AvroParserTree::kDefaultNamespace = "default";
 
 }
 }

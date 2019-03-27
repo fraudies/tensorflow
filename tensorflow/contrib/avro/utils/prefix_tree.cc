@@ -51,10 +51,8 @@ bool PrefixTreeNode::HasPrefix() const {
 // TODO(fraudies): Could be optimized using a set instead of a std::vector--but note that we need
 // the std::vector to preserve order
 PrefixTreeNodeSharedPtr PrefixTreeNode::Find(const std::string& child_prefix) const {
-  LOG(INFO) << "Find " << child_prefix;
   for (auto child : children_) {
     std::string prefix((*child).GetPrefix());
-    LOG(INFO) << "Checking child: " << prefix;
     if (prefix.compare(child_prefix) == 0) {
       return child;
     }

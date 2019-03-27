@@ -9,6 +9,9 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
+
+// RE2 https://github.com/google/re2/blob/master/re2/re2.h
+#include <algorithm>
 #include "re2/re2.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/lib/core/errors.h"
@@ -18,28 +21,22 @@ limitations under the License.
 namespace tensorflow {
 namespace data {
 
-// RE2 https://github.com/google/re2/blob/master/re2/re2.h
-// str_util https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/lib/strings/str_util.h
-bool Re2Match(std::vector<string>* results, const string& pattern, const string& str) {
-    RE2::Options opt;
-    opt.set_log_errors(false);
-    opt.set_case_sensitive(false);
-    opt.set_utf8(false);
-    RE2 regex("(" + pattern + ")", opt);
-    if (!regex.ok()) { return false; }
-
-    std::vector<RE2::Arg> args;
-    std::vector<RE2::Arg*> args_pointers;
-    size_t n_args = regex.NumberOfCapturingGroups();
-    args.resize(n_args);
-    args_pointers.resize(n_args);
-    (*results).resize(n_args);
-    // Wire up the pointers
-    for (size_t i_arg = 0; i_arg < n_args; ++i_arg) {
-        args[i_arg] = &(*results)[i_arg];
-        args_pointers[i_arg] = &args[i_arg];
+// TODO(fraudies): Replace by regex once tensorflow is compiled by GCC > 4.8
+void SplitOnDelimiterButNotInsideSquareBrackets(std::vector<string>* results, char delimiter, const string& str) {
+  // check that delimiter is not [ or ]
+  string lastMatch = "";
+  int nBrackets = 0;
+  for (char c : str) {
+    nBrackets += (c == '[');
+    nBrackets -= (c == ']');
+    if (nBrackets == 0 && c == delimiter) {
+      (*results).push_back(lastMatch);
+      lastMatch = "";
+    } else {
+      lastMatch += c;
     }
-    return RE2::FullMatchN(str, regex, args_pointers.data(), n_args);
+  }
+  (*results).push_back(lastMatch);
 }
 
 Status AvroParserTree::ParseValue(std::vector<ValueStoreUniquePtr>* values, const AvroValueSharedPtr& value) {
@@ -73,9 +70,12 @@ Status AvroParserTree::ParseValue(std::vector<ValueStoreUniquePtr>* values, cons
 Status AvroParserTree::Build(AvroParserTree* parser_tree,
   const std::vector<std::pair<string, DataType> >& keys_and_types) {
 
+  // TODO(fraudies): Clean this up by extending the scope of the build keys function
+  TF_RETURN_IF_ERROR((*parser_tree).BuildKeys(keys_and_types));
+
   // Get all the keys and check for uniqueness
   std::unordered_set<string> keys;
-  TF_RETURN_IF_ERROR(GetUniqueKeys(&keys, keys_and_types));
+  TF_RETURN_IF_ERROR(GetUniqueKeys(&keys, (*parser_tree).keys_and_types_));
   LOG(INFO) << "Created set of unique keys";
 
   // Ensure that we have keys for lhs/rhs of all filters first
@@ -83,51 +83,66 @@ Status AvroParserTree::Build(AvroParserTree* parser_tree,
   std::vector<string> all_keys; // holds all keys in proper order
   string lhs;
   string rhs;
+  string index;
+  string name;
   for (const string& key : keys) {
-    if (IsFilter(&lhs, &rhs, key)) {
-      // Ensure to add the lhs
+
+    // If filter
+    if (ContainsFilter(&lhs, &rhs, key)) {
+
+      // Handle lhs
       size_t pos = key.find(lhs);
-      string prefix = key.substr(0, pos-1);
-      all_keys.push_back(prefix + lhs);
-      keys.erase(prefix + lhs);
+      const string prefix = key.substr(0, pos-1);
+      const string lhs_key = prefix + kArrayAllElements + kSeparator + lhs;
 
-      // If the rhs is a constant we are done
+      all_keys.push_back(lhs_key);
+      keys.erase(lhs_key);
+
+      // Handle rhs
       if (IsStringConstant(nullptr, rhs)) {
-        continue;
-      }
-
-      // Check if the rhs is anchored to the top
-      if (str_util::StartsWith(rhs, "@")) {
-        all_keys.push_back(rhs.substr(1));
-        keys.erase(rhs.substr(1));
+        // do nothing for constants
+      } else if (str_util::StartsWith(rhs, "@")) {
+        // If anchored at top resolve full name
+        const string rhs_key = kDefaultNamespace + kSeparator + rhs.substr(1);
+        all_keys.insert(all_keys.begin(), rhs_key);
+        keys.erase(rhs_key);
       } else {
-        all_keys.push_back(prefix + rhs);
-        keys.erase(prefix + rhs);
+        // Otherwise
+        const string rhs_key = prefix + kArrayAllElements + kSeparator + rhs;
+        all_keys.push_back(rhs_key);
+        keys.erase(rhs_key);
       }
     }
-  }
 
-  // Add all the remaining keys to the all_keys vector
-  for (const string& key : keys) {
     all_keys.push_back(key);
   }
 
-  // Parse keys into prefixes
+  // Parse keys into prefixes and handle namespace
   std::vector< std::vector<string> > prefixes;
   for (const string& key : all_keys) {
     std::vector<string> key_prefixes;
-    // https://stackoverflow.com/questions/35418597/split-string-on-the-dot-characters-that-are-not-inside-of-brackets
-    // Pattern match for [] or . but no . inside []
-    if (Re2Match(&key_prefixes, "(^\\[.*?\\]|[^.]*)", key)) {
-      return Status(errors::InvalidArgument("Unable to parse key ", key));
-    }
+    SplitOnDelimiterButNotInsideSquareBrackets(&key_prefixes, kSeparator, key);
+    // erase first prefix, because this is the namespace and covered in the root
+    key_prefixes.erase(key_prefixes.begin());
+    prefixes.push_back(key_prefixes);
   }
-  LOG(INFO) << "Parsed keys into prefixes";
 
-  OrderedPrefixTree prefix_tree;
+  OrderedPrefixTree prefix_tree(kDefaultNamespace);
   OrderedPrefixTree::Build(&prefix_tree, prefixes);
   LOG(INFO) << "Built prefix tree";
   LOG(INFO) << prefix_tree.ToString();
+
+  // Map all keys to types from inputs
+  for (const auto& key_and_type : (*parser_tree).keys_and_types_) {
+    (*parser_tree).key_to_type_[key_and_type.first] = key_and_type.second;
+  }
+  for (const string& key : all_keys) {
+    auto key_and_type = (*parser_tree).key_to_type_.find(key);
+    // Not present yet then it must have come from one of the filters which is a string type
+    if (key_and_type == (*parser_tree).key_to_type_.end()) {
+      (*parser_tree).key_to_type_[key] = DT_STRING;
+    }
+  }
 
   // Use the expected type to decide which value parser node to add
   (*parser_tree).root_ = std::make_shared<NamespaceParser>(prefix_tree.GetRootPrefix());
@@ -138,33 +153,26 @@ Status AvroParserTree::Build(AvroParserTree* parser_tree,
     (*prefix_tree.GetRoot()).GetChildren()));
   LOG(INFO) << "Built parser tree";
 
-  // Set keys and types using the keys
-  (*parser_tree).keys_and_types_ = keys_and_types;
-  // Set key to type for fast type access based on key
-  for (const auto& key_and_type : keys_and_types) {
-    (*parser_tree).key_to_type_[key_and_type.first] = key_and_type.second;
-  }
-  LOG(INFO) << "Built avro parser tree";
-
   return Status::OK();
 }
 
 Status AvroParserTree::Build(AvroParser* parent, const std::vector<PrefixTreeNodeSharedPtr>& children) {
   for (PrefixTreeNodeSharedPtr child : children) {
     AvroParserUniquePtr avro_parser(nullptr);
-    TF_RETURN_IF_ERROR(CreateAvroParser(avro_parser, (*child).GetPrefix()));
-    (*parent).AddChild(std::move(avro_parser));
     if ((*child).IsTerminal()) {
-      const string name((*child).GetName('.'));
+      const string name((*child).GetName(kSeparator));
       auto key_and_type = key_to_type_.find(name);
       if (key_and_type == key_to_type_.end()) {
-        return Status(errors::NotFound("Could not find ", name, " as key"));
+        return Status(errors::NotFound("Unable to find key '", name, "'!"));
       }
-      AvroParserUniquePtr child_parser(nullptr);
-      TF_RETURN_IF_ERROR(CreateValueParser(child_parser, name, (*key_and_type).second));
+      LOG(INFO) << "Create value parser for " << name;
+      TF_RETURN_IF_ERROR(CreateValueParser(avro_parser, name, (*key_and_type).second));
     } else {
+      LOG(INFO) << "Create parser for " << (*child).GetName('.');
+      TF_RETURN_IF_ERROR(CreateAvroParser(avro_parser, (*child).GetPrefix()));
       TF_RETURN_IF_ERROR(Build(avro_parser.get(), (*child).GetChildren()));
     }
+    (*parent).AddChild(std::move(avro_parser));
   }
   return Status::OK();
 }
@@ -178,6 +186,25 @@ Status AvroParserTree::GetUniqueKeys(std::unordered_set<string>* keys,
     if (!inserted.second) {
       return Status(errors::InvalidArgument("Found duplicate key ", key));
     }
+  }
+  return Status::OK();
+}
+
+Status AvroParserTree::BuildKeys(const std::vector<std::pair<string, DataType>>& keys_and_types) {
+  for (const auto& key_and_type : keys_and_types) {
+    string new_key(key_and_type.first);
+    RE2::GlobalReplace(&new_key, RE2("\\["), ".[");
+    // TODO: Check for nested filters and throw error, e.g. disallow [name[first=last]age=friends.age]
+    // convert all array into array marker []
+    //RE2::GlobalReplace(&new_key, RE2("\\[\\*\\]"), ".[]");
+    // convert the index parser
+    //RE2::GlobalReplace(&new_key, RE2("\\[(\\d+)\\]"), ".[].[\\1]");
+    // add additional array expression for filters
+    //RE2::GlobalReplace(&new_key, RE2("\\[([A-Za-z_].*)=(.*)\\]"), ".[].[\\1=\\2]");
+    // add namespace
+    keys_and_types_.push_back(std::make_pair(
+      kDefaultNamespace + kSeparator + new_key,
+      key_and_type.second));
   }
   return Status::OK();
 }
@@ -228,7 +255,7 @@ Status AvroParserTree::CreateAvroParser(AvroParserUniquePtr& avro_parser,
 
 Status AvroParserTree::CreateValueParser(AvroParserUniquePtr& value_parser,
   const string& name, DataType data_type) {
-
+  LOG(INFO) << "Create value parser";
   switch (data_type) {
     case DT_BOOL:
       value_parser.reset(new BoolValueParser(name));
@@ -244,14 +271,20 @@ Status AvroParserTree::CreateValueParser(AvroParserUniquePtr& value_parser,
       return Status(errors::Unimplemented("Double value parser not supported yet"));
     case DT_STRING:
       value_parser.reset(new StringValueParser(name));
+      break;
     default:
-      return Status(errors::Unimplemented("Type ", data_type, " not supported!"));
+      return Status(errors::Unimplemented("Unable to build avro value parser for name '", name,
+               "', because data type '", DataTypeString(data_type), "' is not supported!"));
   }
   return Status::OK();
 }
 
+inline bool AvroParserTree::ContainsFilter(string* lhs, string* rhs, const string& key) {
+  return RE2::PartialMatch(key, "\\[([A-Za-z_].*)=(.*)\\]", lhs, rhs);
+}
+
 inline bool AvroParserTree::IsFilter(string* lhs, string* rhs, const string& key) {
-  return RE2::FullMatch(key, "(^\\[([A-Za-z_][\\w]*)=(\\[\\S+\\])\\]$)", lhs, rhs);
+  return RE2::FullMatch(key, "\\[([A-Za-z_].*)=(.*)\\]", lhs, rhs);
 }
 
 inline bool AvroParserTree::IsArrayAll(const string& infix) {
@@ -259,15 +292,15 @@ inline bool AvroParserTree::IsArrayAll(const string& infix) {
 }
 
 inline bool AvroParserTree::IsArrayIndex(int* index, const string& infix) {
-  return RE2::FullMatch(infix, "[(\\d+)]", index);
+  return RE2::FullMatch(infix, "\\[(\\d+)\\]", index);
 }
 
 inline bool AvroParserTree::IsMapKey(string* key, const string& infix) {
-  return RE2::FullMatch(infix, "['(\\S+)']", key);
+  return RE2::FullMatch(infix, "\\['(\\S+)'\\]", key);
 }
 
 inline bool AvroParserTree::IsAttribute(const string& infix) {
-  return RE2::FullMatch(infix, "([A-Za-z_][\\w]*)");
+  return RE2::FullMatch(infix, "[A-Za-z_][\\w]*");
 }
 
 inline bool AvroParserTree::IsStringConstant(string* constant, const string& infix) {
@@ -298,7 +331,8 @@ Status AvroParserTree::InitValueBuffers(std::map<string, ValueStoreUniquePtr>* k
         (*key_to_value).insert(
           std::make_pair(key, std::unique_ptr<StringValueBuffer>(new StringValueBuffer())));
       default:
-        return Status(errors::Unimplemented("Type ", data_type, " not supported!"));
+        return Status(errors::Unimplemented("Unable to build value buffer for key '", key,
+          "', because data type '", DataTypeString(data_type), "' is not supported!"));
     }
   }
   return Status::OK();

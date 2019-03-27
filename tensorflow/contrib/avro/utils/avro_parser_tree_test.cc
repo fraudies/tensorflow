@@ -24,9 +24,7 @@ namespace data {
 
 TEST(RegexTest, SplitExpressions) {
   std::vector<std::pair<string, DataType> > keys_and_types = {
-    std::make_pair("name.first", DT_STRING),
     std::make_pair("friends[2].name.first", DT_STRING),
-    std::make_pair("friends[*].name.first", DT_STRING),
     std::make_pair("friends[*].address[*].street", DT_STRING),
     std::make_pair("friends[*].job[*].coworker[*].name.first", DT_STRING),
     std::make_pair("car['nickname'].color", DT_STRING),
@@ -40,7 +38,42 @@ TEST(RegexTest, SplitExpressions) {
   EXPECT_TRUE(namespace_parser != nullptr);
   const std::vector<AvroParserSharedPtr>& children((*root_parser).GetChildren());
   EXPECT_EQ(children.size(), 3);
-  LOG(INFO) << (*root_parser).ToString();
+  const string actual((*root_parser).ToString());
+  const string expected =
+    "|---NamespaceParser(default)\n"
+    "|   |---AttributeParser(name)\n"
+    "|   |   |---StringValue(default.name.first)\n"
+    "|   |---AttributeParser(friends)\n"
+    "|   |   |---ArrayAllParser\n"
+    "|   |   |   |---StringValue(default.friends.[*].gender)\n"
+    "|   |   |   |---AttributeParser(name)\n"
+    "|   |   |   |   |---StringValue(default.friends.[*].name.first)\n"
+    "|   |   |   |   |---StringValue(default.friends.[*].name.last)\n"
+    "|   |   |   |---AttributeParser(address)\n"
+    "|   |   |   |   |---ArrayAllParser\n"
+    "|   |   |   |   |   |---StringValue(default.friends.[*].address.[*].street)\n"
+    "|   |   |   |---AttributeParser(job)\n"
+    "|   |   |   |   |---ArrayAllParser\n"
+    "|   |   |   |   |   |---AttributeParser(coworker)\n"
+    "|   |   |   |   |   |   |---ArrayAllParser\n"
+    "|   |   |   |   |   |   |   |---AttributeParser(name)\n"
+    "|   |   |   |   |   |   |   |   |---StringValue(default.friends.[*].job.[*].coworker.[*].name.first)\n"
+    "|   |   |---ArrayFilterParser(gender=unknown) with type 0\n"
+    "|   |   |   |---AttributeParser(name)\n"
+    "|   |   |   |   |---StringValue(default.friends.[gender='unknown'].name.first)\n"
+    "|   |   |---ArrayFilterParser(name.first=@name.first) with type 1\n"
+    "|   |   |   |---AttributeParser(name)\n"
+    "|   |   |   |   |---StringValue(default.friends.[name.first=@name.first].name.initial)\n"
+    "|   |   |---ArrayFilterParser(name.first=name.last) with type 1\n"
+    "|   |   |   |---AttributeParser(name)\n"
+    "|   |   |   |   |---StringValue(default.friends.[name.first=name.last].name.initial)\n"
+    "|   |   |---ArrayIndexParser(2)\n"
+    "|   |   |   |---AttributeParser(name)\n"
+    "|   |   |   |   |---StringValue(default.friends.[2].name.first)\n"
+    "|   |---AttributeParser(car)\n"
+    "|   |   |---MapKeyParser(nickname)\n"
+    "|   |   |   |---StringValue(default.car.['nickname'].color)\n";
+  EXPECT_EQ(actual, expected);
 }
 
 }

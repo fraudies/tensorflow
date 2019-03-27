@@ -13,6 +13,7 @@ limitations under the License.
 #define TENSORFLOW_DATA_VALUE_BUFFER_H_
 
 #include <stack>
+#include <sstream>
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_shape.h"
@@ -35,11 +36,12 @@ class ValueStore {
 public:
   virtual Status MakeDense(Tensor* tensor, const PartialTensorShape& shape, const Tensor& defaults) const = 0;
   virtual Status MakeSparse(Tensor* values, Tensor* indices, const PartialTensorShape& partial_shape) const = 0;
-  virtual bool LatestValuesMatch(const ValueStore& store) const = 0;
-  virtual bool LatestValueMatches(const string& value) const = 0;
+  virtual bool ValuesMatchAtReverseIndex(const ValueStore& store, size_t reverse_index) const = 0;
+  virtual bool ValueMatchesAtReverseIndex(const string& value, size_t reverse_index) const = 0;
   virtual bool IsEmpty() const = 0;
   virtual void BeginMark() = 0;
   virtual void FinishMark() = 0;
+  virtual string ToString(size_t limit = 10) const = 0;
 };
 
 class ShapeBuilder {
@@ -73,16 +75,21 @@ public:
   void Add(T value); // use for bool, int, long, float, double, specialized implementation for string
   void AddByRef(const T& value);
   inline const T back() const { return values_.back(); }
+
+  // Index must be starting from 1; which indexes the last element
+  inline const T ReverseIndex(size_t index) const { return values_[values_.size() - index]; }
+
   // May move the contents of this buffer into the tensor; hence not const
   // Assumes tensor has been initialized with the proper dimensions & type through allocate in OpOutputList
   // TODO: Do we want to check this in MakeDense?
   Status MakeDense(Tensor* tensor, const PartialTensorShape& partial_shape, const Tensor& defaults) const override;
   Status MakeSparse(Tensor* values, Tensor* indices, const PartialTensorShape& partial_shape) const override;
-  virtual bool LatestValuesMatch(const ValueStore& store) const override;
-  virtual bool LatestValueMatches(const string& value) const override;
+  virtual bool ValuesMatchAtReverseIndex(const ValueStore& store, size_t reverse_index) const override;
+  virtual bool ValueMatchesAtReverseIndex(const string& value, size_t reverse_index) const override;
   inline bool IsEmpty() const {
     return GetNumberOfElements() == 0;
   }
+  virtual string ToString(size_t limit) const override;
 private:
   size_t GetNumberOfElements() const;
   //void InitTensor(Tensor* tensor, const TensorShape& shape) const;
@@ -305,31 +312,44 @@ Status ValueBuffer<T>::FillInFromDefault(Tensor* tensor, const Tensor& defaults)
 }
 
 template <typename T>
-bool ValueBuffer<T>::LatestValuesMatch(const ValueStore& store) const {
+bool ValueBuffer<T>::ValuesMatchAtReverseIndex(const ValueStore& store, size_t reverse_index) const {
   // If both stores are empty, then there is a match
   if (IsEmpty() && store.IsEmpty()) {
     return true;
   }
   // Note, buffer will be nullptr if the types don't match
   const ValueBuffer* buffer = dynamic_cast<const ValueBuffer*>(&store);
-  return buffer != nullptr && values_.back() == (*buffer).values_.back();
+  return buffer != nullptr
+    && ReverseIndex(reverse_index) == (*buffer).ReverseIndex(reverse_index);
 }
 
 template <typename T>
-inline bool ValueBuffer<T>::LatestValueMatches(const string& value) const {
+inline bool ValueBuffer<T>::ValueMatchesAtReverseIndex(const string& value, size_t reverse_index) const {
   // TODO(fraudies): Check if we want to match other types through parsing of string
   return false;
 }
 
 template <>
-inline bool ValueBuffer<string>::LatestValueMatches(const string& value) const {
+inline bool ValueBuffer<string>::ValueMatchesAtReverseIndex(const string& value, size_t reverse_index) const {
   // If there is no value to match there is no match
   if (IsEmpty()) {
     return false;
   }
-  return values_.back() == value;
+  return ReverseIndex(reverse_index) == value;
 }
 
+template <typename T>
+string ValueBuffer<T>::ToString(size_t limit) const {
+  std::stringstream ss;
+  size_t n_print = std::min(values_.size(),  limit);
+  for (size_t i_print = 0; i_print < n_print; ++i_print) {
+    ss << values_[i_print] << ", ";
+  }
+  if (values_.size() > limit) {
+    ss << " ...";
+  }
+  return ss.str();
+}
 
 }
 }

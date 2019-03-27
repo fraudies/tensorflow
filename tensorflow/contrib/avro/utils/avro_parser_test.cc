@@ -228,8 +228,8 @@ TEST(ArrayFilterParser, ResolveValues) {
   const string persons_name = "persons";
   const string name_name = "name";
   const string age_name = "age";
-  const string persons_name_key = "persons[*].name";
-  const string persons_age_key = "persons[name='Carl'].age";
+  const string persons_name_key = "persons.[*].name";
+  const string persons_age_key = "persons.[name='Carl'].age";
   const string schema = "{"
                         "  \"type\":\"record\","
                         "  \"name\":\"contact\","
@@ -281,13 +281,13 @@ TEST(ArrayFilterParser, ResolveValues) {
     EXPECT_EQ(avro_value_set_int(&person_age, person.age), 0);
   }
 
-  // persons[*].name
+  // persons.[*].name
   AttributeParser persons_parser(persons_name);
   AvroParserSharedPtr parse_names_items = std::make_shared<ArrayAllParser>();
   AvroParserSharedPtr parse_names = std::make_shared<AttributeParser>(name_name);
   (*parse_names_items).AddChild(parse_names);
 
-  // persons[name='Carl'].age
+  // persons.[name='Carl'].age
   AvroParserSharedPtr parse_carls_items = std::make_shared<ArrayFilterParser>(persons_name_key, "Carl", kRhsIsConstant);
   AvroParserSharedPtr parse_ages = std::make_shared<AttributeParser>(age_name);
   (*parse_carls_items).AddChild(parse_ages);
@@ -295,37 +295,22 @@ TEST(ArrayFilterParser, ResolveValues) {
   persons_parser.AddChild(parse_names_items);
   persons_parser.AddChild(parse_carls_items);
 
-  std::map<string, ValueStoreUniquePtr> parsed_values; // empty on purpose
+  std::unique_ptr<StringValueBuffer> names(new StringValueBuffer());
+  (*names).AddByRef("Carl"); (*names).AddByRef("Mary"); (*names).AddByRef("Carl");
+
   std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> > parser_for_value;
+  std::map<string, ValueStoreUniquePtr> parsed_values;
   parsed_values.insert(std::make_pair(
     persons_name_key,
-    std::unique_ptr<StringValueBuffer>(new StringValueBuffer())));
+    std::move(names)));
   parsed_values.insert(std::make_pair(
     persons_age_key,
     std::unique_ptr<IntValueBuffer>(new IntValueBuffer())));
 
   TF_EXPECT_OK((*parse_carls_items).ResolveValues(&parser_for_value, persons_field, parsed_values));
 
-  // Last name does not match and only the being/finish marker are added
-  EXPECT_EQ(parser_for_value.size(), 2);
-
-  // clear the two items out of the queue
-  parsed_values.clear();
-  parser_for_value.pop();
-  parser_for_value.pop();
-
-  // Test when the value matches
-  std::unique_ptr<StringValueBuffer> value_buffer(new StringValueBuffer());
-  (*value_buffer).AddByRef("Carl");
-  parsed_values.insert(std::make_pair(
-   persons_name_key,
-   std::move(value_buffer)));
-
-  TF_EXPECT_OK((*parse_carls_items).ResolveValues(&parser_for_value, persons_field, parsed_values));
-  // Note, this is not quite the use-case that we have later, since the last value will change as
-  // we also parse the name as well (and actually this will lead to only 2 out of 3 matches for the
-  // above data).
-  EXPECT_EQ(parser_for_value.size(), 5);
+  // Being/finish marker are added, and two value parsers for the two matches of 'Carl'
+  EXPECT_EQ(parser_for_value.size(), 4);
 }
 
 TEST(MapKeyParser, ResolveValues) {

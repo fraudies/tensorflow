@@ -645,7 +645,7 @@ TEST(ValueBufferTest, Sparse4D) {
 TEST(ValueBufferTest, LatestValuesDoMatch) {
   IntValueBuffer buffer;
   buffer.Add(1);
-  EXPECT_TRUE(buffer.LatestValuesMatch(buffer));
+  EXPECT_TRUE(buffer.ValuesMatchAtReverseIndex(buffer, 1));
 }
 
 TEST(ValueBufferTest, LatestValuesDoNotMatchValue) {
@@ -653,7 +653,7 @@ TEST(ValueBufferTest, LatestValuesDoNotMatchValue) {
   this_buffer.Add(1);
   IntValueBuffer that_buffer;
   that_buffer.Add(2);
-  EXPECT_TRUE(!this_buffer.LatestValuesMatch(that_buffer));
+  EXPECT_TRUE(!this_buffer.ValuesMatchAtReverseIndex(that_buffer, 1));
 }
 
 TEST(ValueBufferTest, LatestValuesDoNotMatchType) {
@@ -661,20 +661,20 @@ TEST(ValueBufferTest, LatestValuesDoNotMatchType) {
   this_buffer.Add(1);
   FloatValueBuffer that_buffer;
   that_buffer.Add(2.0f);
-  EXPECT_TRUE(!this_buffer.LatestValuesMatch(that_buffer));
+  EXPECT_TRUE(!this_buffer.ValuesMatchAtReverseIndex(that_buffer, 1));
 }
 
 TEST(ValueBufferTest, LatestValueMatches) {
   StringValueBuffer buffer;
   buffer.Add("abc");
-  EXPECT_TRUE(buffer.LatestValueMatches("abc"));
-  EXPECT_TRUE(!buffer.LatestValueMatches("abcd"));
+  EXPECT_TRUE(buffer.ValueMatchesAtReverseIndex("abc", 1));
+  EXPECT_TRUE(!buffer.ValueMatchesAtReverseIndex("abcd", 1));
 }
 
 TEST(ValueBufferTest, LatestValueDoesNotMatchType) {
   IntValueBuffer buffer;
   buffer.Add(1);
-  EXPECT_TRUE(!buffer.LatestValueMatches("abc"));
+  EXPECT_TRUE(!buffer.ValueMatchesAtReverseIndex("abc", 1));
 }
 
 }
