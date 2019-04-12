@@ -26,12 +26,14 @@ from tensorflow.python.data.kernel_tests import test_base
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import errors
+from tensorflow.python.framework import test_util
 from tensorflow.python.platform import test
 from tensorflow.python.util import compat
 
 prefix_path = "tensorflow/core/lib"
 
 
+@test_util.run_v1_only("deprecated API, no eager or V2 test coverage")
 class LMDBDatasetTest(test_base.DatasetTestBase):
 
   def setUp(self):

@@ -109,8 +109,8 @@ TEST_F(BFloat16PropagationTest, PropagateThroughSelectButNotAdd) {
       HloInstruction::CreateBinary(shape, HloOpcode::kAdd, a, b));
   HloInstruction* add1 = builder.AddInstruction(
       HloInstruction::CreateBinary(shape, HloOpcode::kAdd, add0, b));
-  HloInstruction* pred = builder.AddInstruction(HloInstruction::CreateBinary(
-      ShapeUtil::MakeShape(PRED, {2, 4}), HloOpcode::kEq, a, b));
+  HloInstruction* pred = builder.AddInstruction(HloInstruction::CreateCompare(
+      ShapeUtil::MakeShape(PRED, {2, 4}), a, b, ComparisonDirection::kEq));
   HloInstruction* sel = builder.AddInstruction(
       HloInstruction::CreateTernary(shape, HloOpcode::kSelect, pred, c, add1));
   HloInstruction* xpose =
@@ -134,6 +134,96 @@ TEST_F(BFloat16PropagationTest, PropagateThroughSelectButNotAdd) {
   EXPECT_FALSE(OutputsBF16(a));
   EXPECT_FALSE(OutputsBF16(b));
   EXPECT_FALSE(OutputsBF16(c));
+}
+
+TEST_F(BFloat16PropagationTest, PropagateThroughMaxPoolReduceWindow) {
+  auto module = CreateNewVerifiedModule();
+
+  auto sub_builder = HloComputation::Builder("max");
+  HloInstruction* p0 = sub_builder.AddInstruction(
+      HloInstruction::CreateParameter(0, ShapeUtil::MakeShape(F32, {}), "a"));
+  HloInstruction* p1 = sub_builder.AddInstruction(
+      HloInstruction::CreateParameter(1, ShapeUtil::MakeShape(F32, {}), "b"));
+  sub_builder.AddInstruction(HloInstruction::CreateBinary(
+      ShapeUtil::MakeShape(F32, {}), HloOpcode::kMaximum, p0, p1));
+  auto max_computation = module->AddEmbeddedComputation(sub_builder.Build());
+
+  auto builder = HloComputation::Builder(TestName());
+  Shape shape = ShapeUtil::MakeShape(F32, {2, 4});
+
+  HloInstruction* a =
+      builder.AddInstruction(HloInstruction::CreateParameter(0, shape, "a"));
+  HloInstruction* b =
+      builder.AddInstruction(HloInstruction::CreateParameter(1, shape, "b"));
+  HloInstruction* c =
+      builder.AddInstruction(HloInstruction::CreateParameter(2, shape, "c"));
+  HloInstruction* add = builder.AddInstruction(
+      HloInstruction::CreateBinary(shape, HloOpcode::kAdd, a, b));
+  Window window;
+  WindowDimension dim;
+  dim.set_size(2);
+  dim.set_stride(1);
+  dim.set_padding_high(1);
+  dim.set_window_dilation(1);
+  dim.set_base_dilation(1);
+  *window.add_dimensions() = dim;
+  *window.add_dimensions() = dim;
+  HloInstruction* rw =
+      builder.AddInstruction(HloInstruction::CreateReduceWindow(
+          shape, add,
+          builder.AddInstruction(
+              HloInstruction::CreateConstant(LiteralUtil::Zero(F32))),
+          window, max_computation));
+  HloInstruction* xpose =
+      builder.AddInstruction(HloInstruction::CreateTranspose(
+          ShapeUtil::MakeShape(F32, {4, 2}), c, {1, 0}));
+  HloInstruction* dot = builder.AddInstruction(
+      CreateDot(ShapeUtil::MakeShape(F32, {4, 4}), xpose, rw));
+  HloInstruction* root = builder.AddInstruction(HloInstruction::CreateBinary(
+      ShapeUtil::MakeShape(F32, {4, 4}), HloOpcode::kAdd, dot, dot));
+
+  auto computation = module->AddEntryComputation(builder.Build());
+
+  EXPECT_TRUE(PropagatePrecision(module.get()));
+
+  EXPECT_EQ(computation->root_instruction(), root);
+  EXPECT_TRUE(OutputsBF16(add));
+  EXPECT_TRUE(OutputsBF16(xpose));
+  EXPECT_TRUE(OutputsBF16(rw));
+}
+
+// Tests that side-effecting all-reduce should not be changed.
+TEST_F(BFloat16PropagationTest, DoNotChangeAllReduce) {
+  auto module = CreateNewVerifiedModule();
+
+  auto builder = HloComputation::Builder(TestName());
+  Shape shape = ShapeUtil::MakeShape(F32, {4, 4});
+  HloInstruction* a =
+      builder.AddInstruction(HloInstruction::CreateParameter(0, shape, "a"));
+  HloInstruction* b =
+      builder.AddInstruction(HloInstruction::CreateParameter(1, shape, "b"));
+  auto rb = HloComputation::Builder(TestName());
+  rb.AddInstruction(HloInstruction::CreateBinary(
+      shape, HloOpcode::kAdd,
+      rb.AddInstruction(HloInstruction::CreateParameter(0, shape, "p0")),
+      rb.AddInstruction(HloInstruction::CreateParameter(1, shape, "p1"))));
+  auto reduction = module->AddEmbeddedComputation(rb.Build());
+  HloInstruction* all_reduce =
+      builder.AddInstruction(HloInstruction::CreateAllReduce(
+          ShapeUtil::MakeTupleShape({shape, shape}), {a, b}, reduction,
+          /*replica_groups=*/{}, /*barrier=*/"", /*all_reduce_id=*/1));
+  HloInstruction* gte0 = builder.AddInstruction(
+      HloInstruction::CreateGetTupleElement(shape, all_reduce, 0));
+  HloInstruction* gte1 = builder.AddInstruction(
+      HloInstruction::CreateGetTupleElement(shape, all_reduce, 1));
+  HloInstruction* dot = builder.AddInstruction(CreateDot(shape, gte0, gte1));
+  HloInstruction* root = builder.AddInstruction(
+      HloInstruction::CreateBinary(shape, HloOpcode::kAdd, dot, dot));
+
+  auto computation = module->AddEntryComputation(builder.Build());
+
+  EXPECT_FALSE(PropagatePrecision(module.get()));
+  EXPECT_EQ(computation->root_instruction(), root);
 }
 
 // Tests that if a constant is converted to BF16 then its literal must also be
@@ -484,8 +574,8 @@ TEST_F(BFloat16PropagationTest, PropagateThroughSimpleWhile) {
       HloInstruction::CreateParameter(0, shape, "cond_param"));
   auto cond_dot =
       builder_cond.AddInstruction(CreateDot(shape, cond_param, cond_param));
-  auto cond_root = builder_cond.AddInstruction(HloInstruction::CreateBinary(
-      ShapeUtil::MakeShape(PRED, {}), HloOpcode::kGt,
+  auto cond_root = builder_cond.AddInstruction(HloInstruction::CreateCompare(
+      ShapeUtil::MakeShape(PRED, {}),
       builder_cond.AddInstruction(HloInstruction::CreateReshape(
           ShapeUtil::MakeShape(F32, {}),
           builder_cond.AddInstruction(
@@ -493,9 +583,10 @@ TEST_F(BFloat16PropagationTest, PropagateThroughSimpleWhile) {
                                           cond_dot, {0, 0}, {1, 1}, {1, 1})))),
       builder_cond.AddInstruction(HloInstruction::CreateReshape(
           ShapeUtil::MakeShape(F32, {}),
-          builder_cond.AddInstruction(HloInstruction::CreateSlice(
-              ShapeUtil::MakeShape(F32, {1, 1}), cond_dot, {1, 1}, {2, 2},
-              {1, 1}))))));
+          builder_cond.AddInstruction(
+              HloInstruction::CreateSlice(ShapeUtil::MakeShape(F32, {1, 1}),
+                                          cond_dot, {1, 1}, {2, 2}, {1, 1})))),
+      ComparisonDirection::kGt));
   auto cond = module->AddEmbeddedComputation(builder_cond.Build());
 
   auto builder_body = HloComputation::Builder("body");
@@ -541,8 +632,8 @@ TEST_F(BFloat16PropagationTest,
   auto builder_cond = HloComputation::Builder("cond");
   auto cond_param = builder_cond.AddInstruction(
       HloInstruction::CreateParameter(0, shape, "cond_param"));
-  builder_cond.AddInstruction(HloInstruction::CreateBinary(
-      ShapeUtil::MakeShape(PRED, {}), HloOpcode::kGt,
+  builder_cond.AddInstruction(HloInstruction::CreateCompare(
+      ShapeUtil::MakeShape(PRED, {}),
       builder_cond.AddInstruction(HloInstruction::CreateReshape(
           ShapeUtil::MakeShape(F32, {}),
           builder_cond.AddInstruction(HloInstruction::CreateSlice(
@@ -552,7 +643,8 @@ TEST_F(BFloat16PropagationTest,
           ShapeUtil::MakeShape(F32, {}),
           builder_cond.AddInstruction(HloInstruction::CreateSlice(
               ShapeUtil::MakeShape(F32, {1, 1}), cond_param, {1, 1}, {2, 2},
-              {1, 1}))))));
+              {1, 1})))),
+      ComparisonDirection::kGt));
   auto cond = module->AddEmbeddedComputation(builder_cond.Build());
 
   auto builder_body = HloComputation::Builder("body");
@@ -615,8 +707,8 @@ TEST_F(BFloat16PropagationTest, PropagateThroughTupleWhile) {
       HloInstruction::CreateBinary(shape, HloOpcode::kAdd, cond_rhs, cond_rhs));
   auto cond_dot =
       builder_cond.AddInstruction(CreateDot(shape, cond_lhs, cond_add_rhs));
-  builder_cond.AddInstruction(HloInstruction::CreateBinary(
-      ShapeUtil::MakeShape(PRED, {}), HloOpcode::kGt,
+  builder_cond.AddInstruction(HloInstruction::CreateCompare(
+      ShapeUtil::MakeShape(PRED, {}),
       builder_cond.AddInstruction(HloInstruction::CreateReshape(
           ShapeUtil::MakeShape(F32, {}),
           builder_cond.AddInstruction(
@@ -624,9 +716,10 @@ TEST_F(BFloat16PropagationTest, PropagateThroughTupleWhile) {
                                           cond_dot, {0, 0}, {1, 1}, {1, 1})))),
       builder_cond.AddInstruction(HloInstruction::CreateReshape(
           ShapeUtil::MakeShape(F32, {}),
-          builder_cond.AddInstruction(HloInstruction::CreateSlice(
-              ShapeUtil::MakeShape(F32, {1, 1}), cond_dot, {1, 1}, {2, 2},
-              {1, 1}))))));
+          builder_cond.AddInstruction(
+              HloInstruction::CreateSlice(ShapeUtil::MakeShape(F32, {1, 1}),
+                                          cond_dot, {1, 1}, {2, 2}, {1, 1})))),
+      ComparisonDirection::kGt));
   auto cond = module->AddEmbeddedComputation(builder_cond.Build());
 
   auto builder_body = HloComputation::Builder("body");
@@ -710,8 +803,8 @@ TEST_F(BFloat16PropagationTest, DoNotPropagateWhilesCallingSameComputation) {
           shape, HloOpcode::kAdd, cond0_rhs, cond0_rhs));
   auto cond0_dot =
       builder_cond0.AddInstruction(CreateDot(shape, cond0_lhs, cond0_add_rhs));
-  builder_cond0.AddInstruction(HloInstruction::CreateBinary(
-      ShapeUtil::MakeShape(PRED, {}), HloOpcode::kGt,
+  builder_cond0.AddInstruction(HloInstruction::CreateCompare(
+      ShapeUtil::MakeShape(PRED, {}),
       builder_cond0.AddInstruction(HloInstruction::CreateReshape(
           ShapeUtil::MakeShape(F32, {}),
           builder_cond0.AddInstruction(
@@ -719,9 +812,10 @@ TEST_F(BFloat16PropagationTest, DoNotPropagateWhilesCallingSameComputation) {
                                           cond0_dot, {0, 0}, {1, 1}, {1, 1})))),
       builder_cond0.AddInstruction(HloInstruction::CreateReshape(
           ShapeUtil::MakeShape(F32, {}),
-          builder_cond0.AddInstruction(HloInstruction::CreateSlice(
-              ShapeUtil::MakeShape(F32, {1, 1}), cond0_dot, {1, 1}, {2, 2},
-              {1, 1}))))));
+          builder_cond0.AddInstruction(
+              HloInstruction::CreateSlice(ShapeUtil::MakeShape(F32, {1, 1}),
+                                          cond0_dot, {1, 1}, {2, 2}, {1, 1})))),
+      ComparisonDirection::kGt));
   auto cond0 = module->AddEmbeddedComputation(builder_cond0.Build());
 
   // Condition computation for the second while.
@@ -738,8 +832,8 @@ TEST_F(BFloat16PropagationTest, DoNotPropagateWhilesCallingSameComputation) {
           shape, HloOpcode::kAdd, cond1_lhs, cond1_lhs));
   auto cond1_dot =
       builder_cond1.AddInstruction(CreateDot(shape, cond1_add_lhs, cond1_rhs));
-  builder_cond1.AddInstruction(HloInstruction::CreateBinary(
-      ShapeUtil::MakeShape(PRED, {}), HloOpcode::kGt,
+  builder_cond1.AddInstruction(HloInstruction::CreateCompare(
+      ShapeUtil::MakeShape(PRED, {}),
       builder_cond1.AddInstruction(HloInstruction::CreateReshape(
           ShapeUtil::MakeShape(F32, {}),
           builder_cond1.AddInstruction(
@@ -747,9 +841,10 @@ TEST_F(BFloat16PropagationTest, DoNotPropagateWhilesCallingSameComputation) {
                                           cond1_dot, {0, 0}, {1, 1}, {1, 1})))),
       builder_cond1.AddInstruction(HloInstruction::CreateReshape(
           ShapeUtil::MakeShape(F32, {}),
-          builder_cond1.AddInstruction(HloInstruction::CreateSlice(
-              ShapeUtil::MakeShape(F32, {1, 1}), cond1_dot, {1, 1}, {2, 2},
-              {1, 1}))))));
+          builder_cond1.AddInstruction(
+              HloInstruction::CreateSlice(ShapeUtil::MakeShape(F32, {1, 1}),
+                                          cond1_dot, {1, 1}, {2, 2}, {1, 1})))),
+      ComparisonDirection::kGt));
   auto cond1 = module->AddEmbeddedComputation(builder_cond1.Build());
 
   // Body computation shared by both whiles.

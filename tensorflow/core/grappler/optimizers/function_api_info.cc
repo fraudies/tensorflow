@@ -28,10 +28,10 @@ FunctionApiInfo::~FunctionApiInfo() {}
 
 Status FunctionApiInfo::Init(const FunctionDef& function_def) {
   for (const auto& attr : function_def.attr()) {
-    if (attr.first == "experimental_api_preferred_device") {
+    if (attr.first == "api_preferred_device") {
       preferred_device_ = attr.second.s();
     }
-    if (attr.first == "experimental_api_implements") {
+    if (attr.first == "api_implements") {
       interface_name_ = attr.second.s();
     }
   }

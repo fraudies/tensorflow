@@ -62,6 +62,8 @@ class FunctionLibraryApiInfo {
                              string* best_func_name) const;
 
   const FunctionApiInfo* GetApiInfo(const string& function_name) const;
+  bool empty() const { return func_info_.empty(); }
+  std::size_t size() const { return func_info_.size(); }
 
  private:
   // Map between function name to function details.

@@ -23,7 +23,152 @@ from tensorflow.python.util import compat
 from tensorflow.python.util.tf_export import tf_export
 
 
-@tf_export("Dimension")
+_TENSORSHAPE_V2_OVERRIDE = None
+
+
+@tf_export(v1=["enable_v2_tensorshape"])
+def enable_v2_tensorshape():
+  """In TensorFlow 2.0, iterating over a TensorShape instance returns values.
+
+  This enables the new behavior.
+
+  Concretely, `tensor_shape[i]` returned a Dimension instance in V1, but
+  it V2 it returns either an integer, or None.
+
+  Examples:
+
+  ```
+  #######################
+  # If you had this in V1:
+  value = tensor_shape[i].value
+
+  # Do this in V2 instead:
+  value = tensor_shape[i]
+
+  #######################
+  # If you had this in V1:
+  for dim in tensor_shape:
+    value = dim.value
+    print(value)
+
+  # Do this in V2 instead:
+  for value in tensor_shape:
+    print(value)
+
+  #######################
+  # If you had this in V1:
+  dim = tensor_shape[i]
+  dim.assert_is_compatible_with(other_shape)  # or using any other shape method
+
+  # Do this in V2 instead:
+  if tensor_shape.rank is None:
+    dim = Dimension(None)
+  else:
+    dim = tensor_shape.dims[i]
+  dim.assert_is_compatible_with(other_shape)  # or using any other shape method
+
+  # The V2 suggestion above is more explicit, which will save you from
+  # the following trap (present in V1):
+  # you might do in-place modifications to `dim` and expect them to be reflected
+  # in `tensor_shape[i]`, but they would not be.
+  ```
+  """
+  global _TENSORSHAPE_V2_OVERRIDE  # pylint: disable=invalid-name
+  _TENSORSHAPE_V2_OVERRIDE = True
+
+
+@tf_export(v1=["disable_v2_tensorshape"])
+def disable_v2_tensorshape():
+  """Disables the V2 TensorShape behavior and reverts to V1 behavior.
+
+  See docstring for `enable_v2_tensorshape` for details about the new behavior.
+  """
+  global _TENSORSHAPE_V2_OVERRIDE  # pylint: disable=invalid-name
+  _TENSORSHAPE_V2_OVERRIDE = False
+
+
+@tf_export("compat.dimension_value",
+           v1=["dimension_value", "compat.dimension_value"])
+def dimension_value(dimension):
+  """Compatibility utility required to allow for both V1 and V2 behavior in TF.
+
+  Until the release of TF 2.0, we need the legacy behavior of `TensorShape` to
+  coexist with the new behavior. This utility is a bridge between the two.
+
+  When accessing the value of a TensorShape dimension,
+  use this utility, like this:
+
+  ```
+  # If you had this in your V1 code:
+  value = tensor_shape[i].value
+
+  # Use `dimension_value` as direct replacement compatible with both V1 & V2:
+  value = dimension_value(tensor_shape[i])
+
+  # This would be the V2 equivalent:
+  value = tensor_shape[i]  # Warning: this will return the dim value in V2!
+  ```
+
+  Arguments:
+    dimension: Either a `Dimension` instance, an integer, or None.
+
+  Returns:
+    A plain value, i.e. an integer or None.
+  """
+  if isinstance(dimension, Dimension):
+    return dimension.value
+  return dimension
+
+
+@tf_export("compat.dimension_at_index",
+           v1=["dimension_at_index", "compat.dimension_at_index"])
+def dimension_at_index(shape, index):
+  """Compatibility utility required to allow for both V1 and V2 behavior in TF.
+
+  Until the release of TF 2.0, we need the legacy behavior of `TensorShape` to
+  coexist with the new behavior. This utility is a bridge between the two.
+
+  If you want to retrieve the Dimension instance corresponding to a certain
+  index in a TensorShape instance, use this utility, like this:
+
+  ```
+  # If you had this in your V1 code:
+  dim = tensor_shape[i]
+
+  # Use `dimension_at_index` as direct replacement compatible with both V1 & V2:
+  dim = dimension_at_index(tensor_shape, i)
+
+  # Another possibility would be this, but WARNING: it only works if the
+  # tensor_shape instance has a defined rank.
+  dim = tensor_shape.dims[i]  # `dims` may be None if the rank is undefined!
+
+  # In native V2 code, we recommend instead being more explicit:
+  if tensor_shape.rank is None:
+    dim = Dimension(None)
+  else:
+    dim = tensor_shape.dims[i]
+
+  # Being more explicit will save you from the following trap (present in V1):
+  # you might do in-place modifications to `dim` and expect them to be reflected
+  # in `tensor_shape[i]`, but they would not be (as the Dimension object was
+  # instantiated on the fly.
+  ```
+
+  Arguments:
+    shape: A TensorShape instance.
+    index: An integer index.
+
+  Returns:
+    A dimension object.
+  """
+  assert isinstance(shape, TensorShape)
+  if shape.rank is None:
+    return Dimension(None)
+  else:
+    return shape.dims[index]
+
+
+@tf_export(v1=["Dimension"])
 class Dimension(object):
   """Represents the value of one dimension in a TensorShape."""
 
@@ -121,11 +266,14 @@ class Dimension(object):
     Dimensions are combined as follows:
 
     ```python
-    tf.Dimension(n)   .merge_with(tf.Dimension(n))    == tf.Dimension(n)
-    tf.Dimension(n)   .merge_with(tf.Dimension(None)) == tf.Dimension(n)
-    tf.Dimension(None).merge_with(tf.Dimension(n))    == tf.Dimension(n)
-    tf.Dimension(None).merge_with(tf.Dimension(None)) == tf.Dimension(None)
-    tf.Dimension(n)   .merge_with(tf.Dimension(m))  # raises ValueError for n != m
+    tf.Dimension(n)   .merge_with(tf.Dimension(n))     == tf.Dimension(n)
+    tf.Dimension(n)   .merge_with(tf.Dimension(None))  == tf.Dimension(n)
+    tf.Dimension(None).merge_with(tf.Dimension(n))     == tf.Dimension(n)
+    # equivalent to tf.Dimension(None)
+    tf.Dimension(None).merge_with(tf.Dimension(None))
+
+    # raises ValueError for n != m
+    tf.Dimension(n)   .merge_with(tf.Dimension(m))
     ```
 
     Args:
@@ -152,10 +300,10 @@ class Dimension(object):
     Dimensions are summed as follows:
 
     ```python
-    tf.Dimension(m)    + tf.Dimension(n)    == tf.Dimension(m + n)
-    tf.Dimension(m)    + tf.Dimension(None) == tf.Dimension(None)
-    tf.Dimension(None) + tf.Dimension(n)    == tf.Dimension(None)
-    tf.Dimension(None) + tf.Dimension(None) == tf.Dimension(None)
+    tf.Dimension(m)    + tf.Dimension(n)     == tf.Dimension(m + n)
+    tf.Dimension(m)    + tf.Dimension(None)  # equiv. to tf.Dimension(None)
+    tf.Dimension(None) + tf.Dimension(n)     # equiv. to tf.Dimension(None)
+    tf.Dimension(None) + tf.Dimension(None)  # equiv. to tf.Dimension(None)
     ```
 
     Args:
@@ -187,10 +335,10 @@ class Dimension(object):
     Dimensions are subtracted as follows:
 
     ```python
-    tf.Dimension(m)    - tf.Dimension(n)    == tf.Dimension(m - n)
-    tf.Dimension(m)    - tf.Dimension(None) == tf.Dimension(None)
-    tf.Dimension(None) - tf.Dimension(n)    == tf.Dimension(None)
-    tf.Dimension(None) - tf.Dimension(None) == tf.Dimension(None)
+    tf.Dimension(m)    - tf.Dimension(n)     == tf.Dimension(m - n)
+    tf.Dimension(m)    - tf.Dimension(None)  # equiv. to tf.Dimension(None)
+    tf.Dimension(None) - tf.Dimension(n)     # equiv. to tf.Dimension(None)
+    tf.Dimension(None) - tf.Dimension(None)  # equiv. to tf.Dimension(None)
     ```
 
     Args:
@@ -226,10 +374,10 @@ class Dimension(object):
     Dimensions are summed as follows:
 
     ```python
-    tf.Dimension(m)    * tf.Dimension(n)    == tf.Dimension(m * n)
-    tf.Dimension(m)    * tf.Dimension(None) == tf.Dimension(None)
-    tf.Dimension(None) * tf.Dimension(n)    == tf.Dimension(None)
-    tf.Dimension(None) * tf.Dimension(None) == tf.Dimension(None)
+    tf.Dimension(m)    * tf.Dimension(n)     == tf.Dimension(m * n)
+    tf.Dimension(m)    * tf.Dimension(None)  # equiv. to tf.Dimension(None)
+    tf.Dimension(None) * tf.Dimension(n)     # equiv. to tf.Dimension(None)
+    tf.Dimension(None) * tf.Dimension(None)  # equiv. to tf.Dimension(None)
     ```
 
     Args:
@@ -265,10 +413,10 @@ class Dimension(object):
     Dimensions are divided as follows:
 
     ```python
-    tf.Dimension(m)    // tf.Dimension(n)    == tf.Dimension(m // n)
-    tf.Dimension(m)    // tf.Dimension(None) == tf.Dimension(None)
-    tf.Dimension(None) // tf.Dimension(n)    == tf.Dimension(None)
-    tf.Dimension(None) // tf.Dimension(None) == tf.Dimension(None)
+    tf.Dimension(m)    // tf.Dimension(n)     == tf.Dimension(m // n)
+    tf.Dimension(m)    // tf.Dimension(None)  # equiv. to tf.Dimension(None)
+    tf.Dimension(None) // tf.Dimension(n)     # equiv. to tf.Dimension(None)
+    tf.Dimension(None) // tf.Dimension(None)  # equiv. to tf.Dimension(None)
     ```
 
     Args:
@@ -317,16 +465,64 @@ class Dimension(object):
     """
     return self // other
 
+  def __rdiv__(self, other):
+    """Use `__floordiv__` via `x // y` instead.
+
+    This function exists only to have a better error message. Instead of:
+    `TypeError: unsupported operand type(s) for /: 'int' and 'Dimension'`,
+    this function will explicitly call for usage of `//` instead.
+
+    Args:
+      other: Another `Dimension`.
+
+    Raises:
+      TypeError.
+    """
+    raise TypeError("unsupported operand type(s) for /: '{}' and 'Dimension', "
+                    "please use // instead".format(type(other).__name__))
+
+  def __truediv__(self, other):
+    """Use `__floordiv__` via `x // y` instead.
+
+    This function exists only to have a better error message. Instead of:
+    `TypeError: unsupported operand type(s) for /: 'Dimension' and 'int'`,
+    this function will explicitly call for usage of `//` instead.
+
+    Args:
+      other: Another `Dimension`.
+
+    Raises:
+      TypeError.
+    """
+    raise TypeError("unsupported operand type(s) for /: 'Dimension' and '{}', "
+                    "please use // instead".format(type(other).__name__))
+
+  def __rtruediv__(self, other):
+    """Use `__floordiv__` via `x // y` instead.
+
+    This function exists only to have a better error message. Instead of:
+    `TypeError: unsupported operand type(s) for /: 'int' and 'Dimension'`,
+    this function will explicitly call for usage of `//` instead.
+
+    Args:
+      other: Another `Dimension`.
+
+    Raises:
+      TypeError.
+    """
+    raise TypeError("unsupported operand type(s) for /: '{}' and 'Dimension', "
+                    "please use // instead".format(type(other).__name__))
+
   def __mod__(self, other):
     """Returns `self` modulo `other`.
 
     Dimension moduli are computed as follows:
 
     ```python
-    tf.Dimension(m)    % tf.Dimension(n)    == tf.Dimension(m % n)
-    tf.Dimension(m)    % tf.Dimension(None) == tf.Dimension(None)
-    tf.Dimension(None) % tf.Dimension(n)    == tf.Dimension(None)
-    tf.Dimension(None) % tf.Dimension(None) == tf.Dimension(None)
+    tf.Dimension(m)    % tf.Dimension(n)     == tf.Dimension(m % n)
+    tf.Dimension(m)    % tf.Dimension(None)  # equiv. to tf.Dimension(None)
+    tf.Dimension(None) % tf.Dimension(n)     # equiv. to tf.Dimension(None)
+    tf.Dimension(None) % tf.Dimension(None)  # equiv. to tf.Dimension(None)
     ```
 
     Args:
@@ -540,7 +736,12 @@ class TensorShape(object):
       else:
         # Got a list of dimensions
         self._dims = [as_dimension(d) for d in dims_iter]
-    self._ndims = None
+
+  @property
+  def _v2_behavior(self):
+    if _TENSORSHAPE_V2_OVERRIDE is None:
+      return tf2.enabled()
+    return _TENSORSHAPE_V2_OVERRIDE
 
   def __repr__(self):
     return "TensorShape(%r)" % self._dims
@@ -557,11 +758,6 @@ class TensorShape(object):
   def dims(self):
     """Returns a list of Dimensions, or None if the shape is unspecified."""
     return self._dims
-
-  @dims.setter
-  def dims(self, dims):
-    self._dims = dims
-    self._ndims = None
 
   @property
   def ndims(self):
@@ -959,10 +1155,7 @@ def unknown_shape(ndims=None):
   if ndims is None:
     return TensorShape(None)
   else:
-    return TensorShape([Dimension(None)] * ndims)
-
-
-_SCALAR_SHAPE = TensorShape([])
+    return TensorShape([Dimension(None)] * rank)
 
 
 def scalar():

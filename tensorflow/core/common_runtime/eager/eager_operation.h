@@ -50,6 +50,7 @@ class EagerOperation {
     return &inputs_;
   }
   void AddInput(tensorflow::TensorHandle* h);
+  void ConsumeInput(tensorflow::TensorHandle* h);
 
   const tensorflow::string& Name() const { return name_; }
   const tensorflow::AttrTypeMap* AttrTypes() const { return attr_types_; }
@@ -59,6 +60,8 @@ class EagerOperation {
   void SetDevice(tensorflow::Device* device) { device_ = device; }
 
   void SetUseXla(bool use_xla) { use_xla_ = use_xla; }
+
+  string DebugString() const;
 
  private:
   tensorflow::EagerContext* ctx_;  // Must outlive the EagerOperation.

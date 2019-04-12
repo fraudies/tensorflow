@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensorflow/core/grappler/optimizers/data/map_fusion.h"
 
+#include "absl/container/flat_hash_set.h"
 #include "tensorflow/core/framework/attr_value.pb.h"
 #include "tensorflow/core/framework/node_def.pb.h"
 #include "tensorflow/core/grappler/clusters/cluster.h"
@@ -71,14 +72,16 @@ NodeDef MakeFusedNode(const NodeDef& parent_map_node, const NodeDef& map_node,
 
 }  // namespace
 
-Status MapFusion::Optimize(Cluster* cluster, const GrapplerItem& item,
-                           GraphDef* output) {
+Status MapFusion::OptimizeAndCollectStats(Cluster* cluster,
+                                          const GrapplerItem& item,
+                                          GraphDef* output,
+                                          OptimizationStats* stats) {
   GraphDef sorted_old_graph = item.graph;
   TF_RETURN_IF_ERROR(TopologicalSort(&sorted_old_graph));
   *output = sorted_old_graph;
 
   MutableGraphView graph(output);
-  std::set<string> nodes_to_delete;
+  absl::flat_hash_set<string> nodes_to_delete;
   FunctionLibraryDefinition function_library(OpRegistry::Global(),
                                              item.graph.library());
 
@@ -124,7 +127,8 @@ Status MapFusion::Optimize(Cluster* cluster, const GrapplerItem& item,
     const auto* fused_maps_node = graph.AddNode(
         MakeFusedNode(*parent_map_node, *map_node, *fused_function, &graph));
 
-    graph.ReplaceInput(*map_node, *fused_maps_node);
+    TF_RETURN_IF_ERROR(
+        graph.UpdateFanouts(map_node->name(), fused_maps_node->name()));
 
     // TODO(prazek): we should run some optimizations on the fused map
     // functions, or make sure that optimization passes run after map
@@ -135,9 +139,10 @@ Status MapFusion::Optimize(Cluster* cluster, const GrapplerItem& item,
     // they are not used anymore.
     nodes_to_delete.insert(parent_map_node->name());
     nodes_to_delete.insert(map_node->name());
+    stats->num_changes++;
   }
 
-  graph.DeleteNodes(nodes_to_delete);
+  TF_RETURN_IF_ERROR(graph.DeleteNodes(nodes_to_delete));
   return Status::OK();
 }
 
@@ -148,5 +153,5 @@ void MapFusion::Feedback(Cluster* cluster, const GrapplerItem& item,
 
 REGISTER_GRAPH_OPTIMIZER_AS(MapFusion, "map_fusion");
 
-}  // end namespace grappler
-}  // end namespace tensorflow
+}  // namespace grappler
+}  // namespace tensorflow

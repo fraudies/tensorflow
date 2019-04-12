@@ -1,7 +1,16 @@
 # TensorFlow Python API Upgrade Utility
 
-This tool allows you to upgrade your existing TensorFlow Python scripts.
-This script can be run on a single Python file:
+This tool allows you to upgrade your existing TensorFlow Python scripts,
+specifically:
+* `tf_upgrade_v2.py`: Upgrade code from TensorFlow 1.x to TensorFlow 2.0 preview.
+* `tf_upgrade.py`: Upgrade code to TensorFlow 1.0 from TensorFlow 0.11.
+
+## Running the script from pip package
+
+First, install TensorFlow pip package*. See
+https://www.tensorflow.org/install/pip.
+
+Upgrade script can be run on a single Python file:
 
 ```
 tf_upgrade.py --infile foo.py --outfile foo-upgraded.py
@@ -42,16 +51,14 @@ mismap arguments.
 - This script wouldn't actually reorder arguments. Instead, the script will add
 keyword arguments to functions that had their arguments reordered.
 
-- This script is not able to upgrade all functions. One notable example is
-`tf.reverse()` which has been changed to take a list of indices rather than
-a tensor of bools. If the script detects this, it will report this to stdout
-(and in the report), and you can fix it manually. For example if you have
-`tf.reverse(a, [False, True, True])` you will need to manually change it to
-`tf.reverse(a, [1, 2])`.
+- The script assumes that `tensorflow` is imported using `import tensorflow as tf`.
 
-- There are some syntaxes that are not handleable with this script as this
-script was designed to use only standard python packages. If the script fails
-with "A necessary keyword argument failed to be inserted." or
+- Note for upgrading to 2.0: Check out [tf2up.ml](http://tf2up.ml) for a convenient tool to upgrade Jupiter
+  notebooks and Python files in a github repository.
+
+- Note for upgrading to 1.0: There are some syntaxes that are not handleable with this script as this
+script was designed to use only standard python packages.
+If the script fails with "A necessary keyword argument failed to be inserted." or
 "Failed to find keyword lexicographically. Fix manually.", you can try
 [@machrisaa's fork of this script](https://github.com/machrisaa/tf0to1).
 [@machrisaa](https://github.com/machrisaa) has used the

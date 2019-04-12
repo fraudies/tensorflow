@@ -32,6 +32,7 @@ from tensorflow.python.framework import ops
 from tensorflow.python.ops import resources
 from tensorflow.python.platform import resource_loader
 from tensorflow.python.training import saver
+from tensorflow.python.training.tracking import tracking
 
 
 _model_ops = loader.load_op_library(
@@ -86,6 +87,59 @@ class TreeVariableSavable(saver.BaseSaverBuilder.SaveableObject):
           self._tree_handle,
           restored_tensors[0],
           params=self.params.serialized_params_proto)
+
+
+class TreeVariable(tracking.TrackableResource):
+  """A tree model."""
+
+  def __init__(self, params, tree_config, stats_handle, name, container=None):
+    self._params = params
+    self._tree_config = tree_config
+    self._stats_handle = stats_handle
+    self._name = name
+    self._container = container
+    self._init_op = None
+    super(TreeVariable, self).__init__()
+    self._resource_handle = self._create_resource()
+
+  def _create_resource(self):
+    if context.executing_eagerly():
+      # TODO(allenl): This will leak memory due to kernel caching by the
+      # shared_name attribute value (but is better than the alternative of
+      # sharing everything by default when executing eagerly; hopefully creating
+      # tables in a loop is uncommon).
+      shared_name = "tree_variable_%d" % (ops.uid(),)
+    else:
+      shared_name = self._name
+    return gen_model_ops.decision_tree_resource_handle_op(
+        self._container, shared_name=shared_name, name=self._name)
+
+  def _initialize(self):
+    return gen_model_ops.create_tree_variable(
+        self.resource_handle,
+        self._tree_config,
+        params=self._params.serialized_params_proto)
+
+  @property
+  def initializer(self):
+    if self._init_op is None:
+      self._init_op = self._initialize()
+    return self._init_op
+
+  def is_initialized(self):
+    return gen_model_ops.tree_is_initialized_op(self.resource_handle)
+
+  def _gather_saveables_for_checkpoint(self):
+    """For object-based checkpointing."""
+    return {
+        "tree_variable":
+            functools.partial(
+                TreeVariableSavable,
+                params=self._params,
+                tree_handle=self.resource_handle,
+                stats_handle=self._stats_handle,
+                create_op=self._init_op)
+    }
 
 
 def tree_variable(params, tree_config, stats_handle, name, container=None):

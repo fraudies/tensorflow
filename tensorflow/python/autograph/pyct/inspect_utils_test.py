@@ -24,7 +24,13 @@ import imp
 import six
 
 from tensorflow.python.autograph.pyct import inspect_utils
+from tensorflow.python.autograph.pyct.testing import future_import_module
+from tensorflow.python.eager import function
+from tensorflow.python.framework import constant_op
 from tensorflow.python.platform import test
+
+future_import_module_statements = ('absolute_import', 'division',
+                                   'print_function', 'with_statement')
 
 
 def decorator(f):
@@ -253,6 +259,24 @@ class InspectUtilsTest(test.TestCase):
     c = TestCallable()
     self.assertEqual(inspect_utils.getmethodclass(c), TestCallable)
 
+  def test_getmethodclass_weakref_mechanism(self):
+    test_obj = TestClass()
+
+    def test_fn(self):
+      return self
+
+    bound_method = types.MethodType(
+        test_fn,
+        function.TfMethodTarget(
+            weakref.ref(test_obj), test_obj.member_function))
+    self.assertEqual(inspect_utils.getmethodclass(bound_method), TestClass)
+
+  def test_getmethodclass_no_bool_conversion(self):
+
+    tensor = constant_op.constant([1])
+    self.assertEqual(
+        inspect_utils.getmethodclass(tensor.get_shape), type(tensor))
+
   def test_getdefiningclass(self):
     class Superclass(object):
 
@@ -285,11 +309,26 @@ class InspectUtilsTest(test.TestCase):
         Superclass)
 
   def test_isbuiltin(self):
-    self.assertTrue(inspect_utils.isbuiltin(range))
+    self.assertTrue(inspect_utils.isbuiltin(enumerate))
     self.assertTrue(inspect_utils.isbuiltin(float))
     self.assertTrue(inspect_utils.isbuiltin(int))
     self.assertTrue(inspect_utils.isbuiltin(len))
+    self.assertTrue(inspect_utils.isbuiltin(range))
+    self.assertTrue(inspect_utils.isbuiltin(zip))
     self.assertFalse(inspect_utils.isbuiltin(function_decorator))
+
+  def test_getfutureimports_functions(self):
+    self.assertEqual(inspect_utils.getfutureimports(future_import_module.f),
+                     future_import_module_statements)
+
+  def test_getfutureimports_lambdas(self):
+    self.assertEqual(
+        inspect_utils.getfutureimports(future_import_module.lambda_f),
+        future_import_module_statements)
+
+  def test_getfutureimports_methods(self):
+    self.assertEqual(inspect_utils.getfutureimports(future_import_module.Foo.f),
+                     future_import_module_statements)
 
   def test_super_wrapper_for_dynamic_attrs(self):
 

@@ -60,6 +60,8 @@ class MatrixDiagTest(test.TestCase):
     with self.assertRaisesRegexp(ValueError, "must be at least rank 1"):
       array_ops.matrix_diag(0)
 
+  @test_util.run_deprecated_v1
+  @test_util.disable_xla("b/123337890")  # Error messages differ
   def testInvalidShapeAtEval(self):
     with self.test_session(use_gpu=True):
       v = array_ops.placeholder(dtype=dtypes_lib.float32)
@@ -249,6 +251,8 @@ class MatrixDiagPartTest(test.TestCase):
     with self.assertRaisesRegexp(ValueError, "must be at least rank 2"):
       array_ops.matrix_diag_part(0)
 
+  @test_util.run_deprecated_v1
+  @test_util.disable_xla("b/123337890")  # Error messages differ
   def testInvalidShapeAtEval(self):
     with self.test_session(use_gpu=True):
       v = array_ops.placeholder(dtype=dtypes_lib.float32)

@@ -87,7 +87,7 @@ static void CreateLoopInvariantCopy(
 
     HloInstruction* next_operand =
         frame->instruction->mutable_operand(frame->operand_index++);
-    if (hoisted_instructions->count(next_operand) ||
+    if (hoisted_instructions->contains(next_operand) ||
         next_operand == while_body_param) {
       continue;
     }
@@ -125,7 +125,7 @@ WhileLoopInvariantCodeMotion::TryHoistingInvariantInstructionsFromWhileBody(
     HloInstruction* while_instr) {
   auto print_no_metadata = HloPrintOptions{}.set_print_metadata(false);
 
-  if (!ShapeUtil::IsTuple(while_instr->shape())) {
+  if (!while_instr->shape().IsTuple()) {
     // This restriction leaves one interesting pattern on the table:
     //
     //  while_body(f32[1024, 1024] %param) {
@@ -160,7 +160,7 @@ WhileLoopInvariantCodeMotion::TryHoistingInvariantInstructionsFromWhileBody(
   // is no benefit to hoisting them unless something that uses it is also
   // hoisted.
   for (auto* instr : WhileUtil::GetInvariantGTEsForWhileBody(*while_body)) {
-    if (ShapeUtil::IsArray(instr->shape())) {
+    if (instr->shape().IsArray()) {
       // TODO(b/79147885): We should try to generalize this to tuples for
       // uniformity's sake, if nothing else.
       InsertOrDie(&unhoisted_invariant_instructions, instr);
@@ -193,9 +193,40 @@ WhileLoopInvariantCodeMotion::TryHoistingInvariantInstructionsFromWhileBody(
       continue;
     }
 
+    if (!hoist_size_inflating_ops_) {
+      // Check that hoisting the instruction doesn't cause a significant memory
+      // blow-up. LICM extends the live-range of the output of the hoisted
+      // instruction to be the entire while loop, which may be problematic on
+      // platforms where memory is limited. This can be especially harmful if
+      // the instruction has a significantly larger output than its input, e.g.
+      // kIota, kBroadcast or kConstant.
+      int64 input_size = 0, output_size = 0;
+
+      for (auto* operand : instruction->operands()) {
+        ShapeUtil::ForEachSubshape(
+            operand->shape(),
+            [&input_size](const Shape& subshape, const ShapeIndex& /*index*/) {
+              if (subshape.IsArray()) {
+                input_size += ShapeUtil::ByteSizeOfElements(subshape);
+              }
+            });
+      }
+      ShapeUtil::ForEachSubshape(
+          instruction->shape(),
+          [&output_size](const Shape& subshape, const ShapeIndex& /*index*/) {
+            if (subshape.IsArray()) {
+              output_size += ShapeUtil::ByteSizeOfElements(subshape);
+            }
+          });
+
+      if (output_size > input_size) {
+        continue;
+      }
+    }
+
     auto is_invariant = [&](HloInstruction* op) {
       return hoisted_instructions.find(op) != hoisted_instructions.end() ||
-             unhoisted_invariant_instructions.count(op) ||
+             unhoisted_invariant_instructions.contains(op) ||
              op->opcode() == HloOpcode::kConstant;
     };
 

@@ -20,6 +20,8 @@ from __future__ import print_function
 import numpy as np
 
 from tensorflow.python.framework import dtypes
+from tensorflow.python.framework import errors
+from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops.linalg import linalg as linalg_lib
@@ -97,7 +99,7 @@ class SquareLinearOperatorFullMatrixTest(
     matrix = [[1., 1.], [1., 1.]]
     operator = linalg.LinearOperatorFullMatrix(matrix, is_self_adjoint=True)
     with self.cached_session():
-      with self.assertRaisesOpError("Cholesky decomposition was not success"):
+      with self.assertRaises(errors.InvalidArgumentError):
         operator.assert_positive_definite().run()
 
 

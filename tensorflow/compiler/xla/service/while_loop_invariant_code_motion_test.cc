@@ -295,7 +295,7 @@ TEST_F(WhileLoopInvariantCodeMotionTest, DontHoistBitcastAlone) {
   // The bitcast's user, an outfeed, can't be hoisted, so don't hoist the
   // bitcast either.
   auto scalar_s32 = ShapeUtil::MakeShape(S32, {});
-  auto scalar_f32 = ShapeUtil::MakeShape(F32, {});
+  auto effective_scalar_s32 = ShapeUtil::MakeShape(S32, {1});
   auto token_shape = ShapeUtil::MakeTokenShape();
   Shape while_shape =
       ShapeUtil::MakeTupleShape({scalar_s32, scalar_s32, token_shape});
@@ -310,10 +310,12 @@ TEST_F(WhileLoopInvariantCodeMotionTest, DontHoistBitcastAlone) {
         HloInstruction::CreateGetTupleElement(scalar_s32, param, 1));
     HloInstruction* in_token = builder.AddInstruction(
         HloInstruction::CreateGetTupleElement(token_shape, param, 2));
-    HloInstruction* bitcast_inst = builder.AddInstruction(
-        HloInstruction::CreateUnary(scalar_f32, HloOpcode::kBitcast, gte_0));
-    HloInstruction* out_token = builder.AddInstruction(
-        HloInstruction::CreateOutfeed(scalar_f32, bitcast_inst, in_token, ""));
+    HloInstruction* bitcast_inst =
+        builder.AddInstruction(HloInstruction::CreateUnary(
+            effective_scalar_s32, HloOpcode::kBitcast, gte_0));
+    HloInstruction* out_token =
+        builder.AddInstruction(HloInstruction::CreateOutfeed(
+            effective_scalar_s32, bitcast_inst, in_token, ""));
     builder.AddInstruction(
         HloInstruction::CreateTuple({gte_0, gte_1, out_token}));
 
@@ -347,9 +349,9 @@ TEST_F(WhileLoopInvariantCodeMotionTest, DontHoistBitcastAlone) {
 TEST_F(WhileLoopInvariantCodeMotionTest, HoistBitcastIfNeeded) {
   // The bitcast's user can be hoisted, so hoist the bitcast too.
   auto scalar_s32 = ShapeUtil::MakeShape(S32, {});
-  auto scalar_f32 = ShapeUtil::MakeShape(F32, {});
-  Shape while_shape =
-      ShapeUtil::MakeTupleShape({scalar_s32, scalar_f32, scalar_f32});
+  auto effective_scalar_s32 = ShapeUtil::MakeShape(S32, {1});
+  Shape while_shape = ShapeUtil::MakeTupleShape(
+      {scalar_s32, effective_scalar_s32, effective_scalar_s32});
 
   HloComputation* while_body = [&]() {
     HloComputation::Builder builder(TestName() + ".while_body");
@@ -358,12 +360,13 @@ TEST_F(WhileLoopInvariantCodeMotionTest, HoistBitcastIfNeeded) {
     HloInstruction* gte_0 = builder.AddInstruction(
         HloInstruction::CreateGetTupleElement(scalar_s32, param, 0));
     HloInstruction* gte_1 = builder.AddInstruction(
-        HloInstruction::CreateGetTupleElement(scalar_f32, param, 1));
-    HloInstruction* bitcast_inst = builder.AddInstruction(
-        HloInstruction::CreateUnary(scalar_f32, HloOpcode::kBitcast, gte_0));
+        HloInstruction::CreateGetTupleElement(effective_scalar_s32, param, 1));
+    HloInstruction* bitcast_inst =
+        builder.AddInstruction(HloInstruction::CreateUnary(
+            effective_scalar_s32, HloOpcode::kBitcast, gte_0));
     HloInstruction* add_inst =
         builder.AddInstruction(HloInstruction::CreateBinary(
-            scalar_f32, HloOpcode::kAdd, bitcast_inst, gte_1));
+            effective_scalar_s32, HloOpcode::kAdd, bitcast_inst, gte_1));
     builder.AddInstruction(
         HloInstruction::CreateTuple({gte_0, gte_1, add_inst}));
 
@@ -526,7 +529,95 @@ TEST_F(WhileLoopInvariantCodeMotionTest, DoesNotHoistConstantByDefault) {
   ParseAndVerifyModule(kConstantHoistingTestCase);
 
   TF_ASSERT_OK_AND_ASSIGN(bool simplified_loop,
-                          WhileLoopInvariantCodeMotion{}.Run(&module()));
+                          WhileLoopInvariantCodeMotion{}.Run(m.get()));
+  EXPECT_FALSE(simplified_loop);
+}
+
+TEST_F(WhileLoopInvariantCodeMotionTest, DoNotHoistOutOfSingleIteration) {
+  const char* const kHloModule = R"(
+    HloModule ModuleWithWhile
+
+    body {
+      p_body = (f32[2], f32[2], f32[2], s32[]) parameter(0)
+      val.0 = f32[2] get-tuple-element(p_body), index=0
+      val.1 = f32[2] get-tuple-element(p_body), index=1
+      add = f32[2] add(val.0, val.1)
+      const = s32[] constant(-1)
+      ROOT root = (f32[2], f32[2], f32[2], s32[]) tuple(val.0, val.1, add, const)
+    }
+
+    condition {
+      p_cond = (f32[2], f32[2], f32[2], s32[]) parameter(0)
+      gte = s32[] get-tuple-element(p_cond), index=3
+      const = s32[] constant(42)
+      ROOT result = pred[] compare(gte, const), direction=EQ
+    }
+
+    ENTRY entry {
+      param.0 = f32[2] parameter(0)
+      param.1 = s32[] parameter(1)
+      while_init = (f32[2], f32[2], f32[2], s32[]) tuple(param.0, param.0, param.0, param.1)
+      ROOT while = (f32[2], f32[2], f32[2], s32[]) while(while_init), condition=condition, body=body
+    })";
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+                          ParseAndReturnVerifiedModule(kHloModule));
+
+  TF_ASSERT_OK_AND_ASSIGN(bool simplified_loop,
+                          WhileLoopInvariantCodeMotion{}.Run(module.get()));
+  EXPECT_FALSE(simplified_loop);
+}
+
+const char* const kInflatingTestCase = R"(
+HloModule ModuleWithWhile
+
+mul {
+  lhs = f32[] parameter(0)
+  rhs = f32[] parameter(1)
+  ROOT mul = f32[] multiply(lhs, rhs)
+}
+
+body {
+  p_body = (f32[]) parameter(0)
+  iota = f32[1024, 1024] iota(), iota_dimension=0
+  add = f32[1024, 1024] add(iota, iota)
+  constant = f32[] constant(1.0)
+  reduce = f32[] reduce(f32[1024, 1024] add, f32[] constant), dimensions={0,1}, to_apply=mul
+  ROOT root = (f32[]) tuple(reduce)
+}
+
+condition {
+  p_cond = (f32[]) parameter(0)
+  ROOT result = pred[] constant(true)
+}
+
+ENTRY entry {
+  param = f32[] parameter(0)
+  while_init = (f32[]) tuple(param)
+  ROOT while = (f32[]) while(while_init), condition=condition, body=body
+}
+)";
+
+TEST_F(WhileLoopInvariantCodeMotionTest, HoistsInflatingByDefault) {
+  auto m = ParseAndReturnVerifiedModule(kInflatingTestCase).ValueOrDie();
+
+  TF_ASSERT_OK_AND_ASSIGN(
+      bool simplified_loop,
+      WhileLoopInvariantCodeMotion(/*hoist_constants=*/true).Run(m.get()));
+  EXPECT_TRUE(simplified_loop);
+
+  HloComputation* while_body = m->GetComputationWithName("wide.body");
+  ASSERT_NE(while_body, nullptr);
+  EXPECT_THAT(while_body->instructions(), Not(Contains(op::Iota())));
+}
+
+TEST_F(WhileLoopInvariantCodeMotionTest, NoHoistInflating) {
+  auto m = ParseAndReturnVerifiedModule(kInflatingTestCase).ValueOrDie();
+
+  TF_ASSERT_OK_AND_ASSIGN(
+      bool simplified_loop,
+      WhileLoopInvariantCodeMotion(/*hoist_constants=*/true,
+                                   /*hoist_size_inflating_ops=*/false)
+          .Run(m.get()));
   EXPECT_FALSE(simplified_loop);
 }
 

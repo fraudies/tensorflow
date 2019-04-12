@@ -27,7 +27,7 @@ from tensorflow.core.example import feature_pb2
 from tensorflow.python.data.experimental.ops import parsing_ops as contrib_parsing_ops
 from tensorflow.python.data.kernel_tests import test_base
 from tensorflow.python.data.ops import dataset_ops
-from tensorflow.python.data.util import nest
+from tensorflow.python.eager import context
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import errors_impl
 from tensorflow.python.framework import ops
@@ -95,24 +95,40 @@ class ParseExampleDatasetTest(test_base.DatasetTestBase):
         # Check values.
         dataset = dataset_ops.Dataset.from_tensors(input_tensor).apply(
             contrib_parsing_ops.parse_example_dataset(feature_val))
-        get_next = dataset.make_one_shot_iterator().get_next()
-        result = sess.run(get_next)
-        flattened = nest.flatten(result)
-        print("result", result, "expected_values", expected_values)
-        _compare_output_to_expected(self, result, expected_values, flattened)
-
-      # Check shapes; if serialized is a Tensor we need its size to
-      # properly check.
-      batch_size = (
-          input_tensor.eval().size if isinstance(input_tensor, ops.Tensor) else
-          np.asarray(input_tensor).size)
-      for k, f in feature_val.items():
-        print("output_shapes as list ",
-              tuple(dataset.output_shapes[k].as_list()))
-        if isinstance(f, parsing_ops.FixedLenFeature) and f.shape is not None:
-          self.assertEqual(dataset.output_shapes[k].as_list()[0], batch_size)
-        elif isinstance(f, parsing_ops.VarLenFeature):
-          self.assertEqual(dataset.output_shapes[k].as_list()[1], None)
+        get_next = self.getNext(dataset)
+        self.evaluate(get_next())
+      return
+    else:
+      # Returns dict w/ Tensors and SparseTensors.
+      # Check values.
+      dataset = dataset_ops.Dataset.from_tensors(input_tensor).apply(
+          contrib_parsing_ops.parse_example_dataset(feature_val))
+      get_next = self.getNext(dataset)
+      result = self.evaluate(get_next())
+      self._compare_output_to_expected(result, expected_values)
+      with self.assertRaises(errors_impl.OutOfRangeError):
+        self.evaluate(get_next())
+      with self.assertRaises(errors_impl.OutOfRangeError):
+        self.evaluate(get_next())
+      if create_iterator_twice:
+        get_next = self.getNext(dataset)
+        result = self.evaluate(get_next())
+        self._compare_output_to_expected(result, expected_values)
+        with self.assertRaises(errors_impl.OutOfRangeError):
+          self.evaluate(get_next())
+    # Check shapes; if serialized is a Tensor we need its size to
+    # properly check.
+    batch_size = (
+        self.evaluate(input_tensor).size if isinstance(input_tensor, ops.Tensor)
+        else np.asarray(input_tensor).size)
+    for k, f in feature_val.items():
+      if isinstance(f, parsing_ops.FixedLenFeature) and f.shape is not None:
+        self.assertEqual(
+            dataset_ops.get_legacy_output_shapes(dataset)[k].as_list()[0],
+            batch_size)
+      elif isinstance(f, parsing_ops.VarLenFeature):
+        self.assertEqual(
+            dataset_ops.get_legacy_output_shapes(dataset)[k].as_list()[1], None)
 
   def testEmptySerializedWithAllDefaults(self):
     sparse_name = "st_a"
@@ -682,7 +698,7 @@ class ParseExampleDatasetTest(test_base.DatasetTestBase):
     for batch_size in (1, 10, 20, 100, 256):
       self._testSerializedContainingVarLenDenseLargerBatch(batch_size)
 
-  def testSerializedContainingVarLenDense(self):
+  def testSerializedShapeMismatch(self):
     aname = "a"
     bname = "b"
     cname = "c"
@@ -703,6 +719,63 @@ class ParseExampleDatasetTest(test_base.DatasetTestBase):
             aname: float_feature([]),
             cname: int64_feature([3]),
         })),
+    ]
+
+    serialized = [m.SerializeToString() for m in original]
+    if context.executing_eagerly():
+      self._test(
+          ops.convert_to_tensor(serialized), {
+              aname:
+                  parsing_ops.FixedLenSequenceFeature((2, 1),
+                                                      dtype=dtypes.float32,
+                                                      allow_missing=True,
+                                                      default_value=[]),
+              bname:
+                  parsing_ops.FixedLenSequenceFeature(
+                      (2, 1, 1), dtype=dtypes.string, allow_missing=True),
+          },
+          expected_err=(errors_impl.InvalidArgumentError,
+                        "Input to reshape is a tensor with 0 values"))
+    else:
+      self._test(
+          ops.convert_to_tensor(serialized), {
+              aname:
+                  parsing_ops.FixedLenSequenceFeature((2, 1),
+                                                      dtype=dtypes.float32,
+                                                      allow_missing=True,
+                                                      default_value=[]),
+              bname:
+                  parsing_ops.FixedLenSequenceFeature(
+                      (2, 1, 1), dtype=dtypes.string, allow_missing=True),
+          },
+          expected_err=(ValueError,
+                        "Cannot reshape a tensor with 0 elements to shape"))
+
+  @test_util.run_deprecated_v1
+  def testSerializedContainingVarLenDense(self):
+    aname = "a"
+    bname = "b"
+    cname = "c"
+    dname = "d"
+    original = [
+        example(features=features({
+            cname: int64_feature([2]),
+        })),
+        example(
+            features=features({
+                aname: float_feature([1, 1]),
+                bname: bytes_feature([b"b0_str", b"b1_str"]),
+            })),
+        example(
+            features=features({
+                aname: float_feature([-1, -1, 2, 2]),
+                bname: bytes_feature([b"b1"]),
+            })),
+        example(
+            features=features({
+                aname: float_feature([]),
+                cname: int64_feature([3]),
+            })),
     ]
 
     serialized = [m.SerializeToString() for m in original]

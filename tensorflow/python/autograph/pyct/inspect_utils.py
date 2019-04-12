@@ -29,11 +29,52 @@ import six
 from tensorflow.python.util import tf_inspect
 
 
+# These functions test negative for isinstance(*, types.BuiltinFunctionType)
+# and inspect.isbuiltin, and are generally not visible in globals().
+# TODO(mdan): Remove this.
+SPECIAL_BUILTINS = {
+    'dict': dict,
+    'enumerate': enumerate,
+    'float': float,
+    'int': int,
+    'len': len,
+    'list': list,
+    'print': print,
+    'range': range,
+    'tuple': tuple,
+    'type': type,
+    'zip': zip
+}
+
+if six.PY2:
+  SPECIAL_BUILTINS['xrange'] = xrange
+
+
+def islambda(f):
+  if not tf_inspect.isfunction(f):
+    return False
+  if not hasattr(f, '__name__'):
+    return False
+  return f.__name__ == '<lambda>'
+
+
+def isnamedtuple(f):
+  """Returns True if the argument is a namedtuple-like."""
+  if not (tf_inspect.isclass(f) and issubclass(f, tuple)):
+    return False
+  if not hasattr(f, '_fields'):
+    return False
+  fields = getattr(f, '_fields')
+  if not isinstance(fields, tuple):
+    return False
+  if not all(isinstance(f, str) for f in fields):
+    return False
+  return True
+
+
 def isbuiltin(f):
   """Returns True if the argument is a built-in function."""
-  # Note these return false for isinstance(f, types.BuiltinFunctionType) so we
-  # need to specifically check for them.
-  if f in (range, int, float):
+  if f in six.moves.builtins.__dict__.values():
     return True
   if six.PY2:
     if f in (xrange,):
@@ -81,7 +122,14 @@ def getqualifiedname(namespace, object_, max_depth=2):
   Returns: Union[str, None], the fully-qualified name that resolves to the value
       o, or None if it couldn't be found.
   """
-  for name, value in namespace.items():
+  if visited is None:
+    visited = set()
+
+  # Copy the dict to avoid "changed size error" during concurrent invocations.
+  # TODO(mdan): This is on the hot path. Can we avoid the copy?
+  namespace = dict(namespace)
+
+  for name in namespace:
     # The value may be referenced by more than one symbol, case in which
     # any symbol will be fine. If the program contains symbol aliases that
     # change over time, this may capture a symbol that will later point to
@@ -127,6 +175,30 @@ def getdefiningclass(m, owner_class):
   return owner_class
 
 
+def istfmethodtarget(m):
+  """Tests whether an object is a `function.TfMethodTarget`."""
+  # See eager.function.TfMethodTarget for more details.
+  return (hasattr(m, '__self__') and
+          hasattr(m.__self__, 'weakrefself_target__') and
+          hasattr(m.__self__, 'weakrefself_func__'))
+
+
+def getmethodself(m):
+  """An extended version of inspect.getmethodclass."""
+  if not hasattr(m, '__self__'):
+    return None
+  if m.__self__ is None:
+    return None
+
+  # A fallback allowing methods to be actually bound to a type different
+  # than __self__. This is useful when a strong reference from the method
+  # to the object is not desired, for example when caching is involved.
+  if istfmethodtarget(m):
+    return m.__self__.target
+
+  return m.__self__
+
+
 def getmethodclass(m):
   """Resolves a function's owner, e.g. a method's class.
 
@@ -157,13 +229,12 @@ def getmethodclass(m):
     if isinstance(m.__class__, six.class_types):
       return m.__class__
 
-  # Instance method and class methods: should be bound to a non-null "self".
-  # If self is a class, then it's a class method.
-  if hasattr(m, '__self__'):
-    if m.__self__:
-      if tf_inspect.isclass(m.__self__):
-        return m.__self__
-      return type(m.__self__)
+  # Instance method and class methods: return the class of "self".
+  m_self = getmethodself(m)
+  if m_self is not None:
+    if tf_inspect.isclass(m_self):
+      return m_self
+    return m_self.__class__
 
   # Class, static and unbound methods: search all defined classes in any
   # namespace. This is inefficient but more robust method.
@@ -200,6 +271,21 @@ def getmethodclass(m):
     raise ValueError('Found too many owners of %s: %s' % (m, owners))
 
   return None
+
+
+def getfutureimports(entity):
+  """Detects what future imports are necessary to safely execute entity source.
+
+  Args:
+    entity: Any object
+
+  Returns:
+    A tuple of future strings
+  """
+  if not (tf_inspect.isfunction(entity) or tf_inspect.ismethod(entity)):
+    return tuple()
+  return tuple(sorted(name for name, value in entity.__globals__.items()
+                      if getattr(value, '__module__', None) == '__future__'))
 
 
 class SuperWrapperForDynamicAttrs(object):

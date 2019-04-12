@@ -33,6 +33,7 @@ from tensorflow.python.framework import ops
 from tensorflow.python.framework import sparse_tensor
 from tensorflow.python.ops import resources
 from tensorflow.python.training import saver
+from tensorflow.python.training.tracking import tracking
 
 # Pattern to remove all non alpha numeric from a string.
 _PATTERN = re.compile(r"[\W_]+")
@@ -124,6 +125,76 @@ class QuantileAccumulator(saver.BaseSaverBuilder.SaveableObject):
           stream_state=state,
           are_buckets_ready=are_buckets_ready,
           buckets=buckets)
+
+
+class QuantileAccumulator(tracking.TrackableResource):
+  """A resource that allows distributed quantile computation."""
+
+  def __init__(self,
+               init_stamp_token,
+               epsilon,
+               num_quantiles,
+               max_elements=None,
+               name=None,
+               container=None,
+               generate_quantiles=False):
+    """Creates a QuantileAccumulator object.
+
+    Args:
+      init_stamp_token: The initial value for the stamp token.
+      epsilon: Error bound on the quantile computation.
+      num_quantiles: Number of quantiles to produce from the final summary.
+      max_elements: Maximum number of elements added to the accumulator.
+      name: the name to save the accumulator under.
+      container: An optional `string`. Defaults to `""`
+      generate_quantiles: Generate quantiles instead of approximate boundaries.
+        If true, exactly `num_quantiles` will be produced in the final summary.
+    """
+    self._init_stamp_token = init_stamp_token
+    self._epsilon = epsilon
+    self._num_quantiles = num_quantiles
+    self._max_elements = max_elements
+    self._container = container
+    self._generate_quantiles = generate_quantiles
+    super(QuantileAccumulator, self).__init__()
+
+    name = _PATTERN.sub("", name)
+    with ops.name_scope(name, "QuantileAccumulator") as name:
+      self._name = name
+      self._resource_handle = self._create_resource()
+      self._init_op = self._initialize()
+      is_initialized_op = self.is_initialized()
+    resources.register_resource(self.resource_handle, self._init_op,
+                                is_initialized_op)
+    self._saveable = QuantileAccumulatorSaveable(self.resource_handle,
+                                                 self._init_op, name)
+    ops.add_to_collection(ops.GraphKeys.SAVEABLE_OBJECTS, self._saveable)
+
+  def _create_resource(self):
+    return gen_quantile_ops.quantile_stream_resource_handle_op(
+        container=self._container, shared_name=self._name, name=self._name)
+
+  def _initialize(self):
+    return gen_quantile_ops.create_quantile_accumulator(
+        self.resource_handle,
+        self._init_stamp_token,
+        epsilon=self._epsilon,
+        max_elements=self._max_elements,
+        num_quantiles=self._num_quantiles,
+        generate_quantiles=self._generate_quantiles)
+
+  @property
+  def initializer(self):
+    if self._init_op is None:
+      self._init_op = self._initialize()
+    return self._init_op
+
+  def is_initialized(self):
+    return gen_quantile_ops.quantile_accumulator_is_initialized(
+        self.resource_handle)
+
+  def _gather_saveables_for_checkpoint(self):
+    return {"quantile_accumulator", self.saveable}
 
   def get_buckets(self, stamp_token):
     """Returns quantile buckets created during previous flush."""

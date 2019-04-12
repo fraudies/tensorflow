@@ -29,6 +29,7 @@ from tensorflow.python.framework import ops
 from tensorflow.python.ops import resources
 from tensorflow.python.platform import resource_loader
 from tensorflow.python.training import saver
+from tensorflow.python.training.tracking import tracking
 
 
 _stats_ops = loader.load_op_library(
@@ -84,8 +85,58 @@ class FertileStatsVariableSavable(saver.BaseSaverBuilder.SaveableObject):
           params=self.params.serialized_params_proto)
 
 
-def fertile_stats_variable(params, stats_config, name,
-                           container=None):
+class FertileStatsVariable(tracking.TrackableResource):
+  """A Fertile stats variable."""
+
+  def __init__(self, params, stats_config, name, container=None):
+    self._params = params
+    self._stats_config = stats_config
+    self._name = name
+    self._container = container
+    self._init_op = None
+    super(FertileStatsVariable, self).__init__()
+    self._resource_handle = self._create_resource()
+
+  def _create_resource(self):
+    if context.executing_eagerly():
+      # TODO(allenl): This will leak memory due to kernel caching by the
+      # shared_name attribute value (but is better than the alternative of
+      # sharing everything by default when executing eagerly; hopefully creating
+      # tables in a loop is uncommon).
+      shared_name = "fertile_stats_variable_%d" % (ops.uid(),)
+    else:
+      shared_name = self._name
+    return gen_stats_ops.fertile_stats_resource_handle_op(
+        self._container, shared_name=shared_name, name=self._name)
+
+  def _initialize(self):
+    return gen_stats_ops.create_fertile_stats_variable(
+        self.resource_handle,
+        self._stats_config,
+        params=self._params.serialized_params_proto)
+
+  @property
+  def initializer(self):
+    if self._init_op is None:
+      self._init_op = self._initialize()
+    return self._init_op
+
+  def is_initialized(self):
+    return gen_stats_ops.fertile_stats_is_initialized_op(self.resource_handle)
+
+  def _gather_saveables_for_checkpoint(self):
+    """For object-based checkpointing."""
+    return {
+        "fertile_stats_variable":
+            functools.partial(
+                FertileStatsVariableSavable,
+                params=self._params,
+                stats_handle=self.resource_handle,
+                create_op=self.initializer)
+    }
+
+
+def fertile_stats_variable(params, stats_config, name, container=None):
   r"""Creates a stats object and returns a handle to it.
 
   Args:

@@ -1013,7 +1013,7 @@ class StepCounterHookTest(test.TestCase):
       hook.begin()
       mon_sess = monitored_session._HookedSession(sess, [hook])
       mon_sess.run(train_op)  # Run one step to record global step.
-      with test.mock.patch.object(tf_logging, 'warning') as mock_log:
+      with test.mock.patch.object(tf_logging, 'log_first_n') as mock_log:
         for _ in range(30):
           mon_sess.run(train_op)
         self.assertRegexpMatches(
@@ -1103,6 +1103,7 @@ class StepCounterHookTest(test.TestCase):
         self.assertGreater(summary_value.simple_value, 0)
 
 
+@test_util.run_deprecated_v1
 class SummarySaverHookTest(test.TestCase):
 
   def setUp(self):
@@ -1366,6 +1367,7 @@ class FinalOpsHookTest(test.TestCase):
                              hook.final_ops_values.tolist())
 
 
+@test_util.run_deprecated_v1
 class ResourceSummarySaverHookTest(test.TestCase):
 
   def setUp(self):

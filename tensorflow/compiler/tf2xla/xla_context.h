@@ -52,7 +52,7 @@ class XlaContext : public ResourceBase {
                  const TensorShape&, DataType)>* shape_representation_fn);
 
   // Virtual method defined by ResourceBase.
-  string DebugString() override;
+  string DebugString() const override;
 
   XlaCompiler* compiler() const { return compiler_; }
 

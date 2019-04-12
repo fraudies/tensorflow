@@ -28,11 +28,12 @@ VSpace = collections.namedtuple("VSpace", [
 ])
 
 
-def imperative_grad(
-    tape,
-    target,
-    sources,
-    output_gradients=None):
+def imperative_grad(tape,
+                    target,
+                    sources,
+                    output_gradients=None,
+                    sources_raw=None,
+                    unconnected_gradients=UnconnectedGradients.NONE):
   """Computes gradients from the imperatively defined tape on top of the stack.
 
   Works by filtering the tape, computing how many downstream usages are of each
@@ -45,6 +46,12 @@ def imperative_grad(
    sources: list of Tensors for which we want gradients
    output_gradients: if not None, a list of gradient provided for each Target,
     or None if we are to use the target's computed downstream gradient.
+   sources_raw: if not None, a list of the source python objects from which the
+    sources were generated. Should have the same length as sources. Only needs
+    to be populated if unconnected_gradients is 'zero'.
+   unconnected_gradients: determines the value returned if the target and
+    sources are unconnected. When 'none' the value returned is None wheras when
+    'zero' a zero tensor in the same shape as the sources is returned.
 
   Returns:
    the gradient wrt each of the sources.
@@ -56,4 +63,6 @@ def imperative_grad(
       tape._tape,  # pylint: disable=protected-access
       target,
       sources,
-      output_gradients)
+      output_gradients,
+      sources_raw,
+      compat.as_str(unconnected_gradients.value))

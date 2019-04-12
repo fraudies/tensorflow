@@ -5,6 +5,10 @@ tf_module {
     mtype: "<class \'abc.ABCMeta\'>"
   }
   member {
+    name: "LinearOperatorAdjoint"
+    mtype: "<type \'type\'>"
+  }
+  member {
     name: "LinearOperatorBlockDiag"
     mtype: "<class \'abc.ABCMeta\'>"
   }
@@ -35,6 +39,10 @@ tf_module {
   member {
     name: "LinearOperatorIdentity"
     mtype: "<class \'abc.ABCMeta\'>"
+  }
+  member {
+    name: "LinearOperatorInversion"
+    mtype: "<type \'type\'>"
   }
   member {
     name: "LinearOperatorKronecker"
@@ -137,6 +145,14 @@ tf_module {
     argspec: "args=[\'a\', \'b\', \'transpose_a\', \'transpose_b\', \'adjoint_a\', \'adjoint_b\', \'a_is_sparse\', \'b_is_sparse\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'False\', \'False\', \'False\', \'False\', \'None\'], "
   }
   member_method {
+    name: "matrix_transpose"
+    argspec: "args=[\'a\', \'name\', \'conjugate\'], varargs=None, keywords=None, defaults=[\'matrix_transpose\', \'False\'], "
+  }
+  member_method {
+    name: "matvec"
+    argspec: "args=[\'a\', \'b\', \'transpose_a\', \'adjoint_a\', \'a_is_sparse\', \'b_is_sparse\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'False\', \'False\', \'None\'], "
+  }
+  member_method {
     name: "norm"
     argspec: "args=[\'tensor\', \'ord\', \'axis\', \'keepdims\', \'name\', \'keep_dims\'], varargs=None, keywords=None, defaults=[\'euclidean\', \'None\', \'None\', \'None\', \'None\'], "
   }
@@ -183,5 +199,9 @@ tf_module {
   member_method {
     name: "triangular_solve"
     argspec: "args=[\'matrix\', \'rhs\', \'lower\', \'adjoint\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'False\', \'None\'], "
+  }
+  member_method {
+    name: "tridiagonal_solve"
+    argspec: "args=[\'diagonals\', \'rhs\', \'diagonals_format\', \'transpose_rhs\', \'conjugate_rhs\', \'name\'], varargs=None, keywords=None, defaults=[\'compact\', \'False\', \'False\', \'None\'], "
   }
 }

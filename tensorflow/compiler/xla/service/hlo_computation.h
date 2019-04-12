@@ -20,7 +20,6 @@ limitations under the License.
 #include <list>
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -119,10 +118,19 @@ class HloComputation {
   // instruction.
   Status RemoveUnusedParameters();
 
-  // Add new parameter instruction to the computation.
+  // Adds a new parameter instruction to a fusion computation.
+  //
   // This should be a new parameter. Instruction will be appended to parameters
   // and inserted to the instruction list.
   HloInstruction* AddParameter(std::unique_ptr<HloInstruction> instruction);
+
+  // Adds a new parameter instruction to the entry computation and update
+  // the parent module config to reflect the change.
+  //
+  // This should be a new parameter. Instruction will be appended to parameters
+  // and inserted to the instruction list.
+  HloInstruction* AddEntryComputationParameter(
+      std::unique_ptr<HloInstruction> instruction);
 
   // Remove an instruction from the computation. The instruction must have no
   // users. Instruction is deallocated with this call.
@@ -276,7 +284,12 @@ class HloComputation {
   ProgramShape ComputeProgramShape() const;
 
   // Return whether `*this` and `other` are functionally equivalent.
-  bool operator==(const HloComputation& other) const;
+  bool Equal(const HloComputation& other, bool is_layout_sensitive) const;
+
+  // Return whether `*this` and `other` are functionally equivalent.
+  bool operator==(const HloComputation& other) const {
+    return Equal(other, true);
+  }
 
   // Replaces old instruction with newly created instruction. Removes old
   // instruction from computation. Updates uses and root instruction.
@@ -333,14 +346,43 @@ class HloComputation {
   // the map's value to replace that instruction in the cloned computation.
   //
   // If replacements maps a key to nullptr, we remove that instruction from the
-  // new computation.
-  // If additional instructions are used by instructions in replacement map,
-  // they must be passed in post-order in the extras span.
+  // new computation.  If an element of `replacements` references an instruction
+  // that's not already in the computation, it's cloned and added to the new
+  // computation.
+  //
+  // 'extra_parameters' allows to specify additional parameters that should be
+  // added to the computation.
+  //
+  // All relevant instructions are cloned, *including* unique_ptr in the
+  // `replacements` map.
   std::unique_ptr<HloComputation> CloneWithReplacements(
-      std::unordered_map<const HloInstruction*, std::unique_ptr<HloInstruction>>
+      absl::flat_hash_map<const HloInstruction*,
+                          std::unique_ptr<HloInstruction>>
           replacements,
-      absl::Span<HloInstruction*> extras, HloCloneContext* context = nullptr,
-      const string& suffix = "clone");
+      absl::Span<const HloInstruction* const> extra_parameters = {},
+      HloCloneContext* context = nullptr, const string& suffix = "clone");
+
+  // Convenience overloads for CloneWithReplacements.  You want to do
+  //
+  //   CloneWithReplacements({{a, std::move(b)}, {c, std::move(d)}})  // ERROR
+  //
+  // but that doesn't work because std::initializer_list is not movable.  These
+  // overloads let you do
+  //
+  //   CloneWithReplacementPairs({a, std::move(b)}, {c, std::move(d)});   // OK
+  //
+  std::unique_ptr<HloComputation> CloneWithReplacementPairs(
+      std::pair<const HloInstruction*, std::unique_ptr<HloInstruction>> r1,
+      HloCloneContext* context = nullptr, const string& suffix = "clone");
+  std::unique_ptr<HloComputation> CloneWithReplacementPairs(
+      std::pair<const HloInstruction*, std::unique_ptr<HloInstruction>> r1,
+      std::pair<const HloInstruction*, std::unique_ptr<HloInstruction>> r2,
+      HloCloneContext* context = nullptr, const string& suffix = "clone");
+  std::unique_ptr<HloComputation> CloneWithReplacementPairs(
+      std::pair<const HloInstruction*, std::unique_ptr<HloInstruction>> r1,
+      std::pair<const HloInstruction*, std::unique_ptr<HloInstruction>> r2,
+      std::pair<const HloInstruction*, std::unique_ptr<HloInstruction>> r3,
+      HloCloneContext* context = nullptr, const string& suffix = "clone");
 
   // Returns true if the given instruction can be removed from the computation.
   // Parameter instructions cannot be removed without violating invariants of
@@ -355,6 +397,14 @@ class HloComputation {
   // channel complete).
   bool IsRemovable(const HloInstruction* instruction);
 
+  // Returns a map from channel-id to the group of instructions associated with
+  // the channel. These instructions will be considered as a single node for
+  // dependency purposes. Send and RecvDone are in the group, and AllReduces
+  // with the same channel id are in the group.
+  using ChannelDependencyGroup =
+      absl::flat_hash_map<int64, absl::InlinedVector<HloInstruction*, 1>>;
+  ChannelDependencyGroup ComputeChannelDependencies() const;
+
   // Returns true if this computation has a side effect. A computation has a
   // side effect if it contains one or more instructions with a side effect.
   bool HasSideEffect() const;
@@ -368,6 +418,10 @@ class HloComputation {
   void SetFusionInstruction(HloInstruction* fusion_instruction) {
     fusion_instruction_ = fusion_instruction;
   }
+
+  // Clear the unique ID of the computation so that it can be re-assigned, such
+  // as for the purpose of compacting the unique IDs.
+  void ClearUniqueIdInternal() { unique_id_ = -1; }
 
   // The id of this computation should be unique within the module.
   void SetUniqueId(int64 id) {
@@ -420,7 +474,7 @@ class HloComputation {
 
   enum VisitState { kVisiting, kVisited };
   void ComputeInstructionPostOrder(
-      const HloComputation::ChannelDependencyMap& channel_dependency_map,
+      const HloComputation::ChannelDependencyGroup& channel_dependency_map,
       std::vector<HloInstruction*>* post_order, HloInstruction* root,
       absl::flat_hash_map<HloInstruction*, VisitState>* visited) const;
 

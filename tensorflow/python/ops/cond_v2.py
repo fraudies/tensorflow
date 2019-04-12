@@ -33,7 +33,11 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_util
 from tensorflow.python.ops import control_flow_util_v2 as util
 from tensorflow.python.ops import gen_functional_ops
-from tensorflow.python.ops import gradients_impl
+from tensorflow.python.ops import gen_resource_variable_ops
+from tensorflow.python.ops import gradients_util
+from tensorflow.python.ops import math_ops
+from tensorflow.python.util import nest
+
 
 # NOTE(skyewm): TensorFlow uses protected class methods and fields to signify
 # that they aren't part of the official public API. These protected members
@@ -64,93 +68,41 @@ def cond_v2(pred, true_fn, false_fn, name="cond"):
 
     # Automatic control dependencies are added in defuns, but not in v1
     # graphs. Propagate that behavior here.
-    add_control_dependencies = util.in_defun()
+    add_control_dependencies = ops.get_default_graph()._add_control_dependencies
+    pred = ops.convert_to_tensor(pred)
 
-    true_graph = function.func_graph_from_py_func(
-        true_name, true_fn, [], {},
-        func_graph=util.CondBranchFuncGraph(true_name),
-        add_control_dependencies=add_control_dependencies)
-    false_graph = function.func_graph_from_py_func(
-        false_name, false_fn, [], {},
-        func_graph=util.CondBranchFuncGraph(false_name),
-        add_control_dependencies=add_control_dependencies)
-    _check_same_outputs(true_graph, false_graph)
+    true_graph = func_graph_module.func_graph_from_py_func(
+        true_name,
+        true_fn, [], {},
+        func_graph=util.CondBranchFuncGraph(
+            true_name, collections=ops.get_default_graph()._collections),  # pylint: disable=protected-access
+        add_control_dependencies=add_control_dependencies,
+        op_return_value=pred)
+    false_graph = func_graph_module.func_graph_from_py_func(
+        false_name,
+        false_fn, [], {},
+        func_graph=util.CondBranchFuncGraph(
+            false_name, collections=ops.get_default_graph()._collections),  # pylint: disable=protected-access
+        add_control_dependencies=add_control_dependencies,
+        op_return_value=pred)
 
-    # Add inputs to true_graph and false_graph to make them match. Note that
-    # this modifies true_graph and false_graph.
-    cond_inputs = _make_inputs_match(true_graph, false_graph,
-                                     true_graph.external_captures,
-                                     false_graph.external_captures)
-
-    # Add all intermediate tensors as function outputs so they're available for
-    # the gradient computation.
-
-    true_intermediates = _get_intermediates(true_graph)
-    false_intermediates = _get_intermediates(false_graph)
-
-    # Save the original number of outputs to return to the caller.
-    num_cond_outputs = len(true_graph.outputs)
-
-    # Make the number/type of new intermediate outputs match.
-    extra_true_outputs, extra_false_outputs = _pad_params(
-        true_graph, false_graph, true_intermediates, false_intermediates)
-
-    true_graph.outputs.extend(extra_true_outputs)
-    false_graph.outputs.extend(extra_false_outputs)
-
-    # Create the If op.
-    tensors = gen_functional_ops._if(  # pylint: disable=protected-access
-        pred,
-        cond_inputs, [t.dtype for t in true_graph.outputs],
-        util.create_new_tf_function(true_graph),
-        util.create_new_tf_function(false_graph),
-        output_shapes=_get_output_shapes(true_graph.outputs,
-                                         false_graph.outputs),
-        name=scope)
-
-    # Set the flag to enable lowering on the `if` op if necessary
-    # Lowering allows cond_v2 to avoid some of the limitations of Functions,
-    # allowing users to specify devices & colocation inside of cond_v2 branches,
-    # and enabling non-strict evaluation & partial pruning of cond_v2 branches.
-    # This brings cond_v2 closer to feature parity with tf.cond.
-    #
-    # However, we do not lower `If` in the XLA context because it is easier for
-    # XLA to apply its own optimizations when dealing with un-lowered `If`
-    # operators than with lowered switch/merge control flow.
-    #
-    # TODO(b/110167197) this approach requires cond_v2 to have at least 1 output
-    if_op = tensors[0].op
-    if not control_flow_util.IsInXLAContext(if_op):
-      # pylint: disable=protected-access
-      if_op._set_attr("_lower_using_switch_merge",
-                      attr_value_pb2.AttrValue(b=True))
-      # pylint: enable=protected-access
-
-    # Return identities for each output of the If op, rather than the output of
-    # the If op directly. This makes pruning work if the output of cond() is
-    # fetched: the lowering pass converts the If outputs into IdentityN outputs,
-    # which if fetched will cause all ops in the taken branch to be run (since
-    # it takes all merge ops as input). After lowering, each output identity op
-    # will end up with only the appropriate merge op as input.
-    # TODO(b/79984175): this doesn't have to be a tuple once we covert to the
-    # correct output structure
-    tensors = tuple(array_ops.identity(t) for t in tensors)
-
-    result = tuple(tensors[:num_cond_outputs])
-    if len(result) == 1:
-      return result[0]
-    else:
-      return result
+    verify_captures(true_graph, false_graph)
+    return _build_cond(pred, true_graph, false_graph,
+                       true_graph.external_captures,
+                       false_graph.external_captures,
+                       name=scope)
 
 
 @ops.RegisterGradient("If")
 def _IfGrad(op, *grads):  # pylint: disable=invalid-name
   """The gradient of an If op produced by cond_v2."""
-  true_graph, false_graph = _get_func_graphs(op)
+  # Get the if operator (this logic handles the case where op is a MockOp)
+  if_op = op.outputs[0].op
+  true_graph, false_graph = _get_func_graphs(if_op)
   # Note: op.graph != ops.get_default_graph() when we are computing the gradient
   # of a nested cond.
-  assert true_graph.outer_graph == op.graph
-  assert false_graph.outer_graph == op.graph
+  assert true_graph.outer_graph == if_op.graph
+  assert false_graph.outer_graph == if_op.graph
 
   # Create grad functions that compute the gradient of the true/false forward
   # graphs. These functions will capture tensors from the forward pass
@@ -160,18 +112,57 @@ def _IfGrad(op, *grads):  # pylint: disable=invalid-name
   false_grad_graph = _create_grad_func(
       false_graph, grads, _get_grad_fn_name(false_graph))
 
-  assert ([t.dtype for t in true_grad_graph.outputs] ==
-          [t.dtype for t in false_grad_graph.outputs])
+  if (true_grad_graph.if_op_needs_rewrite or
+      false_grad_graph.if_op_needs_rewrite):
+    # Modify 'op' to output the intermediates needed by the grad functions. Note
+    # that all needed intermediates are wrapped in optionals. Each optional
+    # intermediate output will have a value iff its corresponding branch is
+    # taken.
+    # NOTE(skyewm): if there are any active sessions, this modification to `op`
+    # may make them unrunnable!
+
+    if control_flow_util.InXlaContext(ops.get_default_graph()):
+      # XLA does not yet support optionals, so output intermediates directly and
+      # make them match via FakeParams, which can be converted to zeros in XLA.
+      # TODO(skyewm,jpienaar): can XLA support optionals?
+      true_intermediates = true_grad_graph.xla_intermediates
+      false_intermediates = false_grad_graph.xla_intermediates
+      extra_true_outputs, extra_false_outputs = _make_intermediates_match_xla(
+          true_graph, false_graph, true_intermediates, false_intermediates)
+    else:
+      true_intermediates = true_grad_graph.wrapped_intermediates
+      false_intermediates = false_grad_graph.wrapped_intermediates
+      # Make outputs match by adding none optionals.
+      extra_true_outputs, extra_false_outputs = _make_intermediates_match(
+          true_graph, false_graph, true_intermediates, false_intermediates)
+
+    true_graph.outputs.extend(extra_true_outputs)
+    false_graph.outputs.extend(extra_false_outputs)
+    # TODO(skyewm): indicate it's an internal bug if this fails.
+    _check_same_outputs(true_graph, false_graph)
+
+    true_graph.name += "_rewritten"
+    false_graph.name += "_rewritten"
+
+    if_op._set_func_attr("then_branch", util.create_new_tf_function(true_graph))
+    if_op._set_func_attr("else_branch",
+                         util.create_new_tf_function(false_graph))
+    if_op._set_type_list_attr("Tout", true_graph.output_types)
+    if_op._set_shape_list_attr("output_shapes", true_graph.output_shapes)
+    if_op._add_outputs(
+        [t.dtype for t in extra_true_outputs],
+        [t.shape for t in extra_true_outputs])
 
   # Resolve references to forward graph tensors in grad graphs and ensure
   # they are in-scope, i.e., belong to one of outer graphs of the grad graph.
   true_grad_inputs = _resolve_grad_inputs(true_graph, true_grad_graph)
   false_grad_inputs = _resolve_grad_inputs(false_graph, false_grad_graph)
 
-  # Make the inputs to true_grad_graph and false_grad_graph match. Note that
-  # this modifies true_grad_graph and false_grad_graph.
-  grad_inputs = _make_inputs_match(true_grad_graph, false_grad_graph,
-                                   true_grad_inputs, false_grad_inputs)
+  # This modifies true_grad_graph and false_grad_graph.
+  _make_output_composite_tensors_match(true_grad_graph, false_grad_graph)
+
+  outputs = _build_cond(if_op.inputs[0], true_grad_graph, false_grad_graph,
+                        true_grad_inputs, false_grad_inputs)
 
   # Add all intermediate tensors as function outputs so they're available for
   # higher-order gradient computations.
@@ -199,8 +190,48 @@ def _IfGrad(op, *grads):  # pylint: disable=invalid-name
       output_shapes=_get_output_shapes(true_grad_graph.outputs,
                                        false_grad_graph.outputs))
 
-  # The predicate has no gradient.
-  return [None] + tensors[:num_grad_outputs]
+  Returns:
+    A list of Tensors which are the outputs of the If op. Does not include added
+    intermediate outputs.
+  """
+  _check_same_outputs(true_graph, false_graph)
+
+  # Add inputs to true_graph and false_graph to make them match. Note that
+  # this modifies true_graph and false_graph.
+  cond_inputs = _make_inputs_match(true_graph, false_graph,
+                                   true_inputs, false_inputs)
+
+  # Create the If op.
+  with ops.control_dependencies(
+      list(true_graph.control_captures) + list(false_graph.control_captures)):
+    tensors = gen_functional_ops._if(  # pylint: disable=protected-access
+        pred,
+        cond_inputs, [t.dtype for t in true_graph.outputs],
+        util.create_new_tf_function(true_graph),
+        util.create_new_tf_function(false_graph),
+        output_shapes=_get_output_shapes(true_graph.outputs,
+                                         false_graph.outputs),
+        name=name)
+
+  # TODO(b/110167197) this approach requires cond_v2 to have at least 1 output
+  if_op = tensors[0].op
+  util.maybe_set_lowering_attr(if_op)
+  util.maybe_propagate_compile_time_consts_in_xla(if_op)
+
+  # Return identities for each output of the If op, rather than the output of
+  # the If op directly. This makes pruning work if the output of cond() is
+  # fetched: the lowering pass converts the If outputs into IdentityN outputs,
+  # which if fetched will cause all ops in the taken branch to be run (since
+  # it takes all merge ops as input). After lowering, each output identity op
+  # will end up with only the appropriate merge op as input.
+  # TODO(b/79984175): this doesn't have to be a tuple once we covert to the
+  # correct output structure
+  tensors = [array_ops.identity(t) for t in tensors]
+
+  # Prevent fetching since the variant outputs can't be fetched directly.
+  if_op.graph.prevent_fetching(if_op)
+  return func_graph_module.pack_sequence_as(true_graph.structured_outputs,
+                                            tensors)
 
 
 def _get_func_graphs(if_op):
@@ -259,7 +290,7 @@ def _grad_fn(func_graph, grads):
   ys = []
   grad_ys = []
   for y, grad_y in zip(func_graph.outputs, grads):
-    if not gradients_impl._IsTrainable(y):
+    if not gradients_util.IsTrainable(y):
       continue
     ys.append(y)
     grad_ys.append(grad_y)
@@ -268,7 +299,7 @@ def _grad_fn(func_graph, grads):
   # func_graph in the current graph, which requires capturing tensors from
   # func_graph. The captured func_graph tensors are resolved to external tensors
   # in _resolve_grad_inputs.
-  result = gradients_impl._GradientsHelper(
+  result = gradients_util._GradientsHelper(
       ys, func_graph.inputs, grad_ys=grad_ys,
       src_graph=func_graph)
 
@@ -440,7 +471,56 @@ def _make_inputs_match(true_graph, false_graph, true_inputs, false_inputs):
   return new_inputs
 
 
-def _create_dummy_params(func_graph, template_tensors):
+def _make_output_composite_tensors_match(true_graph, false_graph):
+  """Rewrites {true,false}_graph's outputs to use the same _TensorLike classes.
+
+  Currently the only transformation implemented is turning a Tensor into an
+  equivalent IndexedSlices if the other branch returns an IndexedSlices.
+  Updates {true,false}_graph.{outputs,structured_outputs}.
+
+  Args:
+    true_graph: FuncGraph
+    false_graph: FuncGraph
+
+  Raises:
+    TypeError: if a pair of outputs cannot be rewritten.
+  """
+  # Note: since this is only used for gradient graphs, we do not expect the
+  # outputs to be structured (e.g. nested lists), and thus do not need to use
+  # nest.flatten, etc.
+  true_outputs = list(true_graph.structured_outputs)
+  false_outputs = list(false_graph.structured_outputs)
+  assert len(true_outputs) == len(false_outputs)
+
+  for idx, (true_out, false_out) in enumerate(zip(true_outputs, false_outputs)):
+    if type(true_out) == type(false_out):  # pylint: disable=unidiomatic-typecheck
+      continue
+    if (isinstance(true_out, ops.IndexedSlices) and
+        isinstance(false_out, ops.Tensor)):
+      with false_graph.as_default():
+        false_outputs[idx] = math_ops._as_indexed_slices(false_out)
+    elif (isinstance(true_out, ops.Tensor) and
+          isinstance(false_out, ops.IndexedSlices)):
+      with true_graph.as_default():
+        true_outputs[idx] = math_ops._as_indexed_slices(true_out)
+    else:
+      raise TypeError(
+          "Cannot reconcile tf.cond %i-th outputs:\n"
+          "  true_fn returned:  %s\n"
+          "  false_fn returned: %s" % (idx, true_out, false_out))
+
+  true_graph.structured_outputs = true_outputs
+  true_graph.outputs = func_graph_module.flatten(true_outputs)
+  false_graph.structured_outputs = false_outputs
+  false_graph.outputs = func_graph_module.flatten(false_outputs)
+
+
+def _wrap_intermediates(func_graph, intermediates):
+  with func_graph.as_default():
+    return [gen_dataset_ops.optional_from_value([t]) for t in intermediates]
+
+
+def _create_dummy_inputs(func_graph, template_tensors):
   """Creates tensors in func_graph to represent template_tensors.
 
   Args:
@@ -475,15 +555,30 @@ def _get_grad_fn_name(func_graph):
 
 def _check_same_outputs(true_graph, false_graph):
   """Raises an error if true_graph and false_graph have different outputs."""
-  true_output_types = [t.dtype for t in true_graph.outputs]
-  false_output_types = [t.dtype for t in false_graph.outputs]
-  if (len(true_graph.outputs) != len(false_graph.outputs) or
-      true_output_types != false_output_types):
-    raise ValueError(
-        "true_fn() and false_fn() must return the same number and type of "
-        "arguments, got:\n"
-        "  true_fn: %s\n"
-        "  false_fn: %s" % (true_output_types, false_output_types))
+
+  def error(error_detail):
+    raise TypeError(
+        "true_fn and false_fn arguments to tf.cond must have the same number, "
+        "type, and overall structure of return values.\n"
+        "\n"
+        "true_fn output:  %s\n"
+        "false_fn output: %s\n"
+        "\n"
+        "Error details:\n"
+        "%s" % (true_graph.structured_outputs, false_graph.structured_outputs,
+                error_detail))
+
+  try:
+    nest.assert_same_structure(true_graph.structured_outputs,
+                               false_graph.structured_outputs,
+                               expand_composites=True)
+  except (ValueError, TypeError) as e:
+    error(str(e))
+
+  assert len(true_graph.outputs) == len(false_graph.outputs)
+  for true_out, false_out in zip(true_graph.outputs, false_graph.outputs):
+    if true_out.dtype != false_out.dtype:
+      error("%s and %s have different types" % (true_out, false_out))
 
 
 def _get_output_shapes(true_graph_outputs, false_graph_outputs):
@@ -492,3 +587,115 @@ def _get_output_shapes(true_graph_outputs, false_graph_outputs):
       for t_out, f_out in zip(true_graph_outputs, false_graph_outputs)
   ]
   return output_shapes
+
+
+def verify_captures(true_graph, false_graph):
+  """Verify that a true_fn tensor is not accessed in false_fn and vice-versa."""
+  for t in false_graph.external_captures:
+    if not isinstance(t, ops.EagerTensor) and t.graph is true_graph:
+      raise ValueError("Tensor {} in true_fn is accessed from false_fn.".format(
+          t.name))
+  # Note: This is technically not possible right now because `false_graph`
+  # is built "after" `true_graph` but we add this check for completeness and to
+  # guard against potential future changes.
+  for t in true_graph.external_captures:
+    if not isinstance(t, ops.EagerTensor) and t.graph is false_graph:
+      raise ValueError("Tensor {} in false_fn is accessed from true_fn.".format(
+          t.name))
+
+
+class _CondGradFuncGraph(util.CondBranchFuncGraph):
+  """FuncGraph for the gradient function of the branch of an If op.
+
+  Handles wrapping and unwrapping intermediate values that are captured by the
+  gradient computation in optionals.
+
+  Attributes:
+    if_op_needs_rewrite: True if any intermediates were captured, meaning the
+      forward If op needs to be written to output the wrapped intermediates.
+  """
+
+  def __init__(self, name, forward_graph):
+    super(_CondGradFuncGraph, self).__init__(
+        name, collections=ops.get_default_graph()._collections)  # pylint: disable=protected-access
+    self.if_op_needs_rewrite = False
+    self._forward_graph = forward_graph
+    # Maps from forward intermediate tensor -> the unwrapped captured
+    # intermediate.
+    self._indirect_captures = {}
+    # Maps unwrapped intermediate -> optional-wrapped intermediate in the
+    # forward graph.
+    self._wrapped_intermediates = collections.OrderedDict()
+    # Raw intermediates captured from the forward graph. Populated iff we're in
+    # an XLA context.
+    self._xla_intermediates = []
+
+  @property
+  def wrapped_intermediates(self):
+    """The optional-wrapped intermediates captured from the forward graph."""
+    return list(self._wrapped_intermediates.values())
+
+  @property
+  def xla_intermediates(self):
+    """Raw intermediates captured from the forward graph if XLA is enabled."""
+    return self._xla_intermediates
+
+  def _capture_helper(self, tensor, name):
+    if (tensor.graph is not self._forward_graph or
+        tensor in self._forward_graph.inputs or
+        tensor in self._forward_graph.outputs):
+      return super(_CondGradFuncGraph, self)._capture_helper(tensor, name)
+
+    if control_flow_util.InXlaContext(ops.get_default_graph()):
+      # XLA does not yet support optionals, so capture intermediates directly.
+      # TODO(skyewm,jpienaar): can XLA support optionals?
+      if tensor not in self.captures:
+        self.xla_intermediates.append(tensor)
+        self.if_op_needs_rewrite = True
+      return super(_CondGradFuncGraph, self)._capture_helper(tensor, name)
+
+    captured_tensor = self._indirect_captures.get(tensor)
+    if captured_tensor is not None:
+      return captured_tensor
+
+    # 'tensor' is an uncaptured intermediate in the forward graph.
+    # If it is not a resource, we wrap it in an optional in the forward graph
+    # and capture the optional normally. We then unwrap the captured optional
+    # value in the gradient graph to get the raw intermediate value.
+    # If it is a resource, we trace the resource upto the input in the forward
+    # graph and capture that.
+
+    if tensor.dtype == dtypes.resource:
+      # Index of the forward graph input corresponding to the resource tensor.
+      index = util.resource_input_index(
+          tensor.name, [t.name for t in self._forward_graph.inputs],
+          {op.name: op.node_def for op in self._forward_graph.get_operations()},
+          self._forward_graph._functions)
+      # This gets mapped to the corresponding If op input in
+      # `_resolve_grad_inputs`.
+      captured_tensor = super(_CondGradFuncGraph, self)._capture_helper(
+          self._forward_graph.inputs[index], name)
+    else:
+      if tensor not in self._wrapped_intermediates:
+        # If the gradient has already been computed for this If op, 'tensor' may
+        # already be wrapped.
+        for consumer in tensor.consumers():
+          if (consumer.type == "OptionalFromValue" and
+              consumer.outputs[0] in self._forward_graph.outputs):
+            optional = consumer.outputs[0]
+            break
+        else:
+          # 'tensor' hasn't been wrapped, do it now.
+          with self._forward_graph.as_default():
+            optional = gen_dataset_ops.optional_from_value([tensor])
+          self.if_op_needs_rewrite = True
+        self._wrapped_intermediates[tensor] = optional
+
+      optional = self._wrapped_intermediates[tensor]
+      captured_optional = super(_CondGradFuncGraph,
+                                self)._capture_helper(optional, name)
+      captured_tensor = gen_dataset_ops.optional_get_value(
+          captured_optional, [tensor.dtype], [tensor.shape])[0]
+
+    self._indirect_captures[tensor] = captured_tensor
+    return captured_tensor

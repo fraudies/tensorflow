@@ -111,8 +111,8 @@ TEST(GraphUtilsTest, ContainsGraphNodeWithName) {
   AddNode("A", "OpA", {}, {}, &graph);
   EXPECT_TRUE(ContainsGraphNodeWithName("A", *graph.GetGraph()));
 
-  graph.DeleteNodes({"A"});
-  EXPECT_TRUE(!ContainsGraphNodeWithName("A", *graph.GetGraph()));
+  EXPECT_TRUE(graph.DeleteNodes({"A"}).ok());
+  EXPECT_TRUE(!ContainsGraphNodeWithName("A", *graph.graph()));
 }
 
 TEST(GraphUtilsTest, ContainsGraphFunctionWithName) {
@@ -133,8 +133,8 @@ TEST(GraphUtilsTest, ContainsNodeWithOp) {
   AddNode("A", "OpA", {}, {}, &graph);
   EXPECT_TRUE(ContainsNodeWithOp("OpA", *graph.GetGraph()));
 
-  graph.DeleteNodes({"A"});
-  EXPECT_TRUE(!ContainsNodeWithOp("OpA", *graph.GetGraph()));
+  EXPECT_TRUE(graph.DeleteNodes({"A"}).ok());
+  EXPECT_TRUE(!ContainsNodeWithOp("OpA", *graph.graph()));
 }
 
 TEST(GraphUtilsTest, FindGraphNodeWithName) {
@@ -145,8 +145,8 @@ TEST(GraphUtilsTest, FindGraphNodeWithName) {
   AddNode("A", "OpA", {}, {}, &graph);
   EXPECT_NE(FindGraphNodeWithName("A", *graph.GetGraph()), -1);
 
-  graph.DeleteNodes({"A"});
-  EXPECT_EQ(FindGraphNodeWithName("A", *graph.GetGraph()), -1);
+  EXPECT_TRUE(graph.DeleteNodes({"A"}).ok());
+  EXPECT_EQ(FindGraphNodeWithName("A", *graph.graph()), -1);
 }
 
 TEST(GraphUtilsTest, FindGraphFunctionWithName) {
@@ -166,12 +166,12 @@ TEST(GraphUtilsTest, FindGraphNodeWithOp) {
 
   AddNode("A", "OpA", {}, {}, &graph);
   AddNode("B", "OpB", {"A"}, {}, &graph);
-  AddNode("A2", "OpA", {"B"}, {}, &graph);
-  EXPECT_EQ(FindGraphNodeWithOp("OpA", *graph.GetGraph()), 0);
+  AddNode("A2", "OpA", {"A"}, {}, &graph);
+  EXPECT_EQ(FindGraphNodeWithOp("OpA", *graph.graph()), 0);
 
-  graph.DeleteNodes({"B"});
-  EXPECT_EQ(FindGraphNodeWithOp("OpB", *graph.GetGraph()), -1);
-  EXPECT_EQ(FindGraphNodeWithName("A2", *graph.GetGraph()), 1);
+  EXPECT_TRUE(graph.DeleteNodes({"B"}).ok());
+  EXPECT_EQ(FindGraphNodeWithOp("OpB", *graph.graph()), -1);
+  EXPECT_EQ(FindGraphNodeWithName("A2", *graph.graph()), 1);
 }
 
 TEST(GraphUtilsTest, FindAllGraphNodesWithOp) {
@@ -188,7 +188,7 @@ TEST(GraphUtilsTest, FindAllGraphNodesWithOp) {
   EXPECT_EQ(result_indices.at(0), 0);
   EXPECT_EQ(result_indices.at(1), 2);
 
-  graph.DeleteNodes({"A2"});
+  EXPECT_TRUE(graph.DeleteNodes({"A2"}).ok());
   std::vector<int> result_indices_new =
       FindAllGraphNodesWithOp("OpA", *graph.GetGraph());
   EXPECT_EQ(result_indices_new.size(), 1);
@@ -203,7 +203,7 @@ TEST(GraphUtilsTest, SetUniqueGraphNodeName) {
   NodeDef* node2 = AddNode("", "A", {}, {}, &graph);
   EXPECT_NE(node1->name(), node2->name());
 
-  graph.DeleteNodes({node1->name()});
+  EXPECT_TRUE(graph.DeleteNodes({node1->name()}).ok());
   NodeDef* node3 = AddNode("", "A", {}, {}, &graph);
   EXPECT_NE(node2->name(), node3->name());
 }
@@ -227,6 +227,21 @@ TEST(GraphUtilsTest, GetInputNode) {
   NodeDef* node2 = AddNode("", "A", {node1->name()}, {}, &graph);
 
   EXPECT_EQ(GetInputNode(*node2, graph), node1);
+  EXPECT_EQ(GetInputNode(*node1, graph), nullptr);
+}
+
+TEST(GraphUtilsTest, GetIthInputNode) {
+  GraphDef graph_def;
+  MutableGraphView graph(&graph_def);
+
+  NodeDef* node1 = AddNode("", "A", {}, {}, &graph);
+  NodeDef* node2 = AddNode("", "A", {}, {}, &graph);
+  NodeDef* node3 = AddNode("", "A", {node1->name(), node2->name()}, {}, &graph);
+
+  EXPECT_EQ(GetInputNode(*node3, graph), node1);
+  EXPECT_EQ(GetInputNode(*node3, graph, 1), node2);
+  EXPECT_EQ(GetInputNode(*node3, graph, 0), node1);
+  EXPECT_EQ(GetInputNode(*node3, graph, 2), nullptr);
   EXPECT_EQ(GetInputNode(*node1, graph), nullptr);
 }
 
@@ -255,6 +270,40 @@ TEST(GraphUtilsTest, EnsureNodeNamesUnique) {
   EXPECT_NE(const_0->name(), const_1->name());
   EXPECT_NE(const_1->name(), const_2->name());
   EXPECT_NE(const_0->name(), const_2->name());
+}
+
+TEST(GraphUtilsTest, TestFindSinkNodeStandard) {
+  GraphDef graph_def;
+  MutableGraphView graph(&graph_def);
+
+  AddNode("node1", "Identity", {}, {}, &graph);
+  AddNode("node2", "Identity", {"node1"}, {}, &graph);
+  NodeDef* node3 = AddNode("node3", "Identity", {"node2"}, {}, &graph);
+
+  NodeDef sink_node;
+  TF_EXPECT_OK(FindSinkNode(graph_def, &sink_node));
+  EXPECT_EQ(sink_node.name(), node3->name());
+}
+
+TEST(GraphUtilsTest, TestFindSinkNodeNoSingleSink) {
+  GraphDef graph_def;
+  MutableGraphView graph(&graph_def);
+
+  AddNode("node1", "Identity", {}, {}, &graph);
+  AddNode("node2", "Identity", {}, {}, &graph);
+
+  NodeDef sink_node;
+  Status s = FindSinkNode(graph_def, &sink_node);
+  EXPECT_FALSE(s.ok());
+}
+
+TEST(GraphUtilsTest, TestFindSinkNodeGraphDefEmpty) {
+  GraphDef graph_def;
+  MutableGraphView graph(&graph_def);
+
+  NodeDef sink_node;
+  Status s = FindSinkNode(graph_def, &sink_node);
+  EXPECT_FALSE(s.ok());
 }
 
 }  // namespace

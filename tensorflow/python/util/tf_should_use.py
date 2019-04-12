@@ -100,7 +100,7 @@ def _new_mark_used(self, *args, **kwargs):
     pass
 
 
-_WRAPPERS = dict()
+_WRAPPERS = {}
 
 
 def _get_wrapper(x, tf_should_use_helper):

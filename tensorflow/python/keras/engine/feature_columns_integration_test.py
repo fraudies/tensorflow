@@ -26,7 +26,6 @@ from tensorflow.python.feature_column import feature_column_v2 as fc
 from tensorflow.python.framework import test_util as tf_test_util
 from tensorflow.python.keras import metrics as metrics_module
 from tensorflow.python.platform import test
-from tensorflow.python.training import rmsprop
 
 
 class TestDNNModel(keras.models.Model):
@@ -56,7 +55,7 @@ class FeatureColumnsIntegrationTest(test.TestCase):
         keras.layers.Dense(20, activation='softmax')
     ])
     model.compile(
-        optimizer=rmsprop.RMSPropOptimizer(1e-3),
+        optimizer='rmsprop',
         loss='categorical_crossentropy',
         metrics=['accuracy'])
 
@@ -77,7 +76,7 @@ class FeatureColumnsIntegrationTest(test.TestCase):
         keras.layers.Dense(20, activation='softmax')
     ])
     model.compile(
-        optimizer=rmsprop.RMSPropOptimizer(1e-3),
+        optimizer='rmsprop',
         loss='categorical_crossentropy',
         metrics=['accuracy'])
 
@@ -100,7 +99,7 @@ class FeatureColumnsIntegrationTest(test.TestCase):
     dnn_model = TestDNNModel([col_a, col_b], 20)
 
     dnn_model.compile(
-        optimizer=rmsprop.RMSPropOptimizer(learning_rate=0.001),
+        optimizer='rmsprop',
         loss='categorical_crossentropy',
         metrics=['accuracy'])
 
@@ -120,7 +119,7 @@ class FeatureColumnsIntegrationTest(test.TestCase):
     dnn_model = TestDNNModel([col_a, col_b], 20)
 
     dnn_model.compile(
-        optimizer=rmsprop.RMSPropOptimizer(learning_rate=0.001),
+        optimizer='rmsprop',
         loss='categorical_crossentropy',
         metrics=['accuracy'])
 
@@ -149,7 +148,7 @@ class FeatureColumnsIntegrationTest(test.TestCase):
 
     model = keras.models.Model([feature_layer], [output])
 
-    optimizer = rmsprop.RMSPropOptimizer(learning_rate=0.001)
+    optimizer = 'rmsprop'
     loss = 'mse'
     loss_weights = [1., 0.5]
     model.compile(
@@ -177,7 +176,7 @@ class FeatureColumnsIntegrationTest(test.TestCase):
 
     model = keras.models.Model([fc1, fc2], [output])
 
-    optimizer = rmsprop.RMSPropOptimizer(learning_rate=0.001)
+    optimizer = 'rmsprop'
     loss = 'mse'
     loss_weights = [1., 0.5]
     model.compile(

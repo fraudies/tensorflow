@@ -60,8 +60,33 @@ from __future__ import print_function
 """
 
 
-def update_renames_v2(output_file_path):
-  """Writes a Python dictionary mapping deprecated to canonical API names.
+def get_canonical_name(v2_names, v1_name):
+  if v2_names:
+    return v2_names[0]
+  return 'compat.v1.%s' % v1_name
+
+
+def get_all_v2_names():
+  """Get a set of function/class names available in TensorFlow 2.0."""
+  v2_names = set()  # All op names in TensorFlow 2.0
+
+  def visit(unused_path, unused_parent, children):
+    """Visitor that collects TF 2.0 names."""
+    for child in children:
+      _, attr = tf_decorator.unwrap(child[1])
+      api_names_v2 = tf_export.get_v2_names(attr)
+      for name in api_names_v2:
+        v2_names.add(name)
+
+  visitor = public_api.PublicAPIVisitor(visit)
+  visitor.do_not_descend_map['tf'].append('contrib')
+  visitor.do_not_descend_map['tf.compat'] = ['v1']
+  traverse.traverse(tf.compat.v2, visitor)
+  return v2_names
+
+
+def collect_constant_renames():
+  """Looks for constants that need to be renamed in TF 2.0.
 
   Args:
     output_file_path: File path to write output to. Any existing contents

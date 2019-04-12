@@ -38,10 +38,12 @@ class EnumerateDatasetTest(test_base.DatasetTestBase):
     init_op = iterator.initializer
     get_next = iterator.get_next()
 
-    self.assertEqual(dtypes.int64, get_next[0].dtype)
-    self.assertEqual((), get_next[0].shape)
+    self.assertEqual(dtypes.int64,
+                     dataset_ops.get_legacy_output_types(dataset)[0])
+    dataset_output_shapes = dataset_ops.get_legacy_output_shapes(dataset)
+    self.assertEqual((), dataset_output_shapes[0])
     self.assertEqual([tensor_shape.TensorShape([])] * 3,
-                     [t.shape for t in get_next[1]])
+                     [shape for shape in dataset_output_shapes[1]])
 
     with self.cached_session() as sess:
       sess.run(init_op)

@@ -47,10 +47,25 @@ namespace xla {
 // Each pattern type has the following modifiers:
 //
 //   Op():
-//     - WithName: match operations with the given name
-//     - WithOpcode: match operations with the given opcode
-//     - WithShape: match operations whose shape matches the given pattern
-//     - WithOperand: match operations whose operand matches the given pattern
+//     - Is: is the given HloInstruction* (i.e. pointer equality)
+//     - WithName
+//     - WithOpcode
+//     - WithoutOpcode: anything other than the given opcode
+//     - WithShape: instr's shape matches the given pattern
+//     - WithShapeEqualTo: instr's shape is equal to the given Shape
+//     - WithShapeCompatibleTo: instr's shape is compatible with the given Shape
+//     - WithNumOperands
+//     - WithOperand: operand at the given index matches the given pattern
+//     - IsConstant
+//     - IsNonConstant
+//     - IsConstantScalar/IsEffectiveConstantScalar: Optionally accepts a value,
+//       e.g. IsConstantScalar() or IsConstantScalar(42).
+//     - WithFusionKind
+//     - WithTupleIndex: get-tuple-element operations with the given tuple index
+//     - WithOneUse: Instruction is used as an operand exactly once.
+//     - WithOneUser: Instruction is used by exactly one other instruction, but
+//       is possibly used more than once as an operand (e.g. multiply(x,x)).
+//     - WithComparisonDirection: instr has the given direction
 //
 //   Shape():
 //     - EqualTo: matches shapes that are equal to the argument
@@ -460,7 +475,15 @@ class ShapePatternIsArrayImpl {
   explicit constexpr ShapePatternIsArrayImpl() {}
 
   bool Match(const ::xla::Shape* shape, MatchOption option) const {
-    return ShapeUtil::IsArray(*shape);
+    if (!shape->IsArray()) {
+      EXPLAIN << "Shape is not an array";
+      return false;
+    }
+    return true;
+  }
+
+  void DescribeTo(std::ostream* os, int64 indent = 0) const {
+    *os << "that represents an array";
   }
 };
 
@@ -470,7 +493,34 @@ class ShapePatternIsTupleImpl {
   explicit constexpr ShapePatternIsTupleImpl() {}
 
   bool Match(const ::xla::Shape* shape, MatchOption option) const {
-    return ShapeUtil::IsTuple(*shape);
+    if (!shape->IsTuple()) {
+      EXPLAIN << "Shape is not a tuple";
+      return false;
+    }
+    return true;
+  }
+
+  void DescribeTo(std::ostream* os, int64 indent = 0) const {
+    *os << "that represents a tuple";
+  }
+};
+
+// A ShapePattern implementation that matches only if the shape is an effective
+// scalar.
+class ShapePatternEffectiveScalarImpl {
+ public:
+  explicit constexpr ShapePatternEffectiveScalarImpl() {}
+
+  bool Match(const ::xla::Shape* shape, MatchOption option) const {
+    if (!ShapeUtil::IsEffectiveScalar(*shape)) {
+      EXPLAIN << "Shape is not an effective scalar";
+      return false;
+    }
+    return true;
+  }
+
+  void DescribeTo(std::ostream* os, int64 indent = 0) const {
+    *os << "that is an effective scalar";
   }
 };
 
@@ -481,7 +531,23 @@ class ShapePatternRankImpl {
   explicit constexpr ShapePatternRankImpl(int64 rank) : rank_(rank) {}
 
   bool Match(const ::xla::Shape* shape, MatchOption option) const {
-    return ShapeUtil::Rank(*shape) == rank_;
+    if (shape->rank() != rank_) {
+      if (rank_ == 0) {
+        EXPLAIN << "Shape is not a scalar";
+      } else {
+        EXPLAIN << "Shape does not have rank " << rank_;
+      }
+      return false;
+    }
+    return true;
+  }
+
+  void DescribeTo(std::ostream* os, int64 indent = 0) const {
+    if (rank_ == 0) {
+      *os << "that is a scalar";
+    } else {
+      *os << "that has " << rank_ << " dimension" << (rank_ != 1 ? "s" : "");
+    }
   }
 
  private:
@@ -852,7 +918,174 @@ class HloPredicatePatternImpl {
   Predicate pred_;
 };
 
-struct PatternFriend;
+// Superclass that contains common code used by Op::WithOneUse() and
+// Op::WithOneUser().
+class HloInstructionPatternOneUseOrUserImpl {
+ protected:
+  bool MatchOneUser(const HloInstruction* inst, MatchOption option) const {
+    if (inst->user_count() != 1) {
+      EXPLAIN << "HloInstruction has " << inst->user_count()
+              << " users, but expected exactly one.";
+      if (inst->user_count() > 1) {
+        EXPLAIN << "\nAll users:";
+        for (const HloInstruction* user : inst->users()) {
+          EXPLAIN << "\n - " << InstToString(user);
+        }
+      }
+      return false;
+    }
+    return true;
+  }
+};
+
+class HloInstructionPatternOneUseImpl
+    : public HloInstructionPatternOneUseOrUserImpl {
+ public:
+  bool Match(const HloInstruction* inst, MatchOption option) const {
+    if (!MatchOneUser(inst, option)) {
+      return false;
+    }
+
+    int64 use_count = absl::c_count_if(
+        inst->users()[0]->operands(),
+        [&](const HloInstruction* operand) { return operand == inst; });
+    if (use_count != 1) {
+      EXPLAIN << "HloInstruction is used " << use_count
+              << " times by its user, but is expected to be used just once: "
+              << InstToString(inst->users()[0]);
+      return false;
+    }
+    return true;
+  }
+
+  void DescribeTo(std::ostream* os, int64 indent = 0) const {
+    *os << "which has exactly one use";
+  }
+};
+
+class HloInstructionPatternOneUserImpl
+    : public HloInstructionPatternOneUseOrUserImpl {
+ public:
+  bool Match(const HloInstruction* inst, MatchOption option) const {
+    return MatchOneUser(inst, option);
+  }
+
+  void DescribeTo(std::ostream* os, int64 indent = 0) const {
+    *os << "which has exactly one user (but possibly is used multiple times by "
+           "that instruction)";
+  }
+};
+
+class HloInstructionPatternComparisonDirectionImpl {
+ public:
+  explicit constexpr HloInstructionPatternComparisonDirectionImpl(
+      ComparisonDirection direction)
+      : direction_(direction) {}
+
+  bool Match(const ::xla::HloInstruction* inst, MatchOption option) const {
+    return MatchImpl(inst, option);
+  }
+
+  bool Match(::xla::HloInstruction* inst, MatchOption option) const {
+    return MatchImpl(inst, option);
+  }
+
+  void DescribeTo(std::ostream* os, int64 indent = 0) const {
+    *os << "which has comparison direction "
+        << ComparisonDirectionToString(direction_);
+  }
+
+ private:
+  template <typename HloInstructionType>
+  bool MatchImpl(HloInstructionType* inst, MatchOption option) const {
+    if (inst->opcode() != HloOpcode::kCompare ||
+        inst->comparison_direction() != direction_) {
+      EXPLAIN << "HloInstruction is not comparison "
+              << ComparisonDirectionToString(direction_);
+      return false;
+    }
+    return true;
+  }
+
+  ComparisonDirection direction_;
+};
+
+// Matches a constant scalar or effective scalar, optionally with a given value.
+template <typename ScalarTy>
+class HloConstantScalarImpl {
+ public:
+  explicit constexpr HloConstantScalarImpl(bool match_effective_scalar)
+      : val_(absl::nullopt), match_effective_scalar_(match_effective_scalar) {}
+
+  constexpr HloConstantScalarImpl(ScalarTy val, bool match_effective_scalar)
+      : val_(val), match_effective_scalar_(match_effective_scalar) {}
+
+  bool Match(const ::xla::HloInstruction* inst, MatchOption option) const {
+    return MatchImpl(inst, option);
+  }
+
+  bool Match(::xla::HloInstruction* inst, MatchOption option) const {
+    return MatchImpl(inst, option);
+  }
+
+  void DescribeTo(std::ostream* os, int64 indent = 0) const {
+    *os << "which is a constant "
+        << (match_effective_scalar_ ? "effective " : "") << "scalar";
+    if (val_.has_value()) {
+      *os << " with value " << *val_;
+    }
+  }
+
+ private:
+  template <typename InstTy>
+  bool MatchImpl(InstTy* inst, MatchOption option) const {
+    const auto* const_inst = DynCast<HloConstantInstruction>(inst);
+    if (!const_inst) {
+      EXPLAIN << "HloInstruction is not a constant";
+      return false;
+    }
+    if (match_effective_scalar_ &&
+        !ShapeUtil::IsEffectiveScalar(inst->shape())) {
+      EXPLAIN << "HloInstruction is not an effective scalar";
+      return false;
+    }
+    if (!match_effective_scalar_ && !ShapeUtil::IsScalar(inst->shape())) {
+      EXPLAIN << "HloInstruction is not a scalar";
+      return false;
+    }
+    if (!val_.has_value()) {
+      return true;
+    }
+
+    // Check that literal == static_cast<LitearlTy>(val) and
+    // val == static_cast<ValTy>(literal).  This is sufficient to ensure that
+    // the two constant scalars are actually "equal".
+    auto val_literal = LiteralUtil::CreateR0(*val_);
+    auto literal_r0_or = const_inst->literal().Reshape({});
+    auto val_as_literal_ty_or =
+        val_literal.Convert(const_inst->shape().element_type());
+    if (!literal_r0_or.ok() || !val_as_literal_ty_or.ok()) {
+      EXPLAIN << "could not construct relevant Literals (how did this happen?)";
+      return false;
+    }
+    auto literal_r0 = std::move(literal_r0_or).ValueOrDie();
+    auto val_as_literal_ty = std::move(val_as_literal_ty_or).ValueOrDie();
+    auto literal_r0_as_val_ty_or =
+        literal_r0.Convert(val_literal.shape().element_type());
+    bool rv = literal_r0_as_val_ty_or.ok() &&  //
+              literal_r0_as_val_ty_or.ValueOrDie() == val_literal &&
+              literal_r0 == val_as_literal_ty;
+    if (!rv) {
+      EXPLAIN << "HloInstruction's constant value "
+              << literal_r0.ToStringWithoutShape()
+              << " did not match expected value " << *val_;
+    }
+    return rv;
+  }
+
+  absl::optional<ScalarTy> val_;
+  bool match_effective_scalar_;
+};
 
 // A pattern that matches HloInstructions.
 template <typename HloInstructionType, typename Impl>
@@ -937,6 +1170,22 @@ class HloInstructionPattern {
         HloInstructionPatternShapeImpl<ShapeType, ShapeImpl>(shape));
   }
 
+  // Make this a templated function to work around gcc 4.9.4 template infinite
+  // recursion bug.
+  template <typename Dummy = void>
+  constexpr auto WithShapeEqualTo(const ::xla::Shape* shape) const
+      -> decltype(this->WithShape(Shape().EqualTo(shape))) {
+    return WithShape(Shape().EqualTo(shape));
+  }
+
+  // Make this a templated function to work around gcc 4.9.4 template infinite
+  // recursion bug.
+  template <typename Dummy = void>
+  constexpr auto WithShapeCompatibleTo(const ::xla::Shape* shape) const
+      -> decltype(this->WithShape(Shape().CompatibleTo(shape))) {
+    return WithShape(Shape().CompatibleTo(shape));
+  }
+
   // Modifies the pattern to match only if the instruction has an operand that
   // matches the given pattern.
   template <typename OperandType, typename OperandImpl>
@@ -974,7 +1223,17 @@ class HloInstructionPattern {
         HloPredicatePatternImpl<HloInstruction, Predicate>(std::move(pred)));
   }
 
-  friend struct PatternFriend;
+  // Modifies the pattern to match only if the instruction has the given
+  // comparison direction.
+  auto WithComparisonDirection(ComparisonDirection direction) const
+      -> decltype(this->AppendImpl(
+          HloInstructionPatternComparisonDirectionImpl(direction))) {
+    return AppendImpl(HloInstructionPatternComparisonDirectionImpl(direction));
+  }
+
+  void DescribeTo(std::ostream* os, int64 indent = 0) const {
+    impl_.DescribeTo(os, indent);
+  }
 
   Impl impl_;
   HloInstructionType** matched_inst_;
@@ -1049,6 +1308,7 @@ XLA_UNOP_PATTERN(Broadcast)
 XLA_UNOP_PATTERN(Ceil)
 XLA_UNOP_PATTERN(Copy)
 XLA_UNOP_PATTERN(Cos)
+XLA_UNOP_PATTERN(AllReduce)
 XLA_UNOP_PATTERN(Exp)
 XLA_UNOP_PATTERN(Fft)
 XLA_UNOP_PATTERN(Floor)
@@ -1066,10 +1326,12 @@ XLA_UNOP_PATTERN(Reduce)
 XLA_UNOP_PATTERN(ReducePrecision)
 XLA_UNOP_PATTERN(Reshape)
 XLA_UNOP_PATTERN(Reverse)
+XLA_UNOP_PATTERN(Rsqrt)
 XLA_UNOP_PATTERN(SendDone)
 XLA_UNOP_PATTERN(Sign)
 XLA_UNOP_PATTERN(Sin)
-XLA_UNOP_PATTERN(Sort)
+XLA_UNOP_PATTERN(Slice)
+XLA_UNOP_PATTERN(Sqrt)
 XLA_UNOP_PATTERN(Tanh)
 XLA_UNOP_PATTERN(Transpose)
 #undef XLA_UNOP_PATTERN
@@ -1124,17 +1386,13 @@ XLA_COMMUTATIVE_BINOP_PATTERN(Add)
 XLA_BINOP_PATTERN(Atan2)
 XLA_BINOP_PATTERN(Divide)
 XLA_BINOP_PATTERN(Complex)
+XLA_BINOP_PATTERN(Compare)
+XLA_BINOP_PATTERN(Convolution)
 XLA_BINOP_PATTERN(Dot)
-XLA_COMMUTATIVE_BINOP_PATTERN(Eq)
 XLA_BINOP_PATTERN(Gather)
-XLA_BINOP_PATTERN(Ge)
-XLA_BINOP_PATTERN(Gt)
-XLA_BINOP_PATTERN(Le)
-XLA_BINOP_PATTERN(Lt)
 XLA_COMMUTATIVE_BINOP_PATTERN(Maximum)
 XLA_COMMUTATIVE_BINOP_PATTERN(Minimum)
 XLA_COMMUTATIVE_BINOP_PATTERN(Multiply)
-XLA_COMMUTATIVE_BINOP_PATTERN(Ne)
 XLA_BINOP_PATTERN(Outfeed)
 XLA_BINOP_PATTERN(Power)
 XLA_BINOP_PATTERN(Remainder)
@@ -1209,6 +1467,112 @@ struct PatternFriend {
   }
 };
 }  // namespace detail
+
+#define XLA_VARIADIC_OP_PATTERN(NAME)                                         \
+  inline auto NAME()->decltype(Op().WithOpcode(HloOpcode::k##NAME)) {         \
+    return Op().WithOpcode(HloOpcode::k##NAME);                               \
+  }                                                                           \
+                                                                              \
+  template <typename... Args>                                                 \
+  inline auto NAME(Args&&... args)                                            \
+      ->decltype(detail::WithOperands(Op().WithOpcode(HloOpcode::k##NAME)     \
+                                          .WithNumOperands(sizeof...(Args)),  \
+                                      0, std::forward<Args>(args)...)) {      \
+    return detail::WithOperands(                                              \
+        Op().WithOpcode(HloOpcode::k##NAME).WithNumOperands(sizeof...(Args)), \
+        /*operand_num=*/0, std::forward<Args>(args)...);                      \
+  }                                                                           \
+                                                                              \
+  template <typename HloInstructionType, typename... Args>                    \
+  inline auto NAME(HloInstructionType** matched_inst, Args&&... args)         \
+      ->decltype(detail::WithOperands(Op(matched_inst)                        \
+                                          .WithOpcode(HloOpcode::k##NAME)     \
+                                          .WithNumOperands(sizeof...(Args)),  \
+                                      0, std::forward<Args>(args)...)) {      \
+    return detail::WithOperands(Op(matched_inst)                              \
+                                    .WithOpcode(HloOpcode::k##NAME)           \
+                                    .WithNumOperands(sizeof...(Args)),        \
+                                /*operand_num=*/0,                            \
+                                std::forward<Args>(args)...);                 \
+  }
+
+// We could implement all ops as "variadic" ops, but it would make the
+// already-bad compile errors even worse.
+XLA_VARIADIC_OP_PATTERN(AfterAll);
+XLA_VARIADIC_OP_PATTERN(Concatenate);
+XLA_VARIADIC_OP_PATTERN(CustomCall);
+XLA_VARIADIC_OP_PATTERN(DynamicSlice)
+XLA_VARIADIC_OP_PATTERN(Map)
+XLA_VARIADIC_OP_PATTERN(Reduce);
+XLA_VARIADIC_OP_PATTERN(Sort);
+XLA_VARIADIC_OP_PATTERN(Tuple);
+
+// Helpers for comparison instructions.
+#define XLA_COMPARE_PATTERN(NAME)                                              \
+  inline auto NAME()->decltype(                                                \
+      Op().WithOpcode(HloOpcode::kCompare)                                     \
+          .WithComparisonDirection(ComparisonDirection::k##NAME)) {            \
+    return Op()                                                                \
+        .WithOpcode(HloOpcode::kCompare)                                       \
+        .WithComparisonDirection(ComparisonDirection::k##NAME);                \
+  }                                                                            \
+                                                                               \
+  template <typename Lhs, typename Rhs>                                        \
+  inline auto NAME(Lhs&& lhs, Rhs&& rhs)                                       \
+      ->decltype(Op().WithOpcode(HloOpcode::kCompare)                          \
+                     .WithOperand(0, std::forward<Lhs>(lhs))                   \
+                     .WithOperand(1, std::forward<Rhs>(rhs))                   \
+                     .WithComparisonDirection(ComparisonDirection::k##NAME)) { \
+    return Op()                                                                \
+        .WithOpcode(HloOpcode::kCompare)                                       \
+        .WithOperand(0, std::forward<Lhs>(lhs))                                \
+        .WithOperand(1, std::forward<Rhs>(rhs))                                \
+        .WithComparisonDirection(ComparisonDirection::k##NAME);                \
+  }                                                                            \
+                                                                               \
+  template <typename HloInstructionType, typename Lhs, typename Rhs>           \
+  inline auto NAME(HloInstructionType** matched_inst, Lhs&& lhs, Rhs&& rhs)    \
+      ->decltype(Op(matched_inst)                                              \
+                     .WithOpcode(HloOpcode::kCompare)                          \
+                     .WithOperand(0, std::forward<Lhs>(lhs))                   \
+                     .WithOperand(1, std::forward<Rhs>(rhs))                   \
+                     .WithComparisonDirection(ComparisonDirection::k##NAME)) { \
+    return Op(matched_inst)                                                    \
+        .WithOpcode(HloOpcode::kCompare)                                       \
+        .WithOperand(0, std::forward<Lhs>(lhs))                                \
+        .WithOperand(1, std::forward<Rhs>(rhs))                                \
+        .WithComparisonDirection(ComparisonDirection::k##NAME);                \
+  }
+
+#define XLA_COMMUTATIVE_COMPARE_PATTERN(NAME)                               \
+  XLA_COMPARE_PATTERN(NAME)                                                 \
+                                                                            \
+  template <typename HloInstructionType, typename Lhs, typename Rhs>        \
+  inline auto NAME##AnyOrder(HloInstructionType** matched_inst, Lhs&& lhs,  \
+                             Rhs&& rhs)                                     \
+      ->decltype(Op(matched_inst)                                           \
+                     .WithOpcode(HloOpcode::kCompare)                       \
+                     .WithBinaryOperandsAnyOrder(std::forward<Lhs>(lhs),    \
+                                                 std::forward<Rhs>(rhs))) { \
+    return Op(matched_inst)                                                 \
+        .WithOpcode(HloOpcode::kCompare)                                    \
+        .WithBinaryOperandsAnyOrder(std::forward<Lhs>(lhs),                 \
+                                    std::forward<Rhs>(rhs));                \
+  }                                                                         \
+  template <typename Lhs, typename Rhs>                                     \
+  inline auto NAME##AnyOrder(Lhs&& lhs, Rhs&& rhs)                          \
+      ->decltype(NAME##AnyOrder<const HloInstruction>(                      \
+          nullptr, std::forward<Lhs>(lhs), std::forward<Rhs>(rhs))) {       \
+    return NAME##AnyOrder<const HloInstruction>(                            \
+        nullptr, std::forward<Lhs>(lhs), std::forward<Rhs>(rhs));           \
+  }
+
+XLA_COMMUTATIVE_COMPARE_PATTERN(Eq);
+XLA_COMMUTATIVE_COMPARE_PATTERN(Ne);
+XLA_COMPARE_PATTERN(Ge);
+XLA_COMPARE_PATTERN(Gt);
+XLA_COMPARE_PATTERN(Le);
+XLA_COMPARE_PATTERN(Lt);
 
 // Helpers for matching non-constant instructions.
 inline auto NonConstant() -> decltype(Op().IsNonConstant()) {

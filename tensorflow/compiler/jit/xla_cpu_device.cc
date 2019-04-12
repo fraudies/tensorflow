@@ -41,9 +41,18 @@ Status XlaCpuDeviceFactory::CreateDevices(const SessionOptions& options,
 
   XlaOpRegistry::DeviceRegistration registration;
   registration.compilation_device_name = DEVICE_CPU_XLA_JIT;
-  registration.requires_compilation = !compile_on_demand;
-  registration.enable_jit_by_default = false;
-  registration.compile_resource_ops = true;
+  registration.autoclustering_policy =
+      compile_on_demand
+          ? XlaOpRegistry::AutoclusteringPolicy::kIfExplicitlyRequested
+          : XlaOpRegistry::AutoclusteringPolicy::kAlways;
+  registration.cluster_resource_variable_ops_unsafely = true;
+  registration.cluster_stack_ops = false;
+  registration.cluster_tensor_array_ops = true;
+  registration.cluster_stateful_rng_ops = true;
+  registration.cluster_control_trigger = true;
+  registration.elide_assert_and_checknumerics = true;
+  registration.cluster_variant_ops = true;
+  XlaOpRegistry::RegisterCompilationDevice(DEVICE_XLA_CPU, registration);
 
   static XlaDeviceOpRegistrations* registrations =
       RegisterXlaDeviceKernels(DEVICE_XLA_CPU, DEVICE_CPU_XLA_JIT);
@@ -65,9 +74,10 @@ REGISTER_LOCAL_DEVICE_FACTORY(DEVICE_XLA_CPU, XlaCpuDeviceFactory);
 
 // Kernel registrations
 
-constexpr std::array<DataType, 12> kAllXlaCpuTypes = {
+constexpr std::array<DataType, 14> kAllXlaCpuTypes = {
     {DT_UINT8, DT_QUINT8, DT_INT8, DT_QINT8, DT_INT32, DT_QINT32, DT_INT64,
-     DT_HALF, DT_FLOAT, DT_DOUBLE, DT_COMPLEX64, DT_BOOL}};
+     DT_HALF, DT_FLOAT, DT_DOUBLE, DT_COMPLEX64, DT_COMPLEX128, DT_BOOL,
+     DT_BFLOAT16}};
 
 REGISTER_XLA_LAUNCH_KERNEL(DEVICE_XLA_CPU, XlaLocalLaunchOp, kAllXlaCpuTypes);
 REGISTER_XLA_COMPILE_KERNEL(DEVICE_XLA_CPU, XlaCompileOp, kAllXlaCpuTypes);

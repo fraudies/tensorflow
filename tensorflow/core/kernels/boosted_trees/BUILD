@@ -28,7 +28,6 @@ tf_kernel_library(
     deps = [
         ":resource_ops",
         ":resources",
-        "//tensorflow/core:boosted_trees_ops_op_lib",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
@@ -57,7 +56,6 @@ tf_kernel_library(
     srcs = ["resource_ops.cc"],
     deps = [
         ":resources",
-        "//tensorflow/core:boosted_trees_ops_op_lib",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core/kernels/boosted_trees:boosted_trees_proto_cc",
@@ -69,7 +67,6 @@ tf_kernel_library(
     srcs = ["stats_ops.cc"],
     deps = [
         ":tree_helper",
-        "//tensorflow/core:boosted_trees_ops_op_lib",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
     ],
@@ -81,7 +78,6 @@ tf_kernel_library(
     deps = [
         ":resources",
         ":tree_helper",
-        "//tensorflow/core:boosted_trees_ops_op_lib",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core/kernels/boosted_trees:boosted_trees_proto_cc",
@@ -92,7 +88,6 @@ tf_kernel_library(
     name = "quantile_ops",
     srcs = ["quantile_ops.cc"],
     deps = [
-        "//tensorflow/core:boosted_trees_ops_op_lib",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core/kernels/boosted_trees/quantiles:weighted_quantiles",

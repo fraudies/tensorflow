@@ -34,13 +34,25 @@ class ResourceMgr;
 
 namespace data {
 
-// A `CapturedFunction` encapsulates a TensorFlow function and all of
-// the runtime support required to execute it.
+class CapturedFunction;
+class InstantiatedCapturedFunction;
+
+Status MakeIteratorFromInputElement(
+    IteratorContext* ctx, const std::vector<Tensor>& input_element,
+    int64 thread_index, const InstantiatedCapturedFunction& inst_captured_func,
+    StringPiece prefix, std::unique_ptr<IteratorBase>* out_iterator);
+
+// `InstantiatedCapturedFunction` encapsulates all the runtime support needed
+// to execute a tensorflow function.
 //
-// The `Dataset`-related classes use `CapturedFunction` to execute
-// TensorFlow functions outside a the normal `OpKernel::Compute()`
-// context.
-class CapturedFunction {
+// While `CapturedFunction` encapsulates constant attributes of the function,
+// such as its name and captured arguments, `InstantiatedCapturedFunction`
+// encapsulates runtime aspects, such as `FunctionLibraryRuntime` and function
+// handle.
+//
+// The `Iterator` related classes use `InstantiatedCapturedFunction` to execute
+// functions outside of the normal `OpKernel::Compute()` context.
+class InstantiatedCapturedFunction {
  public:
   // Creates a new instance using a list of named attributes, fetching captured
   // inputs from a context argument.
@@ -59,10 +71,8 @@ class CapturedFunction {
 
   ~CapturedFunction();
 
-  // Runs the "Captured function" using the given FLR and caches the lib and
-  // handle generated during instantiation. If Run is called with a different
-  // lib afterwards, generates an error. This method takes ownership of the
-  // tensors in `args`, in order to be able to deallocate them as early as
+  // Runs the instantiated captured function. This method takes ownership of
+  // the tensors in `args`, in order to be able to deallocate them as early as
   // possible. Use `RunWithBorrowedArgs()` if the caller needs to retain
   // ownership of the `args`.
   Status Run(IteratorContext* ctx, std::vector<Tensor>&& args,
@@ -117,9 +127,80 @@ class CapturedFunction {
   }
 
  private:
+  InstantiatedCapturedFunction(
+      FunctionLibraryRuntime* lib, FunctionLibraryRuntime::Handle f_handle,
+      DataTypeVector ret_types,
+      std::function<void(std::function<void()>)> runner,
+      CapturedFunction* captured_func);
+
+  friend class CapturedFunction;
+
+  FunctionLibraryRuntime* const lib_;
+  const FunctionLibraryRuntime::Handle f_handle_;
+  const DataTypeVector ret_types_;
+  std::function<void(std::function<void()>)> captured_runner_;
+  CapturedFunction* const captured_func_;
+
+  TF_DISALLOW_COPY_AND_ASSIGN(InstantiatedCapturedFunction);
+};
+
+// A `CapturedFunction` encapsulates a TensorFlow function, plus any "captured"
+// arguments that it closed over in the user program.
+class CapturedFunction {
+ public:
+  struct Params {
+    bool use_inter_op_parallelism = true;
+    bool is_multi_device_function = false;
+    std::shared_ptr<FunctionLibraryDefinition> lib_def = nullptr;
+  };
+
+  // Creates a new instance using a list of named attributes, fetching captured
+  // inputs from a context argument.
+  static Status Create(const NameAttrList& func, OpKernelContext* ctx,
+                       const string& argument_name, Params params,
+                       std::unique_ptr<CapturedFunction>* out_function);
+
+  // Creates a new instance using a list of named attributes, using provided
+  // captured inputs.
+  static Status Create(const NameAttrList& func, OpKernelContext* ctx,
+                       std::vector<Tensor>&& captured_inputs, Params params,
+                       std::unique_ptr<CapturedFunction>* out_function);
+
+  // Adds the definition of this captured function into the given graph,
+  // returning its captured inputs and types through the respective output
+  // arguments.
+  Status AddToGraph(SerializationContext* ctx,
+                    DatasetBase::DatasetGraphDefBuilder* b,
+                    std::vector<Node*>* other_arguments,
+                    DataTypeVector* other_arguments_types) const;
+
+  // Instantiates this function for use in the given context, providing an
+  // InstantiatedCapturedFunction that can be used to execute functions.
+  Status Instantiate(IteratorContext* ctx,
+                     std::unique_ptr<InstantiatedCapturedFunction>*
+                         instantiated_captured_function);
+
+  // Returns the additional captured inputs that will be passed to the function.
+  const std::vector<Tensor>& captured_inputs() const {
+    return captured_inputs_;
+  }
+
+  // Returns the named list of function arguments.
+  const NameAttrList& func() const { return func_; }
+
+  // Indicates whether the function is multi-device.
+  bool is_multi_device_function() const { return is_multi_device_function_; }
+
+  // Returns the transitive set of function definition required to instantiate
+  // this function.
+  const FunctionLibraryDefinition* lib_def() const { return lib_def_.get(); }
+
+  // Indicates whether the function should use inter op parallelism.
+  bool use_inter_op_parallelism() const { return use_inter_op_parallelism_; }
+
+ private:
   CapturedFunction(const NameAttrList& func,
-                   std::vector<Tensor> captured_inputs,
-                   bool use_inter_op_parallelism);
+                   std::vector<Tensor> captured_inputs, Params params);
 
   Status GetHandle(IteratorContext* ctx,
                    FunctionLibraryRuntime::Handle* out_handle);
@@ -132,6 +213,8 @@ class CapturedFunction {
   DataTypeSlice ret_types_;
   std::function<void(std::function<void()>)> captured_runner_ = nullptr;
   const bool use_inter_op_parallelism_;
+  const bool is_multi_device_function_;
+  std::shared_ptr<const FunctionLibraryDefinition> lib_def_;
 
   TF_DISALLOW_COPY_AND_ASSIGN(CapturedFunction);
 };

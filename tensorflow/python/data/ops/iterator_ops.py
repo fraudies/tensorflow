@@ -31,9 +31,9 @@ from tensorflow.python.framework import errors
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.ops import gen_dataset_ops
-from tensorflow.python.ops import resource_variable_ops
-from tensorflow.python.training.checkpointable import base as checkpointable
 from tensorflow.python.training.saver import BaseSaverBuilder
+from tensorflow.python.training.tracking import base as trackable
+from tensorflow.python.util import deprecation
 from tensorflow.python.util.tf_export import tf_export
 
 
@@ -68,8 +68,8 @@ def _device_stack_is_empty():
   return not bool(device_stack)
 
 
-@tf_export("data.Iterator")
-class Iterator(checkpointable.CheckpointableBase):
+@tf_export(v1=["data.Iterator"])
+class Iterator(trackable.Trackable):
   """Represents the state of iterating through a `Dataset`."""
 
   def __init__(self, iterator_resource, initializer, output_types,
@@ -332,31 +332,42 @@ class Iterator(checkpointable.CheckpointableBase):
         element structure.
     """
     with ops.name_scope(name, "make_initializer") as name:
-      nest.assert_same_structure(self._output_types, dataset.output_types)
-      nest.assert_same_structure(self._output_shapes, dataset.output_shapes)
+      # pylint: disable=protected-access
+      # NOTE(mrry): Cannot depend on `dataset_ops.get_legacy_output*()` due
+      # to that creating a circular dependency.
+      dataset_output_types = (
+          dataset._element_structure._to_legacy_output_types())
+      dataset_output_shapes = (
+          dataset._element_structure._to_legacy_output_shapes())
+      dataset_output_classes = (
+          dataset._element_structure._to_legacy_output_classes())
+      # pylint: enable=protected-access
+
+      nest.assert_same_structure(self.output_types, dataset_output_types)
+      nest.assert_same_structure(self.output_shapes, dataset_output_shapes)
       for iterator_class, dataset_class in zip(
-          nest.flatten(self._output_classes),
-          nest.flatten(dataset.output_classes)):
+          nest.flatten(self.output_classes),
+          nest.flatten(dataset_output_classes)):
         if iterator_class is not dataset_class:
           raise TypeError(
               "Expected output classes %r but got dataset with output class %r."
-              % (self._output_classes, dataset.output_classes))
+              % (self.output_classes, dataset_output_classes))
       for iterator_dtype, dataset_dtype in zip(
-          nest.flatten(self._output_types), nest.flatten(dataset.output_types)):
+          nest.flatten(self.output_types), nest.flatten(dataset_output_types)):
         if iterator_dtype != dataset_dtype:
           raise TypeError(
               "Expected output types %r but got dataset with output types %r." %
-              (self._output_types, dataset.output_types))
+              (self.output_types, dataset_output_types))
       for iterator_shape, dataset_shape in zip(
-          nest.flatten(self._output_shapes), nest.flatten(
-              dataset.output_shapes)):
+          nest.flatten(self.output_shapes), nest.flatten(
+              dataset_output_shapes)):
         if not iterator_shape.is_compatible_with(dataset_shape):
           raise TypeError("Expected output shapes compatible with %r but got "
                           "dataset with output shapes %r." %
-                          (self._output_shapes, dataset.output_shapes))
+                          (self.output_shapes, dataset_output_shapes))
     with ops.colocate_with(self._iterator_resource):
       return gen_dataset_ops.make_iterator(
-          dataset._as_variant_tensor(), self._iterator_resource, name=name)  # pylint: disable=protected-access
+          dataset._variant_tensor, self._iterator_resource, name=name)  # pylint: disable=protected-access
 
   def get_next(self, name=None):
     """Returns a nested structure of `tf.Tensor`s representing the next element.
@@ -437,6 +448,8 @@ class Iterator(checkpointable.CheckpointableBase):
           self._iterator_resource, name=name)
 
   @property
+  @deprecation.deprecated(
+      None, "Use `tf.compat.v1.data.get_output_classes(iterator)`.")
   def output_classes(self):
     """Returns the class of each component of an element of this iterator.
 
@@ -449,6 +462,8 @@ class Iterator(checkpointable.CheckpointableBase):
     return self._output_classes
 
   @property
+  @deprecation.deprecated(
+      None, "Use `tf.compat.v1.data.get_output_shapes(iterator)`.")
   def output_shapes(self):
     """Returns the shape of each component of an element of this iterator.
 
@@ -459,6 +474,8 @@ class Iterator(checkpointable.CheckpointableBase):
     return self._output_shapes
 
   @property
+  @deprecation.deprecated(
+      None, "Use `tf.compat.v1.data.get_output_types(iterator)`.")
   def output_types(self):
     """Returns the type of each component of an element of this iterator.
 
@@ -488,7 +505,33 @@ def _generate_shared_name(prefix):
   return "{}{}".format(prefix, uid)
 
 
-class EagerIterator(checkpointable.CheckpointableBase):
+class IteratorResourceDeleter(object):
+  """An object which cleans up an iterator resource handle.
+
+  An alternative to defining a __del__ method on an object. Even if the parent
+  object is part of a reference cycle, the cycle will be collectable.
+  """
+
+  def __init__(self, handle, device, deleter):
+    self._deleter = deleter
+    self._handle = handle
+    self._device = device
+    self._eager_mode = context.executing_eagerly()
+
+  def __del__(self):
+    with ops.device(self._device):
+      # Make sure the resource is deleted in the same mode as it was created in.
+      if self._eager_mode:
+        with context.eager_mode():
+          gen_dataset_ops.delete_iterator(
+              handle=self._handle, deleter=self._deleter)
+      else:
+        with context.graph_mode():
+          gen_dataset_ops.delete_iterator(
+              handle=self._handle, deleter=self._deleter)
+
+
+class IteratorV2(trackable.Trackable):
   """An iterator producing tf.Tensor objects from a tf.data.Dataset."""
 
   def __init__(self, dataset):
@@ -511,30 +554,26 @@ class EagerIterator(checkpointable.CheckpointableBase):
       RuntimeError: When invoked without eager execution enabled.
     """
 
-    if not context.executing_eagerly():
-      raise RuntimeError(
-          "{} objects can only be used when eager execution is enabled, use "
-          "tf.data.Dataset.make_initializable_iterator or "
-          "tf.data.Dataset.make_one_shot_iterator for graph construction".
-          format(type(self)))
     self._device = context.context().device_name
     with ops.device("/cpu:0"):
-      ds_variant = dataset._as_variant_tensor()  # pylint: disable=protected-access
-      self._output_classes = dataset.output_classes
-      self._output_types = dataset.output_types
-      self._output_shapes = dataset.output_shapes
-      self._flat_output_types = nest.flatten(
-          sparse.as_dense_types(self._output_types, self._output_classes))
-      self._flat_output_shapes = nest.flatten(
-          sparse.as_dense_shapes(self._output_shapes, self._output_classes))
+      # pylint: disable=protected-access
+      dataset = dataset._apply_options()
+      ds_variant = dataset._variant_tensor
+      self._structure = dataset._element_structure
+      self._flat_output_types = self._structure._flat_types
+      self._flat_output_shapes = self._structure._flat_shapes
       with ops.colocate_with(ds_variant):
-        self._resource = gen_dataset_ops.anonymous_iterator(
-            output_types=self._flat_output_types,
-            output_shapes=self._flat_output_shapes)
-        gen_dataset_ops.make_iterator(ds_variant, self._resource)
+        self._iterator_resource, self._deleter = (
+            gen_dataset_ops.anonymous_iterator_v2(
+                output_types=self._flat_output_types,
+                output_shapes=self._flat_output_shapes))
+        gen_dataset_ops.make_iterator(ds_variant, self._iterator_resource)
         # Delete the resource when this object is deleted
-        self._resource_deleter = resource_variable_ops.EagerResourceDeleter(
-            handle=self._resource, handle_device=self._device)
+        self._resource_deleter = IteratorResourceDeleter(
+            handle=self._iterator_resource,
+            device=self._device,
+            deleter=self._deleter)
+      # pylint: enable=protected-access
 
   def __iter__(self):
     return self
@@ -545,6 +584,14 @@ class EagerIterator(checkpointable.CheckpointableBase):
   def _next_internal(self):
     """Returns a nested structure of `tf.Tensor`s containing the next element.
     """
+    if not context.executing_eagerly():
+      with ops.device(self._device):
+        ret = gen_dataset_ops.iterator_get_next(
+            self._iterator_resource,
+            output_types=self._flat_output_types,
+            output_shapes=self._flat_output_shapes)
+      return self._structure._from_compatible_tensor_list(ret)  # pylint: disable=protected-access
+
     # This runs in sync mode as iterators use an error status to communicate
     # that there is no more data to iterate over.
     # TODO(b/77291417): Fix
@@ -559,7 +606,7 @@ class EagerIterator(checkpointable.CheckpointableBase):
         # to a background thread, and can achieve a small constant performance
         # boost by invoking the iterator synchronously.
         ret = gen_dataset_ops.iterator_get_next_sync(
-            self._resource,
+            self._iterator_resource,
             output_types=self._flat_output_types,
             output_shapes=self._flat_output_shapes)
 
@@ -576,6 +623,8 @@ class EagerIterator(checkpointable.CheckpointableBase):
       raise StopIteration
 
   @property
+  @deprecation.deprecated(
+      None, "Use `tf.compat.v1.data.get_output_classes(iterator)`.")
   def output_classes(self):
     """Returns the class of each component of an element of this iterator.
 
@@ -588,6 +637,8 @@ class EagerIterator(checkpointable.CheckpointableBase):
     return self._output_classes
 
   @property
+  @deprecation.deprecated(
+      None, "Use `tf.compat.v1.data.get_output_shapes(iterator)`.")
   def output_shapes(self):
     """Returns the shape of each component of an element of this iterator.
 
@@ -598,6 +649,8 @@ class EagerIterator(checkpointable.CheckpointableBase):
     return self._output_shapes
 
   @property
+  @deprecation.deprecated(
+      None, "Use `tf.compat.v1.data.get_output_types(iterator)`.")
   def output_types(self):
     """Returns the type of each component of an element of this iterator.
 
@@ -625,12 +678,12 @@ class EagerIterator(checkpointable.CheckpointableBase):
   def _gather_saveables_for_checkpoint(self):
 
     def _saveable_factory(name):
-      return _IteratorSaveable(self._resource, name)
+      return _IteratorSaveable(self._iterator_resource, name)
 
     return {"ITERATOR": _saveable_factory}
 
 
-# TODO(b/71645805): Expose checkpointable stateful objects from dataset
+# TODO(b/71645805): Expose trackable stateful objects from dataset
 # attributes(potential).
 class _IteratorSaveable(BaseSaverBuilder.SaveableObject):
   """SaveableObject for saving/restoring iterator state."""
@@ -648,6 +701,7 @@ class _IteratorSaveable(BaseSaverBuilder.SaveableObject):
       return gen_dataset_ops.deserialize_iterator(self.op, restored_tensors[0])
 
 
+@tf_export("data.experimental.get_next_as_optional")
 def get_next_as_optional(iterator):
   """Returns an `Optional` that contains the next value from the iterator.
 

@@ -14,8 +14,14 @@
 # ==============================================================================
 """Assemble common TF Dockerfiles from many parts.
 
-This script constructs TF's Dockerfiles by aggregating partial
-Dockerfiles. See README.md for usage examples.
+- Assembles Dockerfiles
+- Builds images (and optionally runs image tests)
+- Pushes images to Docker Hub (provided with credentials)
+
+Logs are written to stderr; the list of successfully built images is
+written to stdout.
+
+Read README.md (in this directory) for instructions!
 """
 
 from __future__ import absolute_import
@@ -25,7 +31,7 @@ from __future__ import print_function
 import copy
 import errno
 import os
-import os.path
+import platform
 import re
 import shutil
 import textwrap
@@ -36,6 +42,43 @@ import cerberus
 import yaml
 
 FLAGS = flags.FLAGS
+
+flags.DEFINE_string('hub_username', None,
+                    'Dockerhub username, only used with --upload_to_hub')
+
+flags.DEFINE_string(
+    'hub_password', None,
+    ('Dockerhub password, only used with --upload_to_hub. Use from an env param'
+     ' so your password isn\'t in your history.'))
+
+flags.DEFINE_integer('hub_timeout', 3600,
+                     'Abort Hub upload if it takes longer than this.')
+
+flags.DEFINE_string(
+    'repository', 'tensorflow',
+    'Tag local images as {repository}:tag (in addition to the '
+    'hub_repository, if uploading to hub)')
+
+flags.DEFINE_string(
+    'hub_repository', None,
+    'Push tags to this Docker Hub repository, e.g. tensorflow/tensorflow')
+
+flags.DEFINE_boolean(
+    'upload_to_hub',
+    False,
+    ('Push built images to Docker Hub (you must also provide --hub_username, '
+     '--hub_password, and --hub_repository)'),
+    short_name='u',
+)
+
+flags.DEFINE_boolean(
+    'construct_dockerfiles', False, 'Do not build images', short_name='d')
+
+flags.DEFINE_boolean(
+    'keep_temp_dockerfiles',
+    False,
+    'Retain .temp.Dockerfiles created while building images.',
+    short_name='k')
 
 flags.DEFINE_boolean(
     'dry_run', False, 'Do not actually generate Dockerfiles', short_name='n')
@@ -65,7 +108,14 @@ flags.DEFINE_boolean(
     short_name='q')
 
 flags.DEFINE_boolean(
-    'validate', True, 'Validate generated Dockerfiles', short_name='c')
+    'nocache', False,
+    'Disable the Docker build cache; identical to "docker build --no-cache"')
+
+flags.DEFINE_string(
+    'spec_file',
+    './spec.yml',
+    'Path to the YAML specification file',
+    short_name='s')
 
 # Schema to verify the contents of spec.yml with Cerberus.
 # Must be converted to a dict from yaml to work.
@@ -306,6 +356,9 @@ def mkdir_p(path):
     if e.errno != errno.EEXIST:
       raise
 
+def gather_tag_args(slices, cli_input_args, required_args):
+  """Build a dictionary of all the CLI and slice-specified args for a tag."""
+  args = {}
 
 def construct_documentation(header, partial_specs, image_spec):
   """Assemble all of the documentation for a single dockerfile.
@@ -416,97 +469,20 @@ def flatten_args_references(image_specs):
   Returns:
     The modified contents of image_specs.
   """
-  for _, image_spec in image_specs.items():
-    too_deep = 0
-    while str in map(type, image_spec.get('arg-defaults', [])) and too_deep < 5:
-      new_args = []
-      for arg in image_spec['arg-defaults']:
-        if isinstance(arg, str):
-          new_args.extend(image_specs[arg]['arg-defaults'])
-        else:
-          new_args.append(arg)
-
-      image_spec['arg-defaults'] = new_args
-      too_deep += 1
-
-  return image_specs
-
-
-def flatten_partial_references(image_specs):
-  """Resolve all partial references in each image spec to a concrete list.
-
-  Turns this:
-
-    example-image:
-      partials:
-        - foo
-
-    another-example:
-      partials:
-        - bar
-        - image: example-image
-        - bat
-
-  Into this:
-
-    example-image:
-      partials:
-        - foo
-
-    another-example:
-      partials:
-        - bar
-        - foo
-        - bat
-  Args:
-    image_specs: A dict of image_spec dicts; should be the contents of the
-      "images" key in the global spec.yaml. This dict is modified in place and
-      then returned.
-
-  Returns:
-    The modified contents of image_specs.
-  """
-  for _, image_spec in image_specs.items():
-    too_deep = 0
-    while dict in map(type, image_spec['partials']) and too_deep < 5:
-      new_partials = []
-      for partial in image_spec['partials']:
-        if isinstance(partial, str):
-          new_partials.append(partial)
-        else:
-          new_partials.extend(image_specs[partial['image']]['partials'])
-
-      image_spec['partials'] = new_partials
-      too_deep += 1
-
-  return image_specs
-
-
-def construct_dockerfiles(tf_spec):
-  """Generate a mapping of {"cpu": <cpu dockerfile contents>, ...}.
-
-  Args:
-    tf_spec: The full spec.yml loaded as a python object.
-
-  Returns:
-    A string:string dict of short names ("cpu-devel") to Dockerfile contents.
-  """
-  names_to_contents = dict()
-  image_specs = tf_spec['images']
-  image_specs = flatten_partial_references(image_specs)
-  image_specs = flatten_args_references(image_specs)
-  partial_specs = tf_spec['partials']
-  partial_specs = normalize_partial_args(partial_specs)
-
-  for name, image_spec in image_specs.items():
-    if not image_spec.get('create-dockerfile', True):
-      continue
-    documentation = construct_documentation(tf_spec['header'], partial_specs,
-                                            image_spec)
-    contents = construct_contents(partial_specs, image_spec)
-    names_to_contents[name] = '\n'.join([documentation, contents])
-
-  return names_to_contents
+  partials = {}
+  for path, _, files in os.walk(partial_path):
+    for name in files:
+      fullpath = os.path.join(path, name)
+      if '.partial.Dockerfile' not in fullpath:
+        eprint(('> Probably not a problem: skipping {}, which is not a '
+                'partial.').format(fullpath))
+        continue
+      # partial_dir/foo/bar.partial.Dockerfile -> foo/bar
+      simple_name = fullpath[len(partial_path) + 1:-len('.partial.dockerfile')]
+      with open(fullpath, 'r') as f:
+        partial_contents = f.read()
+      partials[simple_name] = partial_contents
+  return partials
 
 
 def main(argv):
@@ -525,29 +501,186 @@ def main(argv):
           FLAGS.spec_file))
       print(yaml.dump(v.errors, indent=2))
       exit(1)
-  else:
-    print('>> WARNING: Not validating {}'.format(FLAGS.spec_file))
+    if not FLAGS.hub_repository:
+      eprint(
+          '> Error: please set --hub_repository when uploading to Dockerhub.')
+      exit(1)
+    if not FLAGS.hub_password:
+      eprint('> Error: please set --hub_password when uploading to Dockerhub.')
+      exit(1)
+    dock.login(
+        username=FLAGS.hub_username,
+        password=FLAGS.hub_password,
+    )
 
-  # Generate mapping of { "cpu-devel": "<cpu-devel dockerfile contents>", ... }
-  names_to_contents = construct_dockerfiles(tf_spec)
+  # Each tag has a name ('tag') and a definition consisting of the contents
+  # of its Dockerfile, its build arg list, etc.
+  failed_tags = []
+  succeeded_tags = []
+  for tag, tag_defs in all_tags.items():
+    for tag_def in tag_defs:
+      eprint('> Working on {}'.format(tag))
 
-  # Write each completed Dockerfile
-  if not FLAGS.dry_run:
-    print('>> Emptying destination dir "{}"'.format(FLAGS.output_dir))
-    shutil.rmtree(FLAGS.output_dir, ignore_errors=True)
-    mkdir_p(FLAGS.output_dir)
-  else:
-    print('>> Skipping creation of {} (dry run)'.format(FLAGS.output_dir))
-  for name, contents in names_to_contents.items():
-    path = os.path.join(FLAGS.output_dir, name + '.Dockerfile')
-    if FLAGS.dry_run:
-      print('>> Skipping writing contents of {} (dry run)'.format(path))
-      print(contents)
-    else:
-      mkdir_p(FLAGS.output_dir)
-      print('>> Writing {}'.format(path))
-      with open(path, 'w') as f:
-        f.write(contents)
+      if FLAGS.exclude_tags_matching and re.match(FLAGS.exclude_tags_matching,
+                                                  tag):
+        eprint('>> Excluded due to match against "{}".'.format(
+            FLAGS.exclude_tags_matching))
+        continue
+
+      if FLAGS.only_tags_matching and not re.match(FLAGS.only_tags_matching,
+                                                   tag):
+        eprint('>> Excluded due to failure to match against "{}".'.format(
+            FLAGS.only_tags_matching))
+        continue
+
+      # Write releases marked "is_dockerfiles" into the Dockerfile directory
+      if FLAGS.construct_dockerfiles and tag_def['is_dockerfiles']:
+        path = os.path.join(FLAGS.dockerfile_dir,
+                            tag_def['dockerfile_subdirectory'],
+                            tag + '.Dockerfile')
+        eprint('>> Writing {}...'.format(path))
+        if not FLAGS.dry_run:
+          mkdir_p(os.path.dirname(path))
+          with open(path, 'w') as f:
+            f.write(tag_def['dockerfile_contents'])
+
+      # Don't build any images for dockerfile-only releases
+      if not FLAGS.build_images:
+        continue
+
+      # Only build images for host architecture
+      proc_arch = platform.processor()
+      is_x86 = proc_arch.startswith('x86')
+      if (is_x86 and any([arch in tag for arch in ['ppc64le']]) or
+          not is_x86 and proc_arch not in tag):
+        continue
+
+      # Generate a temporary Dockerfile to use to build, since docker-py
+      # needs a filepath relative to the build context (i.e. the current
+      # directory)
+      dockerfile = os.path.join(FLAGS.dockerfile_dir, tag + '.temp.Dockerfile')
+      if not FLAGS.dry_run:
+        with open(dockerfile, 'w') as f:
+          f.write(tag_def['dockerfile_contents'])
+      eprint('>> (Temporary) writing {}...'.format(dockerfile))
+
+      repo_tag = '{}:{}'.format(FLAGS.repository, tag)
+      eprint('>> Building {} using build args:'.format(repo_tag))
+      for arg, value in tag_def['cli_args'].items():
+        eprint('>>> {}={}'.format(arg, value))
+
+      # Note that we are NOT using cache_from, which appears to limit
+      # available cache layers to those from explicitly specified layers. Many
+      # of our layers are similar between local builds, so we want to use the
+      # implied local build cache.
+      tag_failed = False
+      image, logs = None, []
+      if not FLAGS.dry_run:
+        try:
+          image, logs = dock.images.build(
+              timeout=FLAGS.hub_timeout,
+              path='.',
+              nocache=FLAGS.nocache,
+              dockerfile=dockerfile,
+              buildargs=tag_def['cli_args'],
+              tag=repo_tag)
+
+          # Print logs after finishing
+          log_lines = [l.get('stream', '') for l in logs]
+          eprint(''.join(log_lines))
+
+          # Run tests if requested, and dump output
+          # Could be improved by backgrounding, but would need better
+          # multiprocessing support to track failures properly.
+          if FLAGS.run_tests_path:
+            if not tag_def['tests']:
+              eprint('>>> No tests to run.')
+            for test in tag_def['tests']:
+              eprint('>> Testing {}...'.format(test))
+              container, = dock.containers.run(
+                  image,
+                  '/tests/' + test,
+                  working_dir='/',
+                  log_config={'type': 'journald'},
+                  detach=True,
+                  stderr=True,
+                  stdout=True,
+                  volumes={
+                      FLAGS.run_tests_path: {
+                          'bind': '/tests',
+                          'mode': 'ro'
+                      }
+                  },
+                  runtime=tag_def['test_runtime']),
+              ret = container.wait()
+              code = ret['StatusCode']
+              out = container.logs(stdout=True, stderr=False)
+              err = container.logs(stdout=False, stderr=True)
+              container.remove()
+              if out:
+                eprint('>>> Output stdout:')
+                eprint(out.decode('utf-8'))
+              else:
+                eprint('>>> No test standard out.')
+              if err:
+                eprint('>>> Output stderr:')
+                eprint(out.decode('utf-8'))
+              else:
+                eprint('>>> No test standard err.')
+              if code != 0:
+                eprint('>> {} failed tests with status: "{}"'.format(
+                    repo_tag, code))
+                failed_tags.append(tag)
+                tag_failed = True
+                if FLAGS.stop_on_failure:
+                  eprint('>> ABORTING due to --stop_on_failure!')
+                  exit(1)
+              else:
+                eprint('>> Tests look good!')
+
+        except docker.errors.BuildError as e:
+          eprint('>> {} failed to build with message: "{}"'.format(
+              repo_tag, e.msg))
+          eprint('>> Build logs follow:')
+          log_lines = [l.get('stream', '') for l in e.build_log]
+          eprint(''.join(log_lines))
+          failed_tags.append(tag)
+          tag_failed = True
+          if FLAGS.stop_on_failure:
+            eprint('>> ABORTING due to --stop_on_failure!')
+            exit(1)
+
+        # Clean temporary dockerfiles if they were created earlier
+        if not FLAGS.keep_temp_dockerfiles:
+          os.remove(dockerfile)
+
+      # Upload new images to DockerHub as long as they built + passed tests
+      if FLAGS.upload_to_hub:
+        if not tag_def['upload_images']:
+          continue
+        if tag_failed:
+          continue
+
+        eprint('>> Uploading to {}:{}'.format(FLAGS.hub_repository, tag))
+        if not FLAGS.dry_run:
+          p = multiprocessing.Process(
+              target=upload_in_background,
+              args=(FLAGS.hub_repository, dock, image, tag))
+          p.start()
+
+      if not tag_failed:
+        succeeded_tags.append(tag)
+
+  if failed_tags:
+    eprint(
+        '> Some tags failed to build or failed testing, check scrollback for '
+        'errors: {}'.format(','.join(failed_tags)))
+    exit(1)
+
+  eprint('> Writing built{} tags to standard out.'.format(
+      ' and tested' if FLAGS.run_tests_path else ''))
+  for tag in succeeded_tags:
+    print('{}:{}'.format(FLAGS.repository, tag))
 
 
 if __name__ == '__main__':

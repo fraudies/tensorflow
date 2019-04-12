@@ -255,6 +255,7 @@ def _rnn_step(
     """Run RNN step.  Pass through either no or some past state."""
     new_output, new_state = call_cell()
 
+    nest.assert_same_structure(zero_output, new_output)
     nest.assert_same_structure(state, new_state)
 
     flat_new_state = nest.flatten(new_state)
@@ -273,6 +274,7 @@ def _rnn_step(
     # steps.  This is faster when max_seq_len is equal to the number of unrolls
     # (which is typical for dynamic_rnn).
     new_output, new_state = call_cell()
+    nest.assert_same_structure(zero_output, new_output)
     nest.assert_same_structure(state, new_state)
     new_state = nest.flatten(new_state)
     new_output = nest.flatten(new_output)
@@ -616,8 +618,8 @@ def dynamic_rnn(cell, inputs, sequence_length=None, initial_state=None,
 
     parallel_iterations = parallel_iterations or 32
     if sequence_length is not None:
-      sequence_length = math_ops.to_int32(sequence_length)
-      if sequence_length.get_shape().ndims not in (None, 1):
+      sequence_length = math_ops.cast(sequence_length, dtypes.int32)
+      if sequence_length.get_shape().rank not in (None, 1):
         raise ValueError(
             "sequence_length must be a vector of length batch_size, "
             "but saw shape: %s" % sequence_length.get_shape())
@@ -1353,7 +1355,7 @@ def static_rnn(cell,
       zero_output = nest.pack_sequence_as(
           structure=output_size, flat_sequence=flat_zero_output)
 
-      sequence_length = math_ops.to_int32(sequence_length)
+      sequence_length = math_ops.cast(sequence_length, dtypes.int32)
       min_sequence_length = math_ops.reduce_min(sequence_length)
       max_sequence_length = math_ops.reduce_max(sequence_length)
 
@@ -1387,7 +1389,10 @@ def static_rnn(cell,
     return (outputs, state)
 
 
-@tf_export("nn.static_state_saving_rnn")
+@deprecation.deprecated(
+    None, "Please use `keras.layers.RNN(cell, stateful=True)`, "
+    "which is equivalent to this API")
+@tf_export(v1=["nn.static_state_saving_rnn"])
 def static_state_saving_rnn(cell,
                             inputs,
                             state_saver,

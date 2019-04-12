@@ -93,6 +93,7 @@ class ReluTest(test.TestCase):
   def testReluInt8x4GoodShape(self):
     self._testReluInt8x4(np.array([[-50, 7, 23, 0], [-1, -5, 6, 11]]))
 
+  @test_util.disable_xla("b/123338077")  # Passes with XLA
   def testReluInt8x4BadShape(self):
     np_inputs = np.array([[-50, 7, 23], [0, 1, -5], [6, -2, 11]])
     self.assertEqual(np_inputs.size, 9)
@@ -528,11 +529,11 @@ class SeluTest(test.TestCase):
   def testNumbers(self):
     for t in [np.float16, np.float32, np.float64]:
       self._testSelu(
-          np.array([[-9, 7, -5, 3, -1], [1, -3, 5, -7, 9]]).astype(t),
-          use_gpu=False)
-      self._testSelu(
-          np.array([[-9, 7, -5, 3, -1], [1, -3, 5, -7, 9]]).astype(t),
-          use_gpu=True)
+          np.array([[-9, 7, -5, 3, -1], [1, -3, 5, -7, 9]]).astype(t))
+      # Force executed on CPU in case GPU kernels are available.
+      with ops.device("/device:CPU:0"):
+        self._testSelu(
+            np.array([[-9, 7, -5, 3, -1], [1, -3, 5, -7, 9]]).astype(t))
 
   def testGradientFloat32(self):
     with self.cached_session():

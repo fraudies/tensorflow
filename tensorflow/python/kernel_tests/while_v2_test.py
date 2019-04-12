@@ -21,6 +21,9 @@ from __future__ import print_function
 from absl.testing import parameterized
 
 from tensorflow.core.protobuf import rewriter_config_pb2
+from tensorflow.python.eager import backprop
+from tensorflow.python.eager import context
+from tensorflow.python.eager import def_function
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import meta_graph
@@ -29,6 +32,9 @@ from tensorflow.python.grappler import tf_optimizer
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import gradients_impl
 from tensorflow.python.ops import list_ops
+from tensorflow.python.ops import map_fn
+from tensorflow.python.ops import math_ops
+from tensorflow.python.ops import variables
 from tensorflow.python.ops import while_v2
 from tensorflow.python.ops.control_flow_ops import while_loop as while_loop_v1
 from tensorflow.python.ops.while_v2 import while_loop as while_loop_v2
@@ -45,6 +51,36 @@ class WhileV2Test(test.TestCase, parameterized.TestCase):
       self.assertEqual(sess.run(ret), 16.)
       self.assertSequenceEqual(sess.run(grad), [32.])
 
+  def testGradientTapeResourceVariable(self):
+    with context.eager_mode():
+      v = variables.Variable(1.)
+
+      @def_function.function
+      def fnWithLoop():  # pylint: disable=invalid-name
+        with backprop.GradientTape() as tape:
+          _, x = while_loop_v2(
+              lambda i, _: i < 2,
+              lambda i, x: (i + 1, x * v),
+              [0, 2.])
+        return tape.gradient(x, v)
+
+      self.assertAllEqual(fnWithLoop(), 4.0)
+
+  def testExternalControlDependencies(self):
+    with ops.Graph().as_default(), self.test_session():
+      v = variables.Variable(1.)
+      v.initializer.run()
+      op = v.assign_add(1.)
+
+      def body_fn(i):  # pylint: disable=invalid-name
+        with ops.control_dependencies([op]):
+          return i + 1
+
+      loop = while_loop_v2(lambda i: i < 1, body_fn, [0])
+      loop[0].op.run()
+      self.assertAllEqual(self.evaluate(v), 2.0)
+
+  @test_util.run_deprecated_v1
   def testMultipleLoopVarsBasic(self):
     x = constant_op.constant(5.)
     y = constant_op.constant(3.)
@@ -82,14 +118,27 @@ class WhileV2Test(test.TestCase, parameterized.TestCase):
     grady_1 = gradients_impl.gradients(ret[1], [y])  # [x + 1]
     grady_2 = gradients_impl.gradients(ret, [y])  # [2*x*y + x**2 + x + 1]
     with self.cached_session() as sess:
-      self.assertSequenceEqual(sess.run(ret), [120., 23.])
-      self.assertSequenceEqual(sess.run(gradx_0), [39.])
-      self.assertSequenceEqual(sess.run(gradx_1), [4.])
-      self.assertSequenceEqual(sess.run(gradx_2), [43.])
-      self.assertSequenceEqual(sess.run(grady_0), [55.])
-      self.assertSequenceEqual(sess.run(grady_1), [6.])
-      self.assertSequenceEqual(sess.run(grady_2), [61.])
+      self.assertSequenceEqual(self.evaluate(ret), [120., 23.])
+      self.assertSequenceEqual(self.evaluate(gradx_0), [39.])
+      self.assertSequenceEqual(self.evaluate(gradx_1), [4.])
+      self.assertSequenceEqual(self.evaluate(gradx_2), [43.])
+      self.assertSequenceEqual(self.evaluate(grady_0), [55.])
+      self.assertSequenceEqual(self.evaluate(grady_1), [6.])
+      self.assertSequenceEqual(self.evaluate(grady_2), [61.])
 
+  @test_util.run_deprecated_v1
+  def testGradientTape(self):
+    with backprop.GradientTape() as t:
+      x = constant_op.constant(2.)
+      t.watch(x)
+      ret = while_loop_v2(
+          lambda v: v < 4., lambda v: v * v, [x],
+          return_same_structure=False)  # x**2
+    grad = t.gradient(ret, x)
+    with self.cached_session() as sess:
+      self.assertAllEqual(sess.run(grad), 4.0)
+
+  @test_util.run_deprecated_v1
   def testMultipleWhileLoops(self):
     x = constant_op.constant(2.)
     ret1 = while_loop_v2(lambda v: v < 4., lambda v: v * v, [x])  # x**2
@@ -204,9 +253,9 @@ class WhileV2Test(test.TestCase, parameterized.TestCase):
       if op.type == "While":
         while_op = op
 
-    body_graph = while_v2._get_body_graph(while_op)
-    # body_graph.inputs: [counter_arg, x_arg, tl_arg, *accumulators]
-    x_input_t = body_graph.inputs[1]
+    body_graph = while_v2._get_graph(while_op, "body")
+    x_input_index = [i for i, inp in enumerate(while_op.inputs) if inp == x][0]
+    x_input_t = body_graph.inputs[x_input_index]
     accumulator_count = len(
         [c for c in x_input_t.consumers() if c.type == "TensorListPushBack"])
     self.assertEqual(accumulator_count, 1)
@@ -245,12 +294,20 @@ class WhileV2Test(test.TestCase, parameterized.TestCase):
     y = array_ops.placeholder(dtype=dtypes.float32, shape=shape)
 
     # Forward pass.
-    ret = while_loop_v2(lambda v, u: v < 8., lambda v, u: (v * v, u), [x, y])
-    while_op = ret[0].op
+    ret = while_loop_v2(lambda v, u: v < 8.,
+                        lambda v, u: (math_ops.pow(v, u), u),
+                        [x, y],
+                        return_same_structure=True)
+    while_op = ret[0].op.inputs[0].op
+    # Gradient pass.
+    grad = gradients_impl.gradients(ret[0], x)
+    # Note: There is an Identity b/w grad[0] and the While op.
+    grad_while_op = grad[0].op.inputs[0].op
+
     # Get the TensorList output of While op containing the accumulated values
     # of y.
-    # while_op.inputs: [counter_arg, x_arg, y_arg, *accumulators]
-    output = GetAccumulatorForInputAtIndex(while_op, 2)
+    x_input_index = [i for i, inp in enumerate(while_op.inputs) if x == inp][0]
+    output = GetAccumulatorForInputAtIndex(while_op, x_input_index)
     _, val = list_ops.tensor_list_pop_back(output,
                                            element_dtype=dtypes.float32)
     MatchShape(val.shape)
@@ -261,11 +318,118 @@ class WhileV2Test(test.TestCase, parameterized.TestCase):
     # Get the TensorList output of gradient While op containing the accumulated
     # values of grad_y.
     # grad_while_op.inputs:
-    # [counter_arg, total_iters_arg, grad_x_arg, grad_y_arg, *other_args]
-    grad_output = GetAccumulatorForInputAtIndex(grad_while_op, 4)
+    grad_output_index = grad_while_op.outputs.index(grad[0].op.inputs[0])
+    grad_output = GetAccumulatorForInputAtIndex(grad_while_op,
+                                                grad_output_index)
     _, val = list_ops.tensor_list_pop_back(grad_output,
                                            element_dtype=dtypes.float32)
     MatchShape(val.shape)
+
+  def _createWhile(self, name):
+    """Helper function testDefaultName."""
+    output = while_v2.while_loop(
+        lambda i: i < 3,
+        lambda i: i + 1, [constant_op.constant(0)],
+        return_same_structure=False)
+    while_op = output.op.inputs[0].op
+    self.assertEqual(while_op.type, "While")
+    return while_op
+
+  def testDefaultName(self):
+    with ops.Graph().as_default():
+      while_op = self._createWhile(None)
+      self.assertEqual(while_op.name, "while")
+      self.assertRegexpMatches(
+          while_op.get_attr("cond").name, r"while_cond_\d*")
+      self.assertRegexpMatches(
+          while_op.get_attr("body").name, r"while_body_\d*")
+
+    with ops.Graph().as_default():
+      with ops.name_scope("foo"):
+        while1_op = self._createWhile("")
+        self.assertEqual(while1_op.name, "foo/while")
+        self.assertRegexpMatches(
+            while1_op.get_attr("cond").name, r"foo_while_cond_\d*")
+        self.assertRegexpMatches(
+            while1_op.get_attr("body").name, r"foo_while_body_\d*")
+
+        while2_op = self._createWhile(None)
+        self.assertEqual(while2_op.name, "foo/while_1")
+        self.assertRegexpMatches(
+            while2_op.get_attr("cond").name, r"foo_while_1_cond_\d*")
+        self.assertRegexpMatches(
+            while2_op.get_attr("body").name, r"foo_while_1_body_\d*")
+
+  @test_util.enable_control_flow_v2
+  @test_util.run_deprecated_v1
+  def testWhileAndTensorArray(self):
+    param = constant_op.constant(2.0)
+    y0 = constant_op.constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], name="elems")
+    # map_fn uses TensorArray internally.
+    r = map_fn.map_fn(lambda x: math_ops.multiply(x, param), y0)
+    grad = gradients_impl.gradients(r, param)[0]
+    self.assertAllClose([2.0, 4.0, 6.0, 8.0, 10.0, 12.0], self.evaluate(r))
+    self.assertAllClose(21.0, self.evaluate(grad))
+
+  @test_util.run_deprecated_v1
+  def testNestedWhile(self):
+    # Compute sum of geometric progression: n^0 + n^1 + ... + n^m
+    # We compute the pow using a while loop.
+    n = constant_op.constant(3.)
+    m = constant_op.constant(5.)
+    sum_of_powers = constant_op.constant(0.)
+
+    def Body(i, previous_sum):
+      prod = constant_op.constant(1.)
+      return i - 1., previous_sum + while_loop_v2(
+          lambda c, _: c > 0,
+          lambda c, v: (c - 1., v * n), [i, prod],
+          return_same_structure=False)[1]
+
+    result = while_loop_v2(
+        lambda i, _: i >= 0,
+        Body, [m, sum_of_powers],
+        return_same_structure=False)[1]
+    grad = gradients_impl.gradients(result, [n])
+    with self.cached_session() as sess:
+      self.assertEqual(self.evaluate(result), 364.)
+      self.assertSequenceEqual(self.evaluate(grad), [547.])
+
+  @test_util.run_deprecated_v1
+  def testIdentityNodeInBody(self):
+
+    def Body(v):
+      v = array_ops.identity(v)
+      v = array_ops.identity(v)
+      return v * v
+
+    x = constant_op.constant(2.)
+    ret = while_loop_v2(
+        lambda v: v < 8., Body, [x], return_same_structure=False)
+    grad = gradients_impl.gradients(ret, [x])
+    with self.cached_session() as sess:
+      self.assertEqual(self.evaluate(ret), 16.)
+      self.assertSequenceEqual(self.evaluate(grad), [32.])
+
+  @test_util.run_deprecated_v1
+  def testForwardPassRewrite(self):
+    x = constant_op.constant(1.0, name="x")
+    output = while_v2.while_loop(lambda x: x < 10.0,
+                                 lambda x: x * 2.0,
+                                 [x])[0]
+    while_op = output.op.inputs[0].op
+    self.assertEqual(while_op.type, "While")
+    # outputs = [loop_counter, max_iters, x]
+    self.assertLen(while_op.outputs, 3)
+
+    gradients_impl.gradients(output, x)
+    # while_op should have been rewritten to output 2.0 intermediate.
+    # outputs = [loop_counter, max_iters, x, 2.0_accumulator, x_accumulator]
+    self.assertLen(while_op.outputs, 5)
+
+    gradients_impl.gradients(output, x)
+    # Computing the gradient again shouldn't rewrite while_op again.
+    self.assertLen(while_op.outputs, 5)
 
 
 def ScalarShape():

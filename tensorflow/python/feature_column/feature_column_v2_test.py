@@ -40,6 +40,7 @@ from tensorflow.python.framework import ops
 from tensorflow.python.framework import sparse_tensor
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import lookup_ops
 from tensorflow.python.ops import parsing_ops
 from tensorflow.python.ops import partitioned_variables
@@ -428,8 +429,8 @@ class BucketizedColumnTest(test.TestCase):
 
   def test_invalid_boundaries(self):
     a = fc.numeric_column('aaa')
-    with self.assertRaisesRegexp(
-        ValueError, 'boundaries must be a sorted list'):
+    with self.assertRaisesRegexp(ValueError,
+                                 'boundaries must not be empty'):
       fc.bucketized_column(a, boundaries=None)
     with self.assertRaisesRegexp(
         ValueError, 'boundaries must be a sorted list'):
@@ -1636,6 +1637,22 @@ class LinearModelTest(test.TestCase):
         sess.run(bias.assign([5.]))
         self.assertAllClose([[1005.], [5010.]], predictions.eval())
 
+  def test_sparse_combiner_sqrtn(self):
+    wire_cast = fc.categorical_column_with_hash_bucket('wire_cast', 4)
+    with ops.Graph().as_default():
+      wire_tensor = sparse_tensor.SparseTensor(
+          values=['omar', 'stringer', 'marlo'],  # hashed to = [2, 0, 3]
+          indices=[[0, 0], [1, 0], [1, 1]],
+          dense_shape=[2, 2])
+      features = {'wire_cast': wire_tensor}
+      model = fc.LinearModel([wire_cast], sparse_combiner='sqrtn')
+      predictions = model(features)
+      wire_cast_var, bias = model.variables
+      with _initialized_session() as sess:
+        self.evaluate(wire_cast_var.assign([[10.], [100.], [1000.], [10000.]]))
+        self.evaluate(bias.assign([5.]))
+        self.assertAllClose([[1005.], [7083.139]], self.evaluate(predictions))
+
   def test_sparse_combiner_with_negative_weights(self):
     wire_cast = fc.categorical_column_with_hash_bucket('wire_cast', 4)
     wire_cast_weights = fc.weighted_categorical_column(wire_cast, 'weights')
@@ -1816,6 +1833,8 @@ class LinearModelTest(test.TestCase):
           'sparse_feature': [['a'], ['x']],
       }
       model(features)
+      for var in model.variables:
+        self.assertIsInstance(var, variables_lib.VariableV1)
       variable_names = [var.name for var in model.variables]
       self.assertItemsEqual([
           'linear_model/dense_feature_bucketized/weights:0',
@@ -1835,7 +1854,7 @@ class LinearModelTest(test.TestCase):
       }
     with self.assertRaisesRegexp(
         ValueError,
-        'Batch size \(first dimension\) of each feature must be same.'):  # pylint: disable=anomalous-backslash-in-string
+        r'Batch size \(first dimension\) of each feature must be same.'):  # pylint: disable=anomalous-backslash-in-string
       model = fc.LinearModel([price1, price2])
       model(features)
 
@@ -1851,7 +1870,7 @@ class LinearModelTest(test.TestCase):
       }
       with self.assertRaisesRegexp(
           ValueError,
-          'Batch size \(first dimension\) of each feature must be same.'):  # pylint: disable=anomalous-backslash-in-string
+          r'Batch size \(first dimension\) of each feature must be same.'):  # pylint: disable=anomalous-backslash-in-string
         model = fc.LinearModel([price1, price2, price3])
         model(features)
 
@@ -2586,7 +2605,7 @@ class OldLinearModelTest(test.TestCase):
       }
     with self.assertRaisesRegexp(
         ValueError,
-        'Batch size \(first dimension\) of each feature must be same.'):  # pylint: disable=anomalous-backslash-in-string
+        r'Batch size \(first dimension\) of each feature must be same.'):  # pylint: disable=anomalous-backslash-in-string
       fc_old.linear_model(features, [price1, price2])
 
   def test_subset_of_static_batch_size_mismatch(self):
@@ -2601,7 +2620,7 @@ class OldLinearModelTest(test.TestCase):
       }
       with self.assertRaisesRegexp(
           ValueError,
-          'Batch size \(first dimension\) of each feature must be same.'):  # pylint: disable=anomalous-backslash-in-string
+          r'Batch size \(first dimension\) of each feature must be same.'):  # pylint: disable=anomalous-backslash-in-string
         fc_old.linear_model(features, [price1, price2, price3])
 
   def test_runtime_batch_size_mismatch(self):
@@ -3011,8 +3030,8 @@ class FeatureLayerTest(test.TestCase):
       fc.FeatureLayer(feature_columns=[])(features={})
 
   def test_should_be_dense_column(self):
-    with self.assertRaisesRegexp(ValueError, 'must be a DenseColumn'):
-      fc.FeatureLayer(feature_columns=[
+    with self.assertRaisesRegexp(ValueError, 'must be a .*DenseColumn'):
+      fc.DenseFeatures(feature_columns=[
           fc.categorical_column_with_hash_bucket('wire_cast', 4)
       ])(
           features={
@@ -3147,8 +3166,8 @@ class FeatureLayerTest(test.TestCase):
               sparse_tensor.SparseTensor(
                   indices=[[0, 0], [0, 1]], values=[1, 2], dense_shape=[1, 2])
       }
-      with self.assertRaisesRegexp(Exception, 'must be a DenseColumn'):
-        fc.FeatureLayer([animal])(features)
+      with self.assertRaisesRegexp(Exception, 'must be a .*DenseColumn'):
+        fc.DenseFeatures([animal])(features)
 
   def test_static_batch_size_mismatch(self):
     price1 = fc.numeric_column('price1')
@@ -3160,8 +3179,8 @@ class FeatureLayerTest(test.TestCase):
       }
       with self.assertRaisesRegexp(
           ValueError,
-          'Batch size \(first dimension\) of each feature must be same.'):  # pylint: disable=anomalous-backslash-in-string
-        fc.FeatureLayer([price1, price2])(features)
+          r'Batch size \(first dimension\) of each feature must be same.'):  # pylint: disable=anomalous-backslash-in-string
+        fc.DenseFeatures([price1, price2])(features)
 
   def test_subset_of_static_batch_size_mismatch(self):
     price1 = fc.numeric_column('price1')
@@ -3175,8 +3194,8 @@ class FeatureLayerTest(test.TestCase):
       }
       with self.assertRaisesRegexp(
           ValueError,
-          'Batch size \(first dimension\) of each feature must be same.'):  # pylint: disable=anomalous-backslash-in-string
-        fc.FeatureLayer([price1, price2, price3])(features)
+          r'Batch size \(first dimension\) of each feature must be same.'):  # pylint: disable=anomalous-backslash-in-string
+        fc.DenseFeatures([price1, price2, price3])(features)
 
   def test_runtime_batch_size_mismatch(self):
     price1 = fc.numeric_column('price1')
@@ -3721,7 +3740,7 @@ class FunctionalInputLayerTest(test.TestCase):
       self.assertEqual(0, len(cols_to_vars[dense_feature_bucketized]))
       self.assertEqual(1, len(cols_to_vars[some_embedding_column]))
       self.assertIsInstance(cols_to_vars[some_embedding_column][0],
-                            variables_lib.Variable)
+                            variables_lib.VariableV1)
       self.assertAllEqual(cols_to_vars[some_embedding_column][0].shape, [5, 10])
 
   def test_fills_cols_to_vars_shared_embedding(self):
@@ -3848,7 +3867,7 @@ class FunctionalInputLayerTest(test.TestCase):
       }
       with self.assertRaisesRegexp(
           ValueError,
-          'Batch size \(first dimension\) of each feature must be same.'):  # pylint: disable=anomalous-backslash-in-string
+          r'Batch size \(first dimension\) of each feature must be same.'):  # pylint: disable=anomalous-backslash-in-string
         fc_old.input_layer(features, [price1, price2])
 
   def test_subset_of_static_batch_size_mismatch(self):
@@ -3863,7 +3882,7 @@ class FunctionalInputLayerTest(test.TestCase):
       }
       with self.assertRaisesRegexp(
           ValueError,
-          'Batch size \(first dimension\) of each feature must be same.'):  # pylint: disable=anomalous-backslash-in-string
+          r'Batch size \(first dimension\) of each feature must be same.'):  # pylint: disable=anomalous-backslash-in-string
         fc_old.input_layer(features, [price1, price2, price3])
 
   def test_runtime_batch_size_mismatch(self):
@@ -6196,6 +6215,8 @@ class EmbeddingColumnTest(test.TestCase):
     global_vars = ops.get_collection(ops.GraphKeys.GLOBAL_VARIABLES)
     self.assertItemsEqual(('feature_layer/aaa_embedding/embedding_weights:0',),
                           tuple([v.name for v in global_vars]))
+    for v in global_vars:
+      self.assertIsInstance(v, variables_lib.Variable)
     trainable_vars = ops.get_collection(ops.GraphKeys.TRAINABLE_VARIABLES)
     self.assertItemsEqual(('feature_layer/aaa_embedding/embedding_weights:0',),
                           tuple([v.name for v in trainable_vars]))
@@ -6453,28 +6474,138 @@ class EmbeddingColumnTest(test.TestCase):
       embedding_weights = trainable_vars[
           'linear_model/aaa_embedding/embedding_weights:0']
       linear_weights = trainable_vars['linear_model/aaa_embedding/weights:0']
-      with _initialized_session():
-        # Predictions with all zero weights.
-        self.assertAllClose(np.zeros((1,)), bias.eval())
-        self.assertAllClose(zeros_embedding_values, embedding_weights.eval())
-        self.assertAllClose(
-            np.zeros((embedding_dimension, 1)), linear_weights.eval())
-        self.assertAllClose(np.zeros((batch_size, 1)), predictions.eval())
 
-        # Predictions with all non-zero weights.
-        embedding_weights.assign((
-            (1., 2.),  # id 0
-            (3., 5.),  # id 1
-            (7., 11.)  # id 2
-        )).eval()
-        linear_weights.assign(((4.,), (6.,))).eval()
-        # example 0, ids [2], embedding[0] = [7, 11]
-        # example 1, ids [0, 1], embedding[1] = mean([1, 2] + [3, 5]) = [2, 3.5]
-        # example 2, ids [], embedding[2] = [0, 0]
-        # example 3, ids [1], embedding[3] = [3, 5]
-        # sum(embeddings * linear_weights)
-        # = [4*7 + 6*11, 4*2 + 6*3.5, 4*0 + 6*0, 4*3 + 6*5] = [94, 29, 0, 42]
-        self.assertAllClose(((94.,), (29.,), (0.,), (42.,)), predictions.eval())
+      self.evaluate(variables_lib.global_variables_initializer())
+      self.evaluate(lookup_ops.tables_initializer())
+
+      # Predictions with all zero weights.
+      self.assertAllClose(np.zeros((1,)), self.evaluate(bias))
+      self.assertAllClose(zeros_embedding_values,
+                          self.evaluate(embedding_weights))
+      self.assertAllClose(
+          np.zeros((embedding_dimension, 1)), self.evaluate(linear_weights))
+      self.assertAllClose(np.zeros((batch_size, 1)), self.evaluate(predictions))
+
+      # Predictions with all non-zero weights.
+      self.evaluate(
+          embedding_weights.assign((
+              (1., 2.),  # id 0
+              (3., 5.),  # id 1
+              (7., 11.)  # id 2
+          )))
+      self.evaluate(linear_weights.assign(((4.,), (6.,))))
+      # example 0, ids [2], embedding[0] = [7, 11]
+      # example 1, ids [0, 1], embedding[1] = mean([1, 2] + [3, 5]) = [2, 3.5]
+      # example 2, ids [], embedding[2] = [0, 0]
+      # example 3, ids [1], embedding[3] = [3, 5]
+      # sum(embeddings * linear_weights)
+      # = [4*7 + 6*11, 4*2 + 6*3.5, 4*0 + 6*0, 4*3 + 6*5] = [94, 29, 0, 42]
+      self.assertAllClose(((94.,), (29.,), (0.,), (42.,)),
+                          self.evaluate(predictions))
+
+  @test_util.run_deprecated_v1
+  def test_serialization_with_default_initializer(self):
+
+    # Build columns.
+    categorical_column = fc.categorical_column_with_identity(
+        key='aaa', num_buckets=3)
+    embedding_column = fc.embedding_column(categorical_column, dimension=2)
+
+    self.assertEqual([categorical_column], embedding_column.parents)
+
+    config = embedding_column._get_config()
+    self.assertEqual({
+        'categorical_column': {
+            'class_name': 'IdentityCategoricalColumn',
+            'config': {
+                'number_buckets': 3,
+                'key': 'aaa',
+                'default_value': None
+            }
+        },
+        'ckpt_to_load_from': None,
+        'combiner': 'mean',
+        'dimension': 2,
+        'initializer': {
+            'class_name': 'TruncatedNormal',
+            'config': {
+                'dtype': 'float32',
+                'stddev': 0.7071067811865475,
+                'seed': None,
+                'mean': 0.0
+            }
+        },
+        'max_norm': None,
+        'tensor_name_in_ckpt': None,
+        'trainable': True
+    }, config)
+
+    custom_objects = {'TruncatedNormal': init_ops.TruncatedNormal}
+    new_embedding_column = fc.EmbeddingColumn._from_config(
+        config, custom_objects=custom_objects)
+    self.assertEqual(embedding_column._get_config(),
+                     new_embedding_column._get_config())
+    self.assertIsNot(categorical_column,
+                     new_embedding_column.categorical_column)
+
+    new_embedding_column = fc.EmbeddingColumn._from_config(
+        config,
+        custom_objects=custom_objects,
+        columns_by_name={categorical_column.name: categorical_column})
+    self.assertEqual(embedding_column._get_config(),
+                     new_embedding_column._get_config())
+    self.assertIs(categorical_column, new_embedding_column.categorical_column)
+
+  @test_util.run_deprecated_v1
+  def test_serialization_with_custom_initializer(self):
+
+    def _initializer(shape, dtype, partition_info):
+      del shape, dtype, partition_info
+      return ValueError('Not expected to be called')
+
+    # Build columns.
+    categorical_column = fc.categorical_column_with_identity(
+        key='aaa', num_buckets=3)
+    embedding_column = fc.embedding_column(
+        categorical_column, dimension=2, initializer=_initializer)
+
+    self.assertEqual([categorical_column], embedding_column.parents)
+
+    config = embedding_column._get_config()
+    self.assertEqual({
+        'categorical_column': {
+            'class_name': 'IdentityCategoricalColumn',
+            'config': {
+                'number_buckets': 3,
+                'key': 'aaa',
+                'default_value': None
+            }
+        },
+        'ckpt_to_load_from': None,
+        'combiner': 'mean',
+        'dimension': 2,
+        'initializer': '_initializer',
+        'max_norm': None,
+        'tensor_name_in_ckpt': None,
+        'trainable': True
+    }, config)
+
+    custom_objects = {
+        '_initializer': _initializer,
+    }
+
+    new_embedding_column = fc.EmbeddingColumn._from_config(
+        config, custom_objects=custom_objects)
+    self.assertEqual(embedding_column, new_embedding_column)
+    self.assertIsNot(categorical_column,
+                     new_embedding_column.categorical_column)
+
+    new_embedding_column = fc.EmbeddingColumn._from_config(
+        config,
+        custom_objects=custom_objects,
+        columns_by_name={categorical_column.name: categorical_column})
+    self.assertEqual(embedding_column, new_embedding_column)
+    self.assertIs(categorical_column, new_embedding_column.categorical_column)
 
 
 class SharedEmbeddingColumnTest(test.TestCase):
@@ -7022,10 +7153,11 @@ class SharedEmbeddingColumnTest(test.TestCase):
 
     # Assert expected embedding variable and lookups.
     global_vars = ops.get_collection(ops.GraphKeys.GLOBAL_VARIABLES)
-    self.assertItemsEqual([
-        'shared_feature_layer/aaa_bbb_shared_embedding:0',
-        'shared_feature_layer/ccc_ddd_shared_embedding:0'
-    ], tuple([v.name for v in global_vars]))
+    self.assertItemsEqual(
+        ['aaa_bbb_shared_embedding:0', 'ccc_ddd_shared_embedding:0'],
+        tuple([v.name for v in global_vars]))
+    for v in global_vars:
+      self.assertIsInstance(v, variables_lib.Variable)
     trainable_vars = ops.get_collection(ops.GraphKeys.TRAINABLE_VARIABLES)
     if trainable:
       self.assertItemsEqual([

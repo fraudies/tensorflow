@@ -18,6 +18,8 @@ limitations under the License.
 
 #include <stack>
 
+#include "absl/types/span.h"
+#include "absl/types/variant.h"
 #include "tensorflow/compiler/tf2xla/host_compute_metadata.pb.h"
 #include "tensorflow/compiler/tf2xla/xla_compilation_device.h"
 #include "tensorflow/compiler/tf2xla/xla_op_registry.h"
@@ -121,7 +123,8 @@ class XlaCompiler {
     DataType type;
 
     // The shape of the argument. For:
-    // * a parameter: the shape of the parameter.
+    // * a parameter: the shape of the parameter. We allow setting the xla shape
+    //   if known. This helps avoid conversions to and from TensorShape.
     // * a constant: ignored; the shape given by constant_value is used
     //     instead.
     // * an uninitialized resource: ignored. We don't yet know the shape of an
@@ -130,7 +133,7 @@ class XlaCompiler {
     // * an initialized TensorArray or Stack resource: the shape of an entry in
     //   the TensorArray/Stack. Note this is the size of a single entry, not the
     //   XLA data structure that represents the complete stack/array.
-    TensorShape shape;
+    absl::variant<TensorShape, xla::Shape> shape;
 
     // The value of the argument, if it is a compile-time constant. Must be a
     // host-memory tensor.
@@ -154,7 +157,23 @@ class XlaCompiler {
     // as `tensor_array_gradients`.
     std::set<string> tensor_array_gradients;
 
+    // dynamic dims to arg number map. Empty if no dynamic shapes.
+    std::map<int32, int32> dynamic_dim_to_arg_num_map;
+    bool is_pad_arg = false;
+
+    // Whether this argument will receive the same data across all replicas.
+    bool is_same_data_across_replicas = false;
+
     bool operator==(const Argument& other) const;
+
+    // Returns a human-readable summary of the argument.
+    string HumanString() const;
+
+    // Returns the dimension sizes for either TensorShape or xla::Shape.
+    std::vector<int64> DimensionSizes() const;
+
+    // Returns the human-readable string for either TensorShape or xla::Shape.
+    string ShapeHumanString() const;
   };
 
   // Options pertaining to an individual call to CompileGraph() or
@@ -321,10 +340,11 @@ class XlaCompiler {
   // Compiles a tensorflow::Graph into an xla::XlaComputation.
   // Similar to CompileFunction, but takes a Graph as input rather than a
   // function.
-  Status CompileGraph(const CompileOptions& options, string const& name,
-                      std::unique_ptr<Graph> graph,
-                      const std::vector<Argument>& args,
-                      CompilationResult* result);
+  Status CompileGraph(
+      const CompileOptions& options, string const& name,
+      std::unique_ptr<Graph> graph, absl::Span<const Argument> args,
+      absl::Span<const xla::XlaBuilder::InputOutputAlias> user_aliases,
+      CompilationResult* result);
 
   // Compiles a single Op, given by an OpKernelContext, into an
   // xla::XlaComputation. Similar to CompileFunction but takes a single Op as
@@ -398,11 +418,11 @@ class XlaCompiler {
   Status SetNodeToken(const string& node_name, const xla::XlaOp& op);
   xla::StatusOr<xla::XlaOp> GetNodeToken(const string& node_name);
 
- private:
   // Sets the function body `fbody` to the one registered as `function`.
   Status FindFunctionBody(const NameAttrList& function,
                           const FunctionBody** fbody);
 
+ private:
   // Returns the optimized graph object in this function body.
   std::unique_ptr<Graph> GetGraph(const FunctionBody* fbody);
 
@@ -413,7 +433,7 @@ class XlaCompiler {
                         bool use_tuple_arg, xla::XlaBuilder* builder,
                         XlaContext* context, std::vector<int>* arg_cores,
                         std::vector<XlaExpression>* arg_expressions,
-                        std::vector<int>* input_mapping,
+                        std::vector<int>* input_to_args,
                         std::vector<xla::Shape>* input_shapes,
                         bool is_entry_computation);
 

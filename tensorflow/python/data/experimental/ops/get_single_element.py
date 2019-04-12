@@ -63,10 +63,7 @@ def get_single_element(dataset):
   if not isinstance(dataset, dataset_ops.Dataset):
     raise TypeError("`dataset` must be a `tf.data.Dataset` object.")
 
-  nested_ret = nest.pack_sequence_as(
-      dataset.output_types, gen_dataset_ops.dataset_to_single_element(
-          dataset._as_variant_tensor(),  # pylint: disable=protected-access
-          **dataset_ops.flat_structure(dataset)))
-  return sparse.deserialize_sparse_tensors(
-      nested_ret, dataset.output_types, dataset.output_shapes,
-      dataset.output_classes)
+  # pylint: disable=protected-access
+  return dataset._element_structure._from_compatible_tensor_list(
+      gen_dataset_ops.dataset_to_single_element(
+          dataset._variant_tensor, **dataset_ops.flat_structure(dataset)))

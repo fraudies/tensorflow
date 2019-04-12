@@ -122,16 +122,15 @@ class GroupByReducerTest(test_base.DatasetTestBase):
     for i in range(1, 11):
       dataset = dataset_ops.Dataset.from_tensors(np.int64(0)).repeat(i).apply(
           grouping.group_by_reducer(lambda x: x, reducer))
-      self.assertEqual([None], dataset.output_shapes[0].as_list())
-      self.assertIs(None, dataset.output_shapes[1].ndims)
-      iterator = dataset.make_one_shot_iterator()
-      get_next = iterator.get_next()
-      with self.cached_session() as sess:
-        x, y = sess.run(get_next)
-        self.assertAllEqual([0] * (2**i), x)
-        self.assertAllEqual(np.array(1, ndmin=i), y)
-        with self.assertRaises(errors.OutOfRangeError):
-          sess.run(get_next)
+      dataset_output_shapes = dataset_ops.get_legacy_output_shapes(dataset)
+      self.assertEqual([None], dataset_output_shapes[0].as_list())
+      self.assertIs(None, dataset_output_shapes[1].ndims)
+      get_next = self.getNext(dataset)
+      x, y = self.evaluate(get_next())
+      self.assertAllEqual([0] * (2**i), x)
+      self.assertAllEqual(np.array(1, ndmin=i), y)
+      with self.assertRaises(errors.OutOfRangeError):
+        self.evaluate(get_next())
 
   def testTypeMismatch(self):
     reducer = grouping.Reducer(

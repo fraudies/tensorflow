@@ -17,26 +17,68 @@ limitations under the License.
 
 #include <memory>
 
+#include "absl/time/clock.h"
+
 namespace tensorflow {
 namespace data {
 namespace model {
 
-// TODO(jsimsa): Use `Node` subclassing instead of types and node statements.
-void Model::Node::CollectTunables(
-    std::vector<std::shared_ptr<Node::Tunable>>* tunables) {
-  tf_shared_lock l(mu_);
-  for (auto input : inputs_) {
-    input->CollectTunables(tunables);
+std::shared_ptr<Parameter> MakeParameter(const string& name,
+                                         std::shared_ptr<SharedState> state,
+                                         int64 min, int64 max) {
+  return std::make_shared<Parameter>(name, state, min, max);
+}
+
+namespace {
+
+// Given the average time between output events (`output_time`), the average
+// time between input events (`input_time`) and the buffer size, the method
+// computes the expected time an input event will have to wait.
+//
+// The wait time is approximated as the product of the probability the buffer
+// will be empty and the time it takes to produce an element into the buffer.
+//
+// The formula used for computing the probability is derived by modeling the
+// problem as an M/M/1/K queue
+// (https://en.wikipedia.org/wiki/Birth%E2%80%93death_process#M/M/1/K_queue).
+int64 ComputeWaitTime(int64 output_time, int64 input_time, int64 buffer_size) {
+  if (output_time == 0 || input_time == 0) {
+    return output_time;
   }
-  switch (type_) {
-    case Type::MAP_AND_BATCH:
-    case Type::PARALLEL_INTERLEAVE_V2:
-    case Type::PARALLEL_MAP: {
-      if (auto* tunable_param =
-              gtl::FindOrNull(tunable_params_, "parallelism")) {
-        tunables->push_back(*tunable_param);
-      }
-      return;
+  if (input_time == output_time) {
+    const double p_buffer_empty = 1.0L / static_cast<double>(buffer_size + 1);
+    return p_buffer_empty * output_time;
+  }
+  const double alpha = 1.0L / static_cast<double>(input_time);
+  const double beta = 1.0L / static_cast<double>(output_time);
+  const double p_buffer_empty =
+      (1.0L - beta / alpha) /
+      (1.0L - std::pow((beta / alpha), static_cast<double>(buffer_size + 1)));
+  return p_buffer_empty * output_time;
+}
+
+// The first input of InterleaveMany corresponds to the input dataset whose
+// elements are used to create the (derived) input datasets whose elements are
+// interleaved as output.
+//
+// TODO(jsimsa): model the first input
+class InterleaveMany : public Node {
+ public:
+  using Node::Node;
+
+  virtual ~InterleaveMany() {}
+
+ protected:
+  std::shared_ptr<Node> Clone(std::shared_ptr<Node> output) const override
+      SHARED_LOCKS_REQUIRED(mu_) {
+    return std::make_shared<InterleaveMany>(
+        Args{id_, name_, std::move(output)});
+  }
+
+  int64 OutputTimeLocked(std::vector<int64>* input_times) const override
+      SHARED_LOCKS_REQUIRED(mu_) {
+    if (inputs_.size() <= 1) {
+      return NanosPerElementLocked();
     }
     default:
       return;
@@ -100,7 +142,16 @@ int64 Model::Node::ProcessingTimeLocked() {
     case Type::ZIP: {
       return NanosPerElementLocked() + ProcessingTimeForInputs();
     }
-    default:
+    int64 output_time =
+        static_cast<double>(OutputTimeForInputs(input_times) -
+                            inputs_.front()->OutputTime(input_times)) /
+        static_cast<double>(inputs_.size() - 1) / parallelism;
+    return ComputeWaitTime(NanosPerElementLocked() + output_time,
+                           old_input_time, parallelism);
+  }
+
+  int64 ProcessingTimeLocked() const override SHARED_LOCKS_REQUIRED(mu_) {
+    if (inputs_.size() <= 1) {
       return NanosPerElementLocked();
   }
 }
@@ -189,33 +240,46 @@ int64 Model::Node::OutputTimeLocked(std::vector<int64>* input_times) {
                                  inputs_.front()->OutputTime(input_times);
       double parallelism = GetParameterValue("parallelism");
       int64 output_time =
-          NanosPerElementLocked() + ((static_cast<double>(inputs_output_time) /
-                                      static_cast<double>(inputs_.size() - 1)) /
-                                     parallelism);
-      return std::max(0LL,
-                      output_time - input_times->at(input_times->size() - 2));
+          static_cast<double>(NanosPerElementLocked()) / parallelism;
+      return ComputeWaitTime(output_time, input_times->back(), parallelism);
     }
-    case Type::PARALLEL_INTERLEAVE_V2: {
-      // TODO(jsimsa): model the first input
-      if (inputs_.size() <= 1) {
-        return NanosPerElementLocked();
-      }
-      int64 delta = static_cast<double>(NanosPerElementLocked()) *
-                    static_cast<double>(inputs_.size() - 1);
-      input_times->push_back(delta);
-      auto cleanup =
-          gtl::MakeCleanup([input_times]() { input_times->pop_back(); });
-      int64 inputs_output_time = OutputTimeForInputs(input_times) -
-                                 inputs_.front()->OutputTime(input_times);
-      double parallelism =
-          std::min(static_cast<int>(GetParameterValue("cycle_length")),
-                   static_cast<int>(GetParameterValue("parallelism")));
-      int64 output_time =
-          NanosPerElementLocked() + ((static_cast<double>(inputs_output_time) /
-                                      static_cast<double>(inputs_.size() - 1)) /
-                                     parallelism);
-      return std::max(0LL,
-                      output_time - input_times->at(input_times->size() - 2));
+    int64 old_input_time = input_times->back();
+    int64 new_input_time = static_cast<int64>(
+        static_cast<double>(NanosPerElementLocked()) / ratio_ / parallelism);
+    input_times->push_back(new_input_time);
+    auto cleanup =
+        gtl::MakeCleanup([input_times]() { input_times->pop_back(); });
+    int64 output_time = static_cast<int64>(
+        static_cast<double>(NanosPerElementLocked()) / parallelism +
+        ratio_ * OutputTimeForInputs(input_times));
+    return ComputeWaitTime(output_time, old_input_time, parallelism);
+  }
+
+  int64 ProcessingTimeLocked() const override SHARED_LOCKS_REQUIRED(mu_) {
+    return NanosPerElementLocked() + ratio_ * ProcessingTimeForInputs();
+  }
+
+ private:
+  const double ratio_;
+};
+
+class UnknownRatio : public Node {
+ public:
+  using Node::Node;
+
+  virtual ~UnknownRatio() {}
+
+ protected:
+  std::shared_ptr<Node> Clone(std::shared_ptr<Node> output) const override
+      SHARED_LOCKS_REQUIRED(mu_) {
+    return std::make_shared<UnknownRatio>(Args{id_, name_, std::move(output)});
+  }
+
+  int64 OutputTimeLocked(std::vector<int64>* input_times) const override
+      SHARED_LOCKS_REQUIRED(mu_) {
+    if (num_elements_ == 0 || inputs_.empty() ||
+        inputs_.front()->num_elements() == 0) {
+      return NanosPerElementLocked();
     }
     case Type::PARALLEL_MAP: {
       double parallelism =
@@ -293,7 +357,11 @@ void Model::AddNode(const string& name, const string& output_name) {
     output_ = node;
   }
   if (output) {
+    VLOG(3) << "Adding " << node->long_name() << " as input for "
+            << output->long_name();
     output->add_input(node);
+  } else {
+    VLOG(3) << "Adding " << node->long_name();
   }
   lookup_table_.insert(std::make_pair(name, node));
 }
@@ -326,52 +394,65 @@ void Model::Optimize(int64 cpu_budget) {
   std::vector<std::shared_ptr<Model::Node::Tunable>> tunables;
   {
     tf_shared_lock lock(mu_);
-    const int64 processing_time = ProcessingTime();
-    tunables = CollectTunables();
-    for (auto tunable : tunables) {
-      tunable->value = 1;
+    snapshot = output_->Snapshot(nullptr);
+  }
+  VLOG(2) << "Starting optimization of tunable parameters";
+  const int64 processing_time = ProcessingTime(snapshot);
+  auto parameters = CollectTunableParameters(snapshot);
+  for (auto& pair : parameters) {
+    pair.second->value = 1;
+  }
+  while (true) {
+    const int64 output_time = OutputTime(snapshot);
+    bool all_max = true;
+    for (auto& pair : parameters) {
+      if (pair.second->value < pair.second->max) {
+        all_max = false;
+        break;
+      }
     }
-    while (true) {
-      const int64 output_time = OutputTime();
-      bool all_tunables = true;
-      for (auto& tunable : tunables) {
-        if (tunable->value < tunable->max) {
-          all_tunables = false;
-          break;
-        }
+    if (output_time < processing_time / cpu_budget || all_max) {
+      break;
+    }
+    int64 best_delta = -1;
+    Parameter* best_parameter = nullptr;
+    for (auto& pair : parameters) {
+      if (pair.second->value == pair.second->max) {
+        continue;
       }
-      if (output_time < processing_time / cpu_budget || all_tunables) {
-        break;
+      pair.second->value++;
+      int64 new_output_time = OutputTime(snapshot);
+      int64 delta = output_time - new_output_time;
+      if (delta < 0) {
+        VLOG(3) << "Increasing the parallelism of tunable parameter "
+                << pair.first << " resulted in slowdown (before=" << output_time
+                << ", after=" << new_output_time
+                << "). This should never happen because the latency "
+                   "should be monotonic w.r.t. to parallelism.";
       }
-      int64 best_delta = -1;
-      Model::Node::Tunable* best_tunable = nullptr;
-      for (auto& tunable : tunables) {
-        if (tunable->value == tunable->max) {
-          continue;
-        }
-        tunable->value++;
-        int64 delta = output_time - OutputTime();
-        if (delta > best_delta) {
-          best_delta = delta;
-          best_tunable = tunable.get();
-        }
-        tunable->value--;
+      if (delta > best_delta) {
+        best_delta = delta;
+        best_parameter = pair.second.get();
       }
-      if (!best_tunable) {
-        // NOTE: This can happen because we are performing the optimization
-        // while the model data is changing. If this becomes an issue, we should
-        // look into performing the optimization using a model snapshot.
-        break;
-      }
-      best_tunable->value++;
+      pair.second->value--;
+    }
+    if (!best_parameter) {
+      // This should never happen because we are using a model snapshot and
+      // the output time is monotonically decreasing w.r.t. parallelism.
+      LOG(WARNING) << "Failed to find a tunable parameter that would "
+                      "decrease the output time, aborting the current "
+                      "optimization attempt.";
+      return;
     }
   }
-  VLOG(2) << "Number of knobs: " << tunables.size();
-  for (auto& tunable : tunables) {
-    VLOG(2) << "Setting tunable parameter: " << tunable->value;
-    mutex_lock l(*tunable->state->mu);
-    tunable->state->value = tunable->value;
-    tunable->state->cond_var->notify_all();
+  VLOG(2) << "Number of tunable parameters: " << parameters.size();
+  for (auto& pair : parameters) {
+    auto& parameter = pair.second;
+    VLOG(2) << "Setting tunable parameter " << pair.first << " to "
+            << parameter->value;
+    mutex_lock l(*parameter->state->mu);
+    parameter->state->value = parameter->value;
+    parameter->state->cond_var->notify_all();
   }
 }
 
@@ -383,10 +464,20 @@ void Model::RecordElement(const string& name) {
   }
 }
 
-void Model::RecordStart(const string& name, bool stop_output) {
+int64 Model::NumElements(const string& name) {
   tf_shared_lock l(mu_);
   auto node = gtl::FindOrNull(lookup_table_, name);
   if (node) {
+    return (*node)->num_elements();
+  }
+  return 0;
+}
+
+void Model::RecordStart(const string& name, bool stop_output) {
+  tf_shared_lock l(mu_);
+  auto node = gtl::FindOrNull(lookup_table_, name);
+  if (collect_resource_usage_ && node) {
+    int64 now_nanos = absl::GetCurrentTimeNanos();
     if (stop_output && (*node)->output()) {
       (*node)->output()->record_stop();
     }
@@ -397,8 +488,9 @@ void Model::RecordStart(const string& name, bool stop_output) {
 void Model::RecordStop(const string& name, bool start_output) {
   tf_shared_lock l(mu_);
   auto node = gtl::FindOrNull(lookup_table_, name);
-  if (node) {
-    (*node)->record_stop();
+  if (collect_resource_usage_ && node) {
+    int64 now_nanos = absl::GetCurrentTimeNanos();
+    (*node)->record_stop(now_nanos);
     if (start_output && (*node)->output()) {
       (*node)->output()->record_start();
     }
@@ -408,16 +500,21 @@ void Model::RecordStop(const string& name, bool start_output) {
 void Model::RemoveNode(const string& name) {
   mutex_lock l(mu_);
   auto node = gtl::FindOrNull(lookup_table_, name);
-  if (node && (*node)->output()) {
-    (*node)->output()->remove_input(*node);
+  if (node) {
+    if ((*node)->output()) {
+      (*node)->output()->remove_input(*node);
+    }
+    VLOG(3) << "Removing " << (*node)->long_name();
+    remove_node_hook_(*node);
   }
   lookup_table_.erase(name);
 }
 
-std::vector<std::shared_ptr<Model::Node::Tunable>> Model::CollectTunables() {
-  std::vector<std::shared_ptr<Model::Node::Tunable>> tunables;
-  output_->CollectTunables(&tunables);
-  return tunables;
+std::map<string, std::shared_ptr<Parameter>> Model::CollectTunableParameters(
+    std::shared_ptr<Node> node) {
+  std::map<string, std::shared_ptr<Parameter>> parameters;
+  node->CollectTunableParameters(&parameters);
+  return parameters;
 }
 
 int64 Model::OutputTime() {

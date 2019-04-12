@@ -19,97 +19,129 @@ from __future__ import division
 from __future__ import print_function
 
 from tensorflow.python.framework import ops
+from tensorflow.python.keras import backend_config
 from tensorflow.python.keras.optimizer_v2 import optimizer_v2
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import math_ops
-from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.ops import state_ops
 from tensorflow.python.training import training_ops
+from tensorflow.python.util.tf_export import keras_export
 
 
+@keras_export('keras.optimizers.Adam')
 class Adam(optimizer_v2.OptimizerV2):
-  r"""Adam Optimizer.
+  """Optimizer that implements the Adam algorithm.
 
-  Default parameters follow those provided in the original paper.
+  Adam optimization is a stochastic gradient descent method that is based on
+  adaptive estimation of first-order and second-order moments. According to the
+  reference, the method is 'computationally efficient, has little memory
+  requirement, invariant to diagonal rescaling of gradients, and is well suited
+  for problems that are large in terms of data/parameters'.
 
-  See [Kingma et al., 2014](http://arxiv.org/abs/1412.6980)
-  ([pdf](http://arxiv.org/pdf/1412.6980.pdf)).
-
-  Some of the args below are hyperparameters where a hyperparameter is
-  defined as a scalar Tensor, a regular Python value, or a callable (which
-  will be evaluated when `apply_gradients` is called) returning a scalar
-  Tensor or a Python value.
-
-  Initialization:
-
-  $$m_0 := 0 \text{(Initialize initial 1st moment vector)}$$
-  $$v_0 := 0 \text{(Initialize initial 2nd moment vector)}$$
-  $$t := 0 \text{(Initialize timestep)}$$
-  The update rule for `variable` with gradient `g` uses an optimization
-  described at the end of section2 of the paper:
-
-  $$t := t + 1$$
-  $$lr_t := \text{learning\_rate} * \sqrt{1 - beta_2^t} / (1 - beta_1^t)$$
-
-  $$m_t := beta_1 * m_{t-1} + (1 - beta_1) * g$$
-  $$v_t := beta_2 * v_{t-1} + (1 - beta_2) * g * g$$
-  $$variable := variable - lr_t * m_t / (\sqrt{v_t} + \epsilon)$$
-
-  The default value of 1e-8 for epsilon might not be a good default in
-  general. For example, when training an Inception network on ImageNet a
-  current good choice is 1.0 or 0.1. Note that since AdamOptimizer uses the
-  formulation just before Section 2.1 of the Kingma and Ba paper rather than
-  the formulation in Algorithm 1, the "epsilon" referred to here is "epsilon
-  hat" in the paper.
-
-  The sparse implementation of this algorithm (used when the gradient is an
-  IndexedSlices object, typically because of `tf.gather` or an embedding
-  lookup in the forward pass) does apply momentum to variable slices even if
-  they were not used in the forward pass (meaning they have a gradient equal
-  to zero). Momentum decay (beta1) is also applied to the entire momentum
-  accumulator. This means that the sparse behavior is equivalent to the dense
-  behavior (in contrast to some momentum implementations which ignore momentum
-  unless a variable slice was actually used).
-
-  Arguments:
-      learning_rate: float hyperparameter >= 0. Learning rate.
-      beta_1: float hyperparameter, 0 < beta_1 < 1. Generally close to 1. The
-        exponential decay rate for the 1st moment estimates.
-      beta_2: float hyperparameter, 0 < beta_2 < 1. Generally close to 1. The
-        exponential decay rate for the 2nd moment estimates.
-      epsilon: float hyperparameter >= 0. Fuzz factor. This epsilon is "epsilon
-        hat" in the Kingma and Ba paper (in the formula just before Section
-        2.1), not the epsilon in Algorithm 1 of the paper.
-      name: Optional name for the operations created when applying gradients.
-        Defaults to "Adam".
+  # References
+      See [Kingma et al., 2014](http://arxiv.org/abs/1412.6980)
+        ([pdf](http://arxiv.org/pdf/1412.6980.pdf)).
+      For AMSGrad see [Reddi et al., 2-18]
+        (https://openreview.net/pdf?id=ryQu7f-RZ)
   """
 
   def __init__(self,
                learning_rate=0.001,
                beta_1=0.9,
                beta_2=0.999,
-               epsilon=1e-8,
-               name="Adam"):
-    super(Adam, self).__init__(name)
+               epsilon=1e-7,
+               amsgrad=False,
+               name='Adam',
+               **kwargs):
+    r"""Construct a new Adam optimizer.
 
-    self._set_hyper("learning_rate", learning_rate)
-    self._set_hyper("beta_1", beta_1)
-    self._set_hyper("beta_2", beta_2)
-    self._set_hyper("epsilon", epsilon)
+    If amsgrad = False:
+      Initialization:
 
-  def _get_beta_accumulators(self, state=None):
-    if state is None:
-      state = self._get_per_graph_state()
-    return (state.get_non_slot("beta_1_power"),
-            state.get_non_slot("beta_2_power"))
+      $$m_0 := 0 \text{(Initialize initial 1st moment vector)}$$
+      $$v_0 := 0 \text{(Initialize initial 2nd moment vector)}$$
+      $$t := 0 \text{(Initialize timestep)}$$
 
-  def _create_vars(self, var_list, state):
-    # Non-slot variables end up on the same device(s).
-    state.create_non_slot(
-        initial_value=lambda: state.get_hyper("beta_1"), name="beta_1_power")
-    state.create_non_slot(
-        initial_value=lambda: state.get_hyper("beta_2"), name="beta_2_power")
+      The update rule for `variable` with gradient `g` uses an optimization
+      described at the end of section 2 of the paper:
 
+      $$t := t + 1$$
+      $$lr_t := \text{learning\_rate} * \sqrt{1 - beta_2^t} / (1 - beta_1^t)$$
+
+      $$m_t := beta_1 * m_{t-1} + (1 - beta_1) * g$$
+      $$v_t := beta_2 * v_{t-1} + (1 - beta_2) * g * g$$
+      $$variable := variable - lr_t * m_t / (\sqrt{v_t} + \epsilon)$$
+
+    If amsgrad = True:
+      Initialization:
+
+      $$m_0 := 0 \text{(Initialize initial 1st moment vector)}$$
+      $$v_0 := 0 \text{(Initialize initial 2nd moment vector)}$$
+      $$v_hat_0 := 0 \text{(Initialize initial 2nd moment vector)}$$
+      $$t := 0 \text{(Initialize timestep)}$$
+
+      The update rule for `variable` with gradient `g` uses an optimization
+      described at the end of section 2 of the paper:
+
+      $$t := t + 1$$
+      $$lr_t := \text{learning\_rate} * \sqrt{1 - beta_2^t} / (1 - beta_1^t)$$
+
+      $$m_t := beta_1 * m_{t-1} + (1 - beta_1) * g$$
+      $$v_t := beta_2 * v_{t-1} + (1 - beta_2) * g * g$$
+      $$v_hat_t := max(v_hat_{t-1}, v_t)
+      $$variable := variable - lr_t * m_t / (\sqrt{v_hat_t} + \epsilon)$$
+
+    The default value of 1e-7 for epsilon might not be a good default in
+    general. For example, when training an Inception network on ImageNet a
+    current good choice is 1.0 or 0.1. Note that since AdamOptimizer uses the
+    formulation just before Section 2.1 of the Kingma and Ba paper rather than
+    the formulation in Algorithm 1, the "epsilon" referred to here is "epsilon
+    hat" in the paper.
+
+    The sparse implementation of this algorithm (used when the gradient is an
+    IndexedSlices object, typically because of `tf.gather` or an embedding
+    lookup in the forward pass) does apply momentum to variable slices even if
+    they were not used in the forward pass (meaning they have a gradient equal
+    to zero). Momentum decay (beta1) is also applied to the entire momentum
+    accumulator. This means that the sparse behavior is equivalent to the dense
+    behavior (in contrast to some momentum implementations which ignore momentum
+    unless a variable slice was actually used).
+
+    Args:
+      learning_rate: A Tensor or a floating point value.  The learning rate.
+      beta_1: A float value or a constant float tensor. The exponential decay
+        rate for the 1st moment estimates.
+      beta_2: A float value or a constant float tensor. The exponential decay
+        rate for the 2nd moment estimates.
+      epsilon: A small constant for numerical stability. This epsilon is
+        "epsilon hat" in the Kingma and Ba paper (in the formula just before
+        Section 2.1), not the epsilon in Algorithm 1 of the paper.
+      amsgrad: boolean. Whether to apply AMSGrad variant of this algorithm from
+        the paper "On the Convergence of Adam and beyond".
+      name: Optional name for the operations created when applying gradients.
+        Defaults to "Adam".  @compatibility(eager) When eager execution is
+        enabled, `learning_rate`, `beta_1`, `beta_2`, and `epsilon` can each be
+        a callable that takes no arguments and returns the actual value to use.
+        This can be useful for changing these values across different
+        invocations of optimizer functions. @end_compatibility
+      **kwargs: keyword arguments. Allowed to be {`clipnorm`, `clipvalue`, `lr`,
+        `decay`}. `clipnorm` is clip gradients by norm; `clipvalue` is clip
+        gradients by value, `decay` is included for backward compatibility to
+        allow time inverse decay of learning rate. `lr` is included for backward
+        compatibility, recommended to use `learning_rate` instead.
+    """
+
+    if epsilon is None:
+      epsilon = backend_config.epsilon()
+    super(Adam, self).__init__(name, **kwargs)
+    self._set_hyper('learning_rate', kwargs.get('lr', learning_rate))
+    self._set_hyper('decay', self._initial_decay)
+    self._set_hyper('beta_1', beta_1)
+    self._set_hyper('beta_2', beta_2)
+    self._set_hyper('epsilon', epsilon)
+    self.amsgrad = amsgrad
+
+  def _create_slots(self, var_list):
     # Create slots for the first and second moments.
     for v in var_list:
       state.zeros_slot(v, "m")
@@ -182,25 +214,6 @@ class Adam(optimizer_v2.OptimizerV2):
         lambda x, i, v: state_ops.scatter_add(  # pylint: disable=g-long-lambda
             x, i, v, use_locking=self._use_locking),
         state)
-
-  def _resource_scatter_add(self, x, i, v):
-    with ops.control_dependencies(
-        [resource_variable_ops.resource_scatter_add(
-            x.handle, i, v)]):
-      return x.value()
-
-  def _resource_apply_sparse(self, grad, var, indices, state):
-    return self._apply_sparse_shared(
-        grad, var, indices, self._resource_scatter_add, state)
-
-  def _finish(self, state):
-    # Update the power accumulators.
-    beta_1_power, beta_2_power = self._get_beta_accumulators(state)
-    update_beta_1 = beta_1_power.assign(
-        beta_1_power * state.get_hyper("beta_1"), use_locking=self._use_locking)
-    update_beta_2 = beta_2_power.assign(
-        beta_2_power * state.get_hyper("beta_2"), use_locking=self._use_locking)
-    return control_flow_ops.group(update_beta_1, update_beta_2)
 
   def get_config(self):
     config = super(Adam, self).get_config()

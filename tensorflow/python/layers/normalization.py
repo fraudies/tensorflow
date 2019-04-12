@@ -154,7 +154,9 @@ class BatchNormalization(keras_layers.BatchNormalization, base.Layer):
     return super(BatchNormalization, self).call(inputs, training=training)
 
 
-@tf_export('layers.batch_normalization')
+@deprecation.deprecated(
+    date=None, instructions='Use keras.layers.BatchNormalization instead.')
+@tf_export(v1=['layers.batch_normalization'])
 def batch_normalization(inputs,
                         axis=-1,
                         momentum=0.99,

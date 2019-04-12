@@ -71,6 +71,16 @@ XlaOpRegistry::~XlaOpRegistry() = default;
                  << " have incompatible allow_resource_types settings.";
     return false;
   }
+  if (x.allow_variant_types != y.allow_variant_types) {
+    LOG(WARNING) << "Registrations of " << x.name
+                 << " have incompatible allow_variant_types settings.";
+    return false;
+  }
+  if (x.allow_string_type != y.allow_string_type) {
+    LOG(WARNING) << "Registrations of " << x.name
+                 << " have incompatible allow_string_type settings.";
+    return false;
+  }
   if (!x.has_device_whitelist && !y.has_device_whitelist) {
     LOG(WARNING) << "Duplicate registrations of " << x.name
                  << "with no device whitelists.";
@@ -128,22 +138,26 @@ XlaOpRegistry::~XlaOpRegistry() = default;
   // Lazily register the CPU and GPU JIT devices the first time
   // GetCompilationDevice is called.
   static void* registration_init = [&registry]() {
+    MarkForCompilationPassFlags* flags = GetMarkForCompilationPassFlags();
+    bool cpu_global_jit = flags->tf_xla_cpu_global_jit;
+    VLOG(2) << "tf_xla_cpu_global_jit = " << cpu_global_jit;
+
     mutex_lock lock(registry.mutex_);
     if (LaunchOpHasKernelForDevice(DeviceType(DEVICE_CPU)).ok()) {
       DeviceRegistration& registration =
           registry.compilation_devices_[DEVICE_CPU];
       registration.compilation_device_name = DEVICE_CPU_XLA_JIT;
-      registration.requires_compilation = false;
-      registration.enable_jit_by_default = false;
-      registration.compile_resource_ops = false;
+      registration.autoclustering_policy =
+          cpu_global_jit
+              ? XlaOpRegistry::AutoclusteringPolicy::kIfEnabledGlobally
+              : XlaOpRegistry::AutoclusteringPolicy::kIfExplicitlyRequested;
     }
     if (LaunchOpHasKernelForDevice(DeviceType(DEVICE_GPU)).ok()) {
       DeviceRegistration& registration =
           registry.compilation_devices_[DEVICE_GPU];
       registration.compilation_device_name = DEVICE_GPU_XLA_JIT;
-      registration.requires_compilation = false;
-      registration.enable_jit_by_default = true;
-      registration.compile_resource_ops = false;
+      registration.autoclustering_policy =
+          XlaOpRegistry::AutoclusteringPolicy::kIfEnabledGlobally;
     }
     return nullptr;
   }();
@@ -281,6 +295,12 @@ void XlaOpRegistry::RegisterCompilationKernels() {
           }
           if (op_registration->allow_resource_types) {
             allowed_values->add_type(DT_RESOURCE);
+          }
+          if (op_registration->allow_variant_types) {
+            allowed_values->add_type(DT_VARIANT);
+          }
+          if (op_registration->allow_string_type) {
+            allowed_values->add_type(DT_STRING);
           }
           // Don't build KernelDefs that have unsatisfiable type constraints.
           if (allowed_values->type().empty()) {
@@ -424,6 +444,16 @@ XlaOpRegistrationBuilder& XlaOpRegistrationBuilder::CompilationOnly() {
 
 XlaOpRegistrationBuilder& XlaOpRegistrationBuilder::AllowResourceTypes() {
   registration_->allow_resource_types = true;
+  return *this;
+}
+
+XlaOpRegistrationBuilder& XlaOpRegistrationBuilder::AllowVariantTypes() {
+  registration_->allow_variant_types = true;
+  return *this;
+}
+
+XlaOpRegistrationBuilder& XlaOpRegistrationBuilder::AllowStringType() {
+  registration_->allow_string_type = true;
   return *this;
 }
 

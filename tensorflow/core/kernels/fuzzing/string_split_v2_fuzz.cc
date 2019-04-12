@@ -50,9 +50,9 @@ class FuzzStringSplitV2 : public FuzzSession {
           string(reinterpret_cast<const char*>(data), sep_len);
       input_tensor.scalar<string>()() = string(
           reinterpret_cast<const char*>(data + sep_len), size - sep_len);
-    }
 
-    RunTwoInputs(input_tensor, separator_tensor).IgnoreError();
+      RunInputs({{"input", input_tensor}, {"separator", separator_tensor}});
+    }
   }
 
  private:

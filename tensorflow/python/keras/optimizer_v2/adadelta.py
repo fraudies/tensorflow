@@ -18,23 +18,29 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
+
+from tensorflow.python.keras import backend_config
 from tensorflow.python.keras.optimizer_v2 import optimizer_v2
 from tensorflow.python.training import training_ops
+from tensorflow.python.util.tf_export import keras_export
 
 
+@keras_export('keras.optimizers.Adadelta')
 class Adadelta(optimizer_v2.OptimizerV2):
   """Adadelta optimizer.
 
   It is recommended to leave the parameters of this optimizer at their default
   values.
 
-  See [M. D. Zeiler](http://arxiv.org/abs/1212.5701)
-  ([pdf](http://arxiv.org/pdf/1212.5701v1.pdf))
+  $$E[g^2]_0 := 0 \text{(Initialize gradient 2nd order moment vector)}$$
+  $$E[\Delta x^2]_0 := 0 \text{(Initialize 2nd order variable update)}$$
 
-  Some of the args below are hyperparameters, where a hyperparameter is
-  defined as a scalar Tensor, a regular Python value, or a callable (which
-  will be evaluated when `apply_gradients` is called) returning a scalar
-  Tensor or a Python value.
+  $$t := t + 1$$
+  $$E[g^2]_t := \rho * E[g^2]_{t-1} + (1 - \rho) * g^2$$
+  $$\Delta x_t = -RMS[\Delta x]_{t-1} * g_t / RMS[g]_t$$
+  $$E[\Delta x^2]_t := \rho * E[\Delta x^2]_{t-1} + (1 - \rho) * \Delta x_t^2$$
+  $$x_t := x_{t-1} + \Delta x_{t}
 
   Arguments:
 
@@ -50,14 +56,51 @@ class Adadelta(optimizer_v2.OptimizerV2):
   def __init__(self,
                learning_rate=0.001,
                rho=0.95,
-               epsilon=1e-8,
-               name="Adadelta"):
-    super(Adadelta, self).__init__(name)
-    self._set_hyper("learning_rate", learning_rate)
-    self._set_hyper("rho", rho)
-    self._set_hyper("epsilon", epsilon)
+               epsilon=1e-7,
+               name='Adadelta',
+               **kwargs):
+    """Construct a new Adadelta optimizer.
 
-  def _create_vars(self, var_list, state):
+    Adadelta is a more robust extension of Adagrad that adapts learning rates
+    based on a moving window of gradient updates, instead of accumulating all
+    past gradients. This way, Adadelta continues learning even when many updates
+    have been done. Compared to Adagrad, in the original version of Adadelta you
+    don't have to set an initial learning rate. In this version, initial
+    learning rate can be set, as in most other Keras optimizers.
+
+    Args:
+      learning_rate: A `Tensor` or a floating point value. The learning rate.
+        To match the exact form in the original paper use 1.0.
+      rho: A `Tensor` or a floating point value. The decay rate.
+      epsilon: A `Tensor` or a floating point value.  A constant epsilon used
+               to better conditioning the grad update.
+      name: Optional name prefix for the operations created when applying
+        gradients.  Defaults to "Adadelta".
+      **kwargs: keyword arguments. Allowed to be {`clipnorm`, `clipvalue`, `lr`,
+        `decay`}. `clipnorm` is clip gradients by norm; `clipvalue` is clip
+        gradients by value, `decay` is included for backward compatibility to
+        allow time inverse decay of learning rate. `lr` is included for backward
+        compatibility, recommended to use `learning_rate` instead.
+
+    @compatibility(eager)
+    When eager execution is enabled, `learning_rate`, `rho`, and `epsilon` can
+    each be a callable that takes no arguments and returns the actual value to
+    use. This can be useful for changing these values across different
+    invocations of optimizer functions.
+    @end_compatibility
+    """
+    if epsilon is None:
+      epsilon = backend_config.epsilon()
+    super(Adadelta, self).__init__(name, **kwargs)
+    self._set_hyper('learning_rate', kwargs.get('lr', learning_rate))
+    self._set_hyper('decay', self._initial_decay)
+    self._set_hyper('rho', rho)
+    self._set_hyper('epsilon', epsilon)
+
+  def _create_slots(self, var_list):
+    # Separate for-loops to respect the ordering of slot variables from v1.
+    for v in var_list:
+      self.add_slot(v, 'accum_grad')
     for v in var_list:
       state.zeros_slot(v, "accum")
       state.zeros_slot(v, "accum_update")

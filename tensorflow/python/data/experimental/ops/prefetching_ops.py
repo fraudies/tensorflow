@@ -369,6 +369,9 @@ def copy_to_device(target_device, source_device="/cpu:0"):
   """
 
   def _apply_fn(dataset):
+    options = dataset_ops.Options()
+    options.experimental_optimization.apply_default_optimizations = False
+    options.experimental_optimization.autotune = False
     return _CopyToDeviceDataset(
         dataset, target_device=target_device, source_device=source_device)
 
@@ -389,7 +392,6 @@ class _CopyToDeviceDataset(dataset_ops.UnaryDataset):
       target_device: The name of the device to which elements would be copied.
       source_device: Device where input_dataset would be placed.
     """
-    super(_CopyToDeviceDataset, self).__init__(input_dataset)
     self._input_dataset = input_dataset
     self._target_device = target_device
     spec = framework_device.DeviceSpec().from_string(self._target_device)
@@ -397,22 +399,17 @@ class _CopyToDeviceDataset(dataset_ops.UnaryDataset):
     self._source_device_string = source_device
     self._source_device = ops.convert_to_tensor(source_device)
 
-    self._flat_output_shapes = nest.flatten(
-        sparse.as_dense_shapes(self._input_dataset.output_shapes,
-                               self._input_dataset.output_classes))
-    self._flat_output_types = nest.flatten(
-        sparse.as_dense_types(self._input_dataset.output_types,
-                              self._input_dataset.output_classes))
+    wrap_ds_variant = gen_dataset_ops.wrap_dataset_variant(
+        self._input_dataset._variant_tensor)  # pylint: disable=protected-access
 
-    @function.Defun()
+    @function.defun()
     def _init_func():
       """Creates an iterator for the input dataset.
 
       Returns:
         A `string` tensor that encapsulates the iterator created.
       """
-      # pylint: disable=protected-access
-      ds_variant = self._input_dataset._as_variant_tensor()
+      ds_variant = gen_dataset_ops.unwrap_dataset_variant(wrap_ds_variant)
       resource = gen_dataset_ops.anonymous_iterator(
           output_types=self._flat_output_types,
           output_shapes=self._flat_output_shapes)
@@ -442,12 +439,17 @@ class _CopyToDeviceDataset(dataset_ops.UnaryDataset):
       """
       with ops.device(self._source_device_string):
         iterator = iterator_ops.Iterator.from_string_handle(
-            string_handle, self.output_types, self.output_shapes,
-            self.output_classes)
-      ret = iterator.get_next()
-      return nest.flatten(sparse.serialize_sparse_tensors(ret))
+            string_handle,
+            dataset_ops.get_legacy_output_types(self),
+            dataset_ops.get_legacy_output_shapes(self),
+            dataset_ops.get_legacy_output_classes(self))
+      return self._element_structure._to_tensor_list(iterator.get_next())  # pylint: disable=protected-access
 
-    @function.Defun(dtypes.string)
+    next_func_concrete = _next_func._get_concrete_function_internal()  # pylint: disable=protected-access
+
+    @function.defun_with_attributes(
+        input_signature=[tensor_spec.TensorSpec([], dtypes.string)],
+        attributes={"experimental_ints_on_device": True})
     def _remote_next_func(string_handle):
       return functional_ops.remote_call(
           target=self._source_device,
@@ -493,6 +495,17 @@ class _CopyToDeviceDataset(dataset_ops.UnaryDataset):
     _remote_finalize_func.add_to_graph(g)
     # pylint: enable=protected-scope
 
+    with ops.device(self._target_device):
+      variant_tensor = gen_dataset_ops.generator_dataset(
+          self._init_captured_args,
+          self._next_captured_args,
+          self._finalize_captured_args,
+          init_func=self._init_func,
+          next_func=self._next_func,
+          finalize_func=self._finalize_func,
+          **dataset_ops.flat_structure(self._input_dataset))
+    super(_CopyToDeviceDataset, self).__init__(input_dataset, variant_tensor)
+
   # The one_shot_iterator implementation needs a 0 arg _make_dataset function
   # that thereby captures all the inputs required to create the dataset. Since
   # there are strings that are inputs to the GeneratorDataset which can't be
@@ -506,17 +519,30 @@ class _CopyToDeviceDataset(dataset_ops.UnaryDataset):
     else:
       return super(_CopyToDeviceDataset, self).make_one_shot_iterator()
 
-  def _as_variant_tensor(self):
-    with ops.device(self._target_device):
-      return gen_dataset_ops.generator_dataset(
-          self._init_captured_args,
-          self._next_captured_args,
-          self._finalize_captured_args,
-          init_func=self._init_func,
-          next_func=self._next_func,
-          finalize_func=self._finalize_func,
-          output_types=self._flat_output_types,
-          output_shapes=self._flat_output_shapes)
+
+class _MapOnGpuDataset(dataset_ops.UnaryDataset):
+  """A `Dataset` that maps a function over elements in its using a GPU."""
+
+  def __init__(self, input_dataset, map_func, use_inter_op_parallelism=True):
+    """See `Dataset.map()` for details."""
+    self._input_dataset = input_dataset
+    self._use_inter_op_parallelism = use_inter_op_parallelism
+
+    self._map_func = dataset_ops.StructuredFunctionWrapper(
+        map_func,
+        self._transformation_name(),
+        dataset=input_dataset,
+        defun_kwargs={"experimental_ints_on_device": True})
+    variant_tensor = ged_ops.experimental_map_dataset(
+        self._input_dataset._variant_tensor,  # pylint: disable=protected-access
+        self._map_func.function.captured_inputs,
+        f=self._map_func.function,
+        use_inter_op_parallelism=self._use_inter_op_parallelism,
+        **dataset_ops.flat_structure(self))
+    super(_MapOnGpuDataset, self).__init__(input_dataset, variant_tensor)
+
+  def _functions(self):
+    return [self._map_func]
 
   @property
   def output_types(self):

@@ -18,7 +18,7 @@ tf_module {
   }
   member_method {
     name: "assert_equal_graph_def"
-    argspec: "args=[\'actual\', \'expected\', \'checkpoint_v2\'], varargs=None, keywords=None, defaults=[\'False\'], "
+    argspec: "args=[\'expected\', \'actual\'], varargs=None, keywords=None, defaults=None"
   }
   member_method {
     name: "benchmark_config"
@@ -26,11 +26,7 @@ tf_module {
   }
   member_method {
     name: "compute_gradient"
-    argspec: "args=[\'x\', \'x_shape\', \'y\', \'y_shape\', \'x_init_value\', \'delta\', \'init_targets\', \'extra_feed_dict\'], varargs=None, keywords=None, defaults=[\'None\', \'0.001\', \'None\', \'None\'], "
-  }
-  member_method {
-    name: "compute_gradient_error"
-    argspec: "args=[\'x\', \'x_shape\', \'y\', \'y_shape\', \'x_init_value\', \'delta\', \'init_targets\', \'extra_feed_dict\'], varargs=None, keywords=None, defaults=[\'None\', \'0.001\', \'None\', \'None\'], "
+    argspec: "args=[\'f\', \'x\', \'delta\'], varargs=None, keywords=None, defaults=[\'0.001\'], "
   }
   member_method {
     name: "create_local_cluster"

@@ -136,6 +136,19 @@ py_library(
 )
 
 py_library(
+    name = "distribute",
+    srcs = [
+        "distribute.py",
+    ],
+    srcs_version = "PY2AND3",
+    deps = [
+        "//tensorflow/python:experimental_dataset_ops_gen",
+        "//tensorflow/python/data/ops:dataset_ops",
+        "//tensorflow/python/data/util:structure",
+    ],
+)
+
+py_library(
     name = "enumerate_ops",
     srcs = ["enumerate_ops.py"],
     srcs_version = "PY2AND3",
@@ -262,6 +275,7 @@ py_library(
         "//tensorflow/python:dataset_ops_gen",
         "//tensorflow/python:framework_ops",
         "//tensorflow/python:function",
+        "//tensorflow/python:tensor_array_ops",
         "//tensorflow/python/data/ops:dataset_ops",
         "//tensorflow/python/data/util:nest",
         "//tensorflow/python/data/util:sparse",
@@ -290,6 +304,40 @@ py_library(
         "//tensorflow/python/data/ops:iterator_ops",
         "//tensorflow/python/data/util:nest",
         "//tensorflow/python/data/util:sparse",
+    ],
+)
+
+py_library(
+    name = "stats_options",
+    srcs = ["stats_options.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":stats_aggregator",
+        "//tensorflow/python:util",
+        "//tensorflow/python/data/util:options",
+    ],
+)
+
+py_library(
+    name = "take_while_ops",
+    srcs = ["take_while_ops.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        "//tensorflow/python:dtypes",
+        "//tensorflow/python:experimental_dataset_ops_gen",
+        "//tensorflow/python:framework_ops",
+        "//tensorflow/python:function",
+        "//tensorflow/python/data/ops:dataset_ops",
+    ],
+)
+
+py_library(
+    name = "threading_options",
+    srcs = ["threading_options.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        "//tensorflow/python:util",
+        "//tensorflow/python/data/util:options",
     ],
 )
 
@@ -363,6 +411,7 @@ py_library(
     deps = [
         ":batching",
         ":counter",
+        ":distribute",
         ":enumerate_ops",
         ":error_ops",
         ":get_single_element",
@@ -378,6 +427,7 @@ py_library(
         ":shuffle_ops",
         ":sleep",
         ":stats_ops",
+        ":take_while_ops",
         ":threadpool",
         ":unique",
         ":writers",

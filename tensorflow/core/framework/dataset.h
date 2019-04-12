@@ -18,6 +18,7 @@ limitations under the License.
 #include <deque>
 #include <memory>
 
+#include "absl/memory/memory.h"
 #include "tensorflow/core/framework/attr_value.pb.h"
 #include "tensorflow/core/framework/attr_value_util.h"
 #include "tensorflow/core/framework/dataset_stateful_op_whitelist.h"
@@ -27,6 +28,7 @@ limitations under the License.
 #include "tensorflow/core/framework/node_def.pb.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
+#include "tensorflow/core/framework/thread_factory.h"
 #include "tensorflow/core/framework/types.pb.h"
 #include "tensorflow/core/framework/variant_encode_decode.h"
 #include "tensorflow/core/framework/variant_tensor_data.h"
@@ -180,7 +182,8 @@ class GraphDefBuilderWrapper {
   // returns an InvalidArgumentError. If the function with name `function_name`
   // or any of its dependent functions are stateful, and the context does not
   // explicitly permit stateful functions, returns an InvalidArgument error.
-  Status AddFunction(SerializationContext* ctx, const string& function_name);
+  Status AddFunction(SerializationContext* ctx, const string& function_name,
+                     const FunctionLibraryDefinition& lib_def);
 
   template <typename T>
   void BuildAttrValue(const T& value, AttrValue* attr) {
@@ -191,16 +194,17 @@ class GraphDefBuilderWrapper {
   void AddPlaceholderInternal(const Tensor& val, Node** output);
   void AddTensorInternal(const Tensor& val, Node** output);
 
-  Status EnsureFunctionIsStateless(const FunctionLibraryDefinition& flib_def,
-                                   const string& function_name) const {
-    const FunctionDef* function_def = flib_def.Find(function_name);
+  Status EnsureFunctionIsStateless(
+      const string& function_name,
+      const FunctionLibraryDefinition& lib_def) const {
+    const FunctionDef* function_def = lib_def.Find(function_name);
     if (!function_def) {
       return errors::InvalidArgument("Unable to find FunctionDef for ",
                                      function_name, " in registry.");
     }
     for (const NodeDef& node_def : function_def->node_def()) {
       const OpDef* op_def;
-      TF_RETURN_IF_ERROR(flib_def.LookUpOpDef(node_def.op(), &op_def));
+      TF_RETURN_IF_ERROR(lib_def.LookUpOpDef(node_def.op(), &op_def));
       // TODO(b/65524810): Hack to allow functions to capture Dataset op
       // nodes needed for FlatMap. Currently, source datasets nodes have been
       // marked stateful to avoid constant folding since we do not have a
@@ -242,12 +246,13 @@ class GraphDefBuilderWrapper {
   }
 
   Status AddAttrFunctions(SerializationContext* ctx,
-                          const AttrValue& attr_value) {
+                          const AttrValue& attr_value,
+                          const FunctionLibraryDefinition& lib_def) {
     if (attr_value.has_func()) {
-      TF_RETURN_IF_ERROR(AddFunction(ctx, attr_value.func().name()));
+      TF_RETURN_IF_ERROR(AddFunction(ctx, attr_value.func().name(), lib_def));
     } else if (attr_value.has_list()) {
       for (const NameAttrList& name_attr_list : attr_value.list().func()) {
-        TF_RETURN_IF_ERROR(AddFunction(ctx, name_attr_list.name()));
+        TF_RETURN_IF_ERROR(AddFunction(ctx, name_attr_list.name(), lib_def));
       }
     }
     return Status::OK();
@@ -272,16 +277,47 @@ class StatsAggregator;
 class IteratorContext {
  public:
   struct Params {
+    explicit Params(IteratorContext* ctx)
+        : allocator_getter(ctx->allocator_getter()),
+          env(ctx->env()),
+          lib(ctx->lib()),
+          function_handle_cache(ctx->function_handle_cache()),
+          resource_mgr(ctx->resource_mgr()),
+          model(ctx->model()),
+          runner(*(ctx->runner())),
+          runner_threadpool_size(ctx->runner_threadpool_size()),
+          stats_aggregator(ctx->stats_aggregator()),
+          thread_factory(ctx->thread_factory()) {}
+
+    explicit Params(OpKernelContext* ctx)
+        : env(ctx->env()),
+          lib(ctx->function_library()),
+          runner(*(ctx->runner())) {
+      // NOTE: need reinterpret_cast because function.h forward-declares Device.
+      DeviceBase* device =
+          reinterpret_cast<DeviceBase*>(ctx->function_library()->device());
+      allocator_getter = [device](AllocatorAttributes attrs) {
+        return device->GetAllocator(attrs);
+      };
+      thread::ThreadPool* thread_pool =
+          ctx->device()->tensorflow_device_thread_pool();
+      if (thread_pool) {
+        runner_threadpool_size = thread_pool->NumThreads();
+      } else {
+        runner_threadpool_size = port::NumSchedulableCPUs();
+      }
+    }
+
+    // The Allocator to be used to allocate the output of an iterator.
+    std::function<Allocator*(AllocatorAttributes)> allocator_getter = nullptr;
+
     // Interface to operating system functionality.
     Env* env;
 
-    // Function call support.
-    std::function<void(std::function<void()>)> runner = nullptr;
-
-    // The `StatsAggregator` object to record statistics about the iterator.
-    std::shared_ptr<StatsAggregator> stats_aggregator = nullptr;
-
     // The FunctionLibraryRuntime object to be used to make function calls.
+    //
+    // TODO(jsimsa): Rename to `flr` and possibly consolidate with `lib_def`
+    // using `FunctionLibraryRuntimeOverlay`.
     FunctionLibraryRuntime* lib = nullptr;
     std::shared_ptr<const FunctionLibraryDefinition> function_library = nullptr;
 
@@ -290,6 +326,19 @@ class IteratorContext {
 
     // If non-null, identifies the object used for performance modeling.
     std::shared_ptr<model::Model> model = nullptr;
+
+    // Function call support.
+    std::function<void(std::function<void()>)> runner = nullptr;
+
+    // Number of threads used for executing user-defined functions.
+    int32 runner_threadpool_size = 0;
+
+    // The `StatsAggregator` object to record statistics about the iterator.
+    std::shared_ptr<StatsAggregator> stats_aggregator = nullptr;
+
+    // A `ThreadFactory` for creating threads used by iterators to perform
+    // blocking work.
+    std::shared_ptr<ThreadFactory> thread_factory = nullptr;
   };
 
   explicit IteratorContext(Params params) : params_(std::move(params)) {}
@@ -314,10 +363,6 @@ class IteratorContext {
   }
 
 
-  std::shared_ptr<const FunctionLibraryDefinition> function_library() {
-    return params_.function_library;
-  }
-
   FunctionLibraryRuntime* lib() { return params_.lib; }
 
   void set_lib(FunctionLibraryRuntime* lib) { params_.lib = lib; }
@@ -326,9 +371,21 @@ class IteratorContext {
     return params_.allocator_getter(attrs);
   }
 
-  std::function<Allocator*(AllocatorAttributes)> allocator_getter() {
-    return params_.allocator_getter;
+  const std::shared_ptr<ThreadFactory>& thread_factory() {
+    return params_.thread_factory;
   }
+
+  std::unique_ptr<Thread> StartThread(const string& name,
+                                      std::function<void()> fn) {
+    if (params_.thread_factory) {
+      return params_.thread_factory->StartThread(name, std::move(fn));
+    } else {
+      return absl::WrapUnique(
+          Env::Default()->StartThread({}, name, std::move(fn)));
+    }
+  }
+
+  int32 runner_threadpool_size() { return params_.runner_threadpool_size; }
 
   std::shared_ptr<StatsAggregator> stats_aggregator() {
     return params_.stats_aggregator;
@@ -346,16 +403,10 @@ class IteratorContext {
 class SerializationContext {
  public:
   struct Params {
-    bool allow_stateful_functions = false;
-    const FunctionLibraryDefinition* flib_def = nullptr;           // Not owned.
     std::vector<std::pair<string, Tensor>>* input_list = nullptr;  // Not owned.
   };
 
   explicit SerializationContext(Params params) : params_(std::move(params)) {}
-
-  bool allow_stateful_functions() { return params_.allow_stateful_functions; }
-
-  const FunctionLibraryDefinition& flib_def() { return *params_.flib_def; }
 
   std::vector<std::pair<string, Tensor>>* input_list() {
     return params_.input_list;
@@ -454,6 +505,12 @@ class IteratorBase {
     return errors::Unimplemented("RestoreInternal");
   }
 
+  // Returns the number of elements produced by this itertaor.
+  int64 num_elements() const {
+    if (node_) return node_->num_elements();
+    return 0;
+  }
+
  private:
   friend class DatasetBase;  // for access to `AddCleanupFunction`
 
@@ -471,16 +528,20 @@ class IteratorBase {
 class DatasetContext {
  public:
   struct Params {
-    string name;
+    string type_string;  // op type name of this dataset.
+    string node_name;    // graph node name of this dataset op, uniquely
+                         // identifying the dataset in the graph.
   };
 
   explicit DatasetContext(Params params) : params_(std::move(params)) {}
 
   explicit DatasetContext(OpKernelContext* ctx) {
-    params_.name = ctx->op_kernel().type_string();
+    params_.type_string = ctx->op_kernel().type_string();
+    params_.node_name = ctx->op_kernel().name();
   }
 
-  const string& name() const { return params_.name; }
+  const string& type_string() const { return params_.type_string; }
+  const string& node_name() const { return params_.node_name; }
 
  private:
   Params params_;
@@ -497,9 +558,15 @@ class DatasetBase : public core::RefCounted {
   // format.
   TF_EXPORT static const char kDatasetGraphOutputNodeKey[];
 
-  explicit DatasetBase(DatasetContext&& ctx) : name_(ctx.name()) {}
+  explicit DatasetBase(DatasetContext&& ctx)
+      : type_string_(ctx.type_string()), node_name_(ctx.node_name()) {}
 
-  const string& name() const { return name_; }
+  // Op type name of this dataset.
+  const string& type_string() const { return type_string_; }
+
+  // Graph node name of this dataset op, uniquely identifying the dataset in
+  // the graph.
+  const string& node_name() const { return node_name_; }
 
   // Returns a new iterator for iterating over the range of elements in
   // this dataset.
@@ -547,7 +614,10 @@ class DatasetBase : public core::RefCounted {
                       IteratorStateWriter* writer) const;
 
  protected:
-  friend class DatasetToGraphOp;  // For access to graph related members.
+  friend Status AsGraphDef(
+      OpKernelContext* ctx, DatasetBase* dataset,
+      GraphDef* graph_def);  // For access to graph related members.
+  friend class CapturedFunction;
 
   class DatasetGraphDefBuilder : public GraphDefBuilderWrapper {
    public:
@@ -567,7 +637,16 @@ class DatasetBase : public core::RefCounted {
       const string& prefix) const = 0;
 
  private:
-  const string name_;
+  // Returns a factory for nodes that represent the given iterator.
+  static model::Node::Factory MakeNodeFactory(IteratorContext* ctx,
+                                              IteratorBase* iterator) {
+    return [ctx, iterator](model::Node::Args args) {
+      return iterator->CreateNode(ctx, std::move(args));
+    };
+  }
+
+  const string type_string_;
+  const string node_name_;
 };
 
 // Represents an iterator that is associated with a particular dataset.

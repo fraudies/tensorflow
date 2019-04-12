@@ -12,15 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Implementation of Cluster Resolvers for GCE Instance Groups."""
+"""Stub file for GCEClusterResolver to maintain backwards compatibility."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 
-from tensorflow.contrib.cluster_resolver.python.training.cluster_resolver import ClusterResolver
-from tensorflow.python.training.server_lib import ClusterSpec
+# pylint: disable=unused-import
+from tensorflow.python.distribute.cluster_resolver.gce_cluster_resolver import GCEClusterResolver
+# pylint: enable=unused-import
 
 _GOOGLE_API_CLIENT_INSTALLED = True
 try:
@@ -29,6 +30,10 @@ try:
 except ImportError:
   _GOOGLE_API_CLIENT_INSTALLED = False
 
+
+_allowed_symbols = [
+    'GCEClusterResolver',
+]
 
 class GceClusterResolver(ClusterResolver):
   """Cluster Resolver for Google Compute Engine.

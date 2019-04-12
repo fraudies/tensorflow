@@ -38,6 +38,7 @@ from tensorflow.python.training import queue_runner_impl
 _MockOp = collections.namedtuple("MockOp", ["name"])
 
 
+@test_util.run_v1_only("QueueRunner removed from v2")
 class QueueRunnerTest(test.TestCase):
 
   def testBasic(self):

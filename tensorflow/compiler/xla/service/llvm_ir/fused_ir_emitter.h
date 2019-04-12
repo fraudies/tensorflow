@@ -19,6 +19,8 @@ limitations under the License.
 #include <map>
 #include <unordered_map>
 
+#include "absl/container/flat_hash_map.h"
+#include "absl/types/optional.h"
 #include "absl/types/span.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Value.h"
@@ -88,8 +90,25 @@ class FusedIrEmitter : public DfsHloVisitorWithDefault {
     return it->second;
   }
 
-  void SetTiledParameterInfo(const llvm_ir::TiledParameterInfo* info) {
-    tiled_parameter_info_ = info;
+  // Evaluates whether fusing 'producer' into 'consumer' might cause exponential
+  // behavior in FusedIrEmitter. We currently can have exponential time/memory
+  // requirements for emitting certain fusion kernels, in which case we don't
+  // want to fuse.
+  // TODO(b/119692968): Remove this once we have fixed our fusion emitter.
+  static bool IsFusedIrEmitterInefficient(const HloInstruction* consumer,
+                                          const HloInstruction* producer);
+
+ protected:
+  // Returns the IrArrays for the fusion instruction operands.
+  llvm_ir::IrArray& GetIrArrayForFusedParameter(int64 parameter_number) {
+    if (!operand_arrays_.has_value()) {
+      operand_arrays_ = operand_arrays_generator_();
+    }
+    return operand_arrays_.value()[parameter_number];
+  }
+
+  llvm::Value* GetBasePointerForFusedParameter(int64 parameter_number) {
+    return GetIrArrayForFusedParameter(parameter_number).GetBasePointer();
   }
 
  private:
@@ -112,8 +131,9 @@ class FusedIrEmitter : public DfsHloVisitorWithDefault {
 
   // Cache of generated values, lest we regenerate an element of a node with
   // multiple outgoing edges
-  std::unordered_map<const HloInstruction*,
-                     std::map<std::vector<llvm::Value*>, llvm::Value*>>
+  absl::flat_hash_map<
+      const HloInstruction*,
+      absl::flat_hash_map<std::vector<llvm::Value*>, llvm::Value*>>
       generated_value_cache_;
 
   // Stores ir values required to emit fused (and possibly nested)

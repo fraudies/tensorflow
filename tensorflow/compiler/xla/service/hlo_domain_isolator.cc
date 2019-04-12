@@ -28,16 +28,8 @@ class HloDomainIsolator::RunContext {
   RunContext(HloModule* module, HloDomainIsolator* isolator)
       : module_(module), isolator_(isolator) {}
 
-  StatusOr<bool> Run();
-
- private:
-  HloModule* module_;
-  HloDomainIsolator* isolator_;
-};
-
-StatusOr<bool> HloDomainIsolator::RunContext::Run() {
-  hlo_graph_dumper::MaybeDumpHloModule(*module_, "Before Domain Isolator");
-
+StatusOr<bool> RunInternal(HloModule* module,
+                           HloDomainIsolator::DomainCreator* creator) {
   int64 added_domains = 0;
   for (HloComputation* computation : module_->computations()) {
     // Walk in post order and place all the required kDomain instructions.
@@ -66,9 +58,6 @@ StatusOr<bool> HloDomainIsolator::RunContext::Run() {
     }
   }
   VLOG(3) << "Added " << added_domains << " kDomain instructions";
-  if (added_domains > 0) {
-    hlo_graph_dumper::MaybeDumpHloModule(*module_, "After Domain Isolator");
-  }
   return added_domains > 0;
 }
 

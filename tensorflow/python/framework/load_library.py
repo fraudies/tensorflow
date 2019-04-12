@@ -83,7 +83,9 @@ def load_op_library(library_filename):
   return module
 
 
-@tf_export('load_file_system_library')
+@deprecation.deprecated(date=None,
+                        instructions='Use `tf.load_library` instead.')
+@tf_export(v1=['load_file_system_library'])
 def load_file_system_library(library_filename):
   """Loads a TensorFlow plugin, containing file system implementation.
 

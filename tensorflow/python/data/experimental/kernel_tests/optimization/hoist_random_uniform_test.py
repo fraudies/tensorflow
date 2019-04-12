@@ -58,14 +58,34 @@ class HoistRandomUniformTest(test_base.DatasetTestBase, parameterized.TestCase):
              ("TwiceRandom", twice_random, False)]
     return tuple(tests)
 
-  @parameterized.named_parameters(*map_functions.__func__())
+@test_util.run_all_in_graph_and_eager_modes
+class HoistRandomUniformTest(test_base.DatasetTestBase, parameterized.TestCase):
+
+  def _testDataset(self, dataset):
+    previous_result = 0
+    get_next = self.getNext(dataset)
+    for _ in range(5):
+      result = self.evaluate(get_next())
+      self.assertLessEqual(1, result)
+      self.assertLessEqual(result, 10)
+      # This checks if the result is somehow random by checking if we are not
+      # generating the same values.
+      self.assertNotEqual(previous_result, result)
+      previous_result = result
+    with self.assertRaises(errors.OutOfRangeError):
+      self.evaluate(get_next())
+    with self.assertRaises(errors.OutOfRangeError):
+      self.evaluate(get_next())
+
+  @parameterized.named_parameters(*_hoist_random_uniform_test_cases())
   def testHoisting(self, function, will_optimize):
     dataset = dataset_ops.Dataset.range(5).apply(
         optimization.assert_next(
             ["Zip[0]", "Map"] if will_optimize else ["Map"])).map(function)
 
     options = dataset_ops.Options()
-    options.experimental_hoist_random_uniform = True
+    options.experimental_optimization.apply_default_optimizations = False
+    options.experimental_optimization.hoist_random_uniform = True
     dataset = dataset.with_options(options)
     self._testDataset(dataset)
 
@@ -81,7 +101,8 @@ class HoistRandomUniformTest(test_base.DatasetTestBase, parameterized.TestCase):
     dataset = dataset_ops.Dataset.range(5).apply(
         optimization.assert_next(["Zip[0]", "Map"])).map(random_with_capture)
     options = dataset_ops.Options()
-    options.experimental_hoist_random_uniform = True
+    options.experimental_optimization.apply_default_optimizations = False
+    options.experimental_optimization.hoist_random_uniform = True
     dataset = dataset.with_options(options)
     self._testDataset(dataset)
 

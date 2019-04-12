@@ -159,6 +159,7 @@ class StageTest(test.TestCase):
       self.assertEqual(sess.run(size), 0)
 
   def testCapacity(self):
+    self.skipTest('b/123423516 this test is flaky on gpu.')
     capacity = 3
 
     with ops.Graph().as_default() as G:

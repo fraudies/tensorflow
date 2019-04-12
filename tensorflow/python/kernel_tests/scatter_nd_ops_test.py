@@ -24,6 +24,7 @@ import numpy as np
 
 from tensorflow.python.client import session
 from tensorflow.python.eager import context
+from tensorflow.python.eager import def_function
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import errors
@@ -211,6 +212,7 @@ class StatefulScatterNdTest(test.TestCase):
   def testVariableRankAdd(self):
     self._VariableRankTests(_NumpyAdd, state_ops.scatter_nd_add)
 
+  @test_util.run_deprecated_v1
   def testVariableRankSub(self):
     self._VariableRankTests(_NumpySub, state_ops.scatter_nd_sub)
 
@@ -285,6 +287,8 @@ class StatefulScatterNdTest(test.TestCase):
         state_ops.scatter_nd_update(ref, indices,
                                     updates).get_shape().as_list(), shape)
 
+  @test_util.run_v1_only("b/120545219")
+  @test_util.disable_xla("b/123337890")  # Error messages differ
   def testResVarInvalidOutputShape(self):
     res = variables.Variable(
         initial_value=lambda: array_ops.zeros(shape=[], dtype=dtypes.float32),
@@ -313,7 +317,7 @@ class StatefulScatterNdTest(test.TestCase):
     shape = np.array([2, 2, 2])
     ref = variables.Variable(array_ops.zeros(shape, dtypes.int32))
     with self.assertRaisesWithPredicateMatch(
-        ValueError, "The outer \\d+ dimensions of indices\\.shape="):
+        ValueError, r"The outer \d+ dimensions of indices\.shape="):
       state_ops.scatter_nd_update(ref, indices, updates)
 
   def testRank3InvalidShape2(self):
@@ -322,7 +326,7 @@ class StatefulScatterNdTest(test.TestCase):
     shape = np.array([2, 2, 2])
     ref = variables.Variable(array_ops.zeros(shape, dtypes.int32))
     with self.assertRaisesWithPredicateMatch(
-        ValueError, "The inner \\d+ dimensions of input\\.shape="):
+        ValueError, r"The inner \d+ dimensions of input\.shape="):
       state_ops.scatter_nd_update(ref, indices, updates)
 
   def testConcurrentUpdates(self):
@@ -517,7 +521,7 @@ class ScatterNdTest(test.TestCase):
     updates = array_ops.zeros([2, 2, 2], dtypes.int32)
     shape = np.array([2, 2, 2])
     with self.assertRaisesWithPredicateMatch(
-        ValueError, "The outer \\d+ dimensions of indices\\.shape="):
+        ValueError, r"The outer \d+ dimensions of indices\.shape="):
       self.scatter_nd(indices, updates, shape)
 
   def testRank3InvalidShape2(self):
@@ -525,7 +529,7 @@ class ScatterNdTest(test.TestCase):
     updates = array_ops.zeros([2, 2], dtypes.int32)
     shape = np.array([2, 2, 2])
     with self.assertRaisesWithPredicateMatch(
-        ValueError, "The inner \\d+ dimensions of (input|output)\\.shape="):
+        ValueError, r"The inner \d+ dimensions of (input|output)\.shape="):
       self.scatter_nd(indices, updates, shape)
 
   def testGradientsRank2ElementUpdate(self):
@@ -670,6 +674,67 @@ class ScatterNdNonAliasingAddTest(ScatterNdTest):
     # Not supported yet.
     pass
 
+
+class ScatterNdTensorTest(test.TestCase):
+
+  @test_util.run_in_graph_and_eager_modes
+  def testUpdateAddSub(self):
+    indices = constant_op.constant([[4], [3], [1], [7]])
+    updates = constant_op.constant([9, 10, 11, 12], dtype=dtypes.float32)
+    t = array_ops.ones([8], dtype=dtypes.float32)
+    assigned = array_ops.tensor_scatter_update(t, indices, updates)
+    added = array_ops.tensor_scatter_add(t, indices, updates)
+    subbed = array_ops.tensor_scatter_sub(t, indices, updates)
+
+    self.assertAllEqual(assigned,
+                        constant_op.constant([1, 11, 1, 10, 9, 1, 1, 12]))
+    self.assertAllEqual(added,
+                        constant_op.constant([1, 12, 1, 11, 10, 1, 1, 13]))
+    self.assertAllEqual(subbed,
+                        constant_op.constant([1, -10, 1, -9, -8, 1, 1, -11]))
+
+  @test_util.run_v1_only("b/120545219")
+  def testUpdateAddSubGradients(self):
+
+    with self.cached_session():
+      indices = constant_op.constant([[3], [1]])
+      updates = constant_op.constant([9, 10], dtype=dtypes.float32)
+      x = array_ops.ones([4], dtype=dtypes.float32)
+
+      assigned = array_ops.tensor_scatter_update(x, indices, updates)
+      added = array_ops.tensor_scatter_add(x, indices, updates)
+      subbed = array_ops.tensor_scatter_sub(x, indices, updates)
+
+      err_assigned = gradient_checker.compute_gradient_error(
+          x, [4], assigned, [4])
+      err_added = gradient_checker.compute_gradient_error(x, [4], added, [4])
+      err_subbed = gradient_checker.compute_gradient_error(x, [4], subbed, [4])
+
+      self.assertLess(err_assigned, 2e-4)
+      self.assertLess(err_added, 2e-4)
+      self.assertLess(err_subbed, 2e-4)
+
+      err_assigned_wrt_updates = gradient_checker.compute_gradient_error(
+          updates, [2], assigned, [4])
+      err_added_wrt_updates = gradient_checker.compute_gradient_error(
+          updates, [2], added, [4])
+      err_subbed_wrt_updates = gradient_checker.compute_gradient_error(
+          updates, [2], subbed, [4])
+
+      self.assertLess(err_assigned_wrt_updates, 2e-4)
+      self.assertLess(err_added_wrt_updates, 2e-4)
+      self.assertLess(err_subbed_wrt_updates, 2e-4)
+
+  def testTensorScatterUpdateWithForwarding(self):
+    @def_function.function
+    def _TestFn():
+      indices = constant_op.constant([[4], [3], [1], [7]])
+      updates = constant_op.constant([9, 10, 11, 12], dtype=dtypes.float32)
+      t = array_ops.ones([8], dtype=dtypes.float32)
+
+      return array_ops.tensor_scatter_update(t, indices, updates)
+
+    self.assertAllEqual(_TestFn(), [1, 11, 1, 10, 9, 1, 1, 12])
 
 if __name__ == "__main__":
   test.main()

@@ -19,7 +19,6 @@ from __future__ import division
 from __future__ import print_function
 
 from tensorflow.python.data.experimental.ops import iterator_ops
-from tensorflow.python.data.kernel_tests import test_base
 from tensorflow.python.data.ops import dataset_ops
 from tensorflow.python.estimator import estimator
 from tensorflow.python.estimator import model_fn
@@ -34,7 +33,8 @@ from tensorflow.python.training import saver as saver_lib
 from tensorflow.python.training import training_util
 
 
-class CheckpointInputPipelineHookTest(test_base.DatasetTestBase):
+@test_util.run_v1_only('b/123904664')
+class CheckpointInputPipelineHookTest(test.TestCase):
 
   @staticmethod
   def _model_fn(features, labels, mode, config):

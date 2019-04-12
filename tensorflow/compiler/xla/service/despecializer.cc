@@ -17,7 +17,7 @@ limitations under the License.
 
 #include "tensorflow/compiler/xla/service/bfloat16_normalization.h"
 #include "tensorflow/compiler/xla/service/defuser.h"
-#include "tensorflow/compiler/xla/service/implicit_broadcast_remover.h"
+#include "tensorflow/compiler/xla/service/hlo_memory_scheduler.h"
 
 namespace xla {
 
@@ -47,7 +47,6 @@ Despecializer::Despecializer() : pipeline_("despecializer") {
   // TODO(b/70588125): Also deal with window reversal in a fast way.
   pipeline_.AddPass<ControlDepRemover>();
   pipeline_.AddPass<Defuser>();
-  pipeline_.AddPass<ImplicitBroadcastRemover>();
   pipeline_.AddPass<BFloat16MixedPrecisionRemoval>();
 }
 

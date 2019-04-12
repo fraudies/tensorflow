@@ -25,9 +25,9 @@ namespace tensorflow {
 const char* const DEVICE_XLA_INTERPRETER = "XLA_INTERPRETER";
 const char* const DEVICE_INTERPRETER_XLA_JIT = "XLA_INTERPRETER_JIT";
 
-constexpr std::array<DataType, 9> kExecAllTypes = {
+constexpr std::array<DataType, 10> kExecAllTypes = {
     {DT_INT8, DT_INT32, DT_INT64, DT_HALF, DT_FLOAT, DT_DOUBLE, DT_COMPLEX64,
-     DT_BOOL, DT_BFLOAT16}};
+     DT_COMPLEX128, DT_BOOL, DT_BFLOAT16}};
 
 class XlaInterpreterDeviceFactory : public DeviceFactory {
  public:
@@ -44,9 +44,29 @@ Status XlaInterpreterDeviceFactory::CreateDevices(
 
   XlaOpRegistry::DeviceRegistration registration;
   registration.compilation_device_name = DEVICE_INTERPRETER_XLA_JIT;
-  registration.requires_compilation = true;
-  registration.enable_jit_by_default = false;
-  registration.compile_resource_ops = true;
+  registration.autoclustering_policy =
+      XlaOpRegistry::AutoclusteringPolicy::kAlways;
+  registration.cluster_resource_variable_ops_unsafely = true;
+  registration.cluster_stack_ops = false;
+  registration.cluster_tensor_array_ops = true;
+  registration.cluster_stateful_rng_ops = true;
+  registration.cluster_control_trigger = true;
+  registration.elide_assert_and_checknumerics = true;
+  registration.cluster_variant_ops = true;
+  XlaOpRegistry::RegisterCompilationDevice(DEVICE_XLA_INTERPRETER,
+                                           registration);
+
+  TF_ASSIGN_OR_RETURN(
+      auto platform, se::MultiPlatformManager::PlatformWithName("Interpreter"));
+
+  XlaDevice::Options options;
+  options.platform = platform;
+  options.device_name_prefix = name_prefix;
+  options.device_name = DEVICE_XLA_INTERPRETER;
+  options.device_ordinal = 0;
+  options.compilation_device_name = DEVICE_INTERPRETER_XLA_JIT;
+  options.use_multiple_streams = false;
+  devices->push_back(absl::make_unique<XlaDevice>(session_options, options));
 
   std::unique_ptr<XlaDevice> device;
   TF_RETURN_IF_ERROR(XlaDevice::Create("Interpreter", DEVICE_XLA_INTERPRETER, 0,

@@ -90,6 +90,45 @@ py_test(
 )
 
 py_test(
+    name = "choose_fastest_branch_dataset_serialization_test",
+    size = "medium",
+    srcs = ["choose_fastest_branch_dataset_serialization_test.py"],
+    srcs_version = "PY2AND3",
+    tags = [
+        "no_oss",
+        "no_pip",
+        "no_windows",
+    ],
+    deps = [
+        ":dataset_serialization_test_base",
+        "//tensorflow/python:client_testlib",
+        "//tensorflow/python:constant_op",
+        "//tensorflow/python:math_ops",
+        "//tensorflow/python/data/experimental/ops:batching",
+        "//tensorflow/python/data/experimental/ops:optimization",
+        "//tensorflow/python/data/ops:dataset_ops",
+    ],
+)
+
+py_test(
+    name = "choose_fastest_dataset_serialization_test",
+    size = "small",
+    srcs = ["choose_fastest_dataset_serialization_test.py"],
+    srcs_version = "PY2AND3",
+    tags = [
+        "no_oss",
+        "no_pip",
+        "no_windows",
+    ],
+    deps = [
+        ":dataset_serialization_test_base",
+        "//tensorflow/python:client_testlib",
+        "//tensorflow/python/data/experimental/ops:optimization",
+        "//tensorflow/python/data/ops:dataset_ops",
+    ],
+)
+
+py_test(
     name = "concatenate_dataset_serialization_test",
     size = "small",
     srcs = ["concatenate_dataset_serialization_test.py"],
@@ -139,6 +178,29 @@ py_test(
         ":dataset_serialization_test_base",
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:sparse_tensor",
+        "//tensorflow/python/data/ops:dataset_ops",
+        "//third_party/py/numpy",
+    ],
+)
+
+py_test(
+    name = "auto_shard_dataset_serialization_test",
+    size = "medium",
+    srcs = ["auto_shard_dataset_serialization_test.py"],
+    srcs_version = "PY2AND3",
+    tags = [
+        "no_oss",
+        "no_pip",
+        "no_windows",
+    ],
+    deps = [
+        ":dataset_serialization_test_base",
+        "//tensorflow/python:array_ops",
+        "//tensorflow/python:client_testlib",
+        "//tensorflow/python:sparse_tensor",
+        "//tensorflow/python/data/experimental/ops:distribute",
+        "//tensorflow/python/data/experimental/ops:interleave_ops",
+        "//tensorflow/python/data/experimental/ops:readers",
         "//tensorflow/python/data/ops:dataset_ops",
         "//third_party/py/numpy",
     ],
@@ -311,7 +373,12 @@ py_test(
     size = "medium",
     srcs = ["numa_map_and_batch_dataset_serialization_test.py"],
     srcs_version = "PY2AND3",
-    tags = ["no_pip"],
+    tags = [
+        "no_oss",  # b/118497483
+        "no_pip",
+        "no_windows",
+        "notap",
+    ],
     deps = [
         ":dataset_serialization_test_base",
         "//tensorflow/python:client_testlib",
@@ -374,6 +441,24 @@ py_test(
         ":dataset_serialization_test_base",
         "//tensorflow/python:client_testlib",
         "//tensorflow/python/data/experimental/ops:optimization",
+        "//tensorflow/python/data/ops:dataset_ops",
+    ],
+)
+
+py_test(
+    name = "rebatch_dataset_serialization_test",
+    size = "small",
+    srcs = ["rebatch_dataset_serialization_test.py"],
+    srcs_version = "PY2AND3",
+    tags = [
+        "no_oss",
+        "no_pip",
+        "no_windows",
+    ],
+    deps = [
+        ":dataset_serialization_test_base",
+        "//tensorflow/python:client_testlib",
+        "//tensorflow/python/data/experimental/ops:batching",
         "//tensorflow/python/data/ops:dataset_ops",
     ],
 )
@@ -576,6 +661,24 @@ py_test(
 )
 
 py_test(
+    name = "shard_dataset_serialization_test",
+    size = "medium",
+    srcs = ["shard_dataset_serialization_test.py"],
+    srcs_version = "PY2AND3",
+    tags = [
+        "no_oss",
+        "no_pip",
+        "no_windows",
+    ],
+    deps = [
+        ":dataset_serialization_test_base",
+        "//tensorflow/python:client_testlib",
+        "//tensorflow/python/data/ops:dataset_ops",
+        "@absl_py//absl/testing:parameterized",
+    ],
+)
+
+py_test(
     name = "shuffle_and_repeat_dataset_serialization_test",
     size = "medium",
     srcs = ["shuffle_and_repeat_dataset_serialization_test.py"],
@@ -650,6 +753,25 @@ py_test(
         "//tensorflow/python:framework_ops",
         "//tensorflow/python/data/experimental/ops:stats_ops",
         "//tensorflow/python/data/ops:dataset_ops",
+    ],
+)
+
+py_test(
+    name = "take_while_dataset_serialization_test",
+    size = "small",
+    srcs = ["take_while_dataset_serialization_test.py"],
+    srcs_version = "PY2AND3",
+    tags = [
+        "no_oss",
+        "no_pip",
+        "no_windows",
+    ],
+    deps = [
+        ":dataset_serialization_test_base",
+        "//tensorflow/python:client_testlib",
+        "//tensorflow/python/data/experimental/ops:take_while_ops",
+        "//tensorflow/python/data/ops:dataset_ops",
+        "@absl_py//absl/testing:parameterized",
     ],
 )
 

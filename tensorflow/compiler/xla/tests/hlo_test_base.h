@@ -38,6 +38,33 @@ limitations under the License.
 
 namespace xla {
 
+// An HLO module derived class which verifies itself on destruction. This class
+// is intended to be used in unit tests. Any verification errors are raised via
+// ADD_FAILURE.
+class VerifiedHloModule : public HloModule {
+ public:
+  VerifiedHloModule(const string& name, const HloModuleConfig& config,
+                    bool verifier_layout_sensitive,
+                    bool allow_mixed_precision_in_hlo_verifier,
+                    std::function<int64(const Shape&)> shape_size_function)
+      : HloModule(name, config),
+        verifier_(
+            verifier_layout_sensitive, allow_mixed_precision_in_hlo_verifier,
+            /*instruction_can_change_layout_func=*/{}, shape_size_function) {}
+
+  ~VerifiedHloModule() override { VerifyOrAddFailure("in destructor"); }
+
+  // Verifies the module using HloVerifier and returns the status.
+  Status Verify();
+
+  // Verifies the module and flags any error with ADD_FAILURE. 'message' is
+  // included in the failure message.
+  void VerifyOrAddFailure(const string& message);
+
+ private:
+  HloVerifier verifier_;
+};
+
 // A base class for tests which build and/or run HLO code. The class includes
 // support for running an HLO module on two platforms and compare the results.
 // This is a lower level of abstraction than using the client interface and
@@ -130,6 +157,21 @@ class HloTestBase : public ::testing::Test {
   Literal ExecuteAndTransfer(std::unique_ptr<HloModule> module,
                              absl::Span<Literal* const> arguments);
 
+  // Executes the given module on multiple replicas.
+  //
+  // use_threads indicates whether this replicated computation will be executed
+  // with a thread-per-replica, vs using an implicitly async call such as
+  // Executable::ExecuteOnStreams.
+  StatusOr<std::vector<Literal>> ExecuteReplicated(
+      std::unique_ptr<HloModule> module, absl::Span<Literal* const> arguments,
+      int64 num_replicas, bool use_threads);
+
+  // Same as above, but uses specified device assignment.
+  StatusOr<std::vector<Literal>> ExecuteReplicated(
+      std::unique_ptr<HloModule> module, absl::Span<Literal* const> arguments,
+      int64 num_replicas, DeviceAssignment* device_assignment,
+      bool run_hlo_passes, bool use_threads);
+
   // Executes the given hlo module on two backends and compares results.
   //
   // 'arguments': the input of the hlo module.
@@ -178,8 +220,14 @@ class HloTestBase : public ::testing::Test {
       const absl::optional<ErrorSpec>& error,
       const std::function<void(HloModule*)>& reference_preprocessor = nullptr)
       TF_MUST_USE_RESULT;
-  ::testing::AssertionResult Run(const absl::string_view hlo_string)
-      TF_MUST_USE_RESULT;
+  ::testing::AssertionResult Run(const absl::string_view hlo_string,
+                                 bool run_hlo_passes = true,
+                                 ExecutionProfile* profile = nullptr,
+                                 string backend_config = "") TF_MUST_USE_RESULT;
+  ::testing::AssertionResult RunMultipleTimes(
+      const absl::string_view hlo_string, bool run_hlo_passes,
+      std::vector<ExecutionProfile>* profiles,
+      string backend_config = "") TF_MUST_USE_RESULT;
   ::testing::AssertionResult RunAndCompareFromFile(
       const string& filename, const absl::optional<ErrorSpec>& error,
       const std::function<void(HloModule*)>& reference_preprocessor = nullptr)
