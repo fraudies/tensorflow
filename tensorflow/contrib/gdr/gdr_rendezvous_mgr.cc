@@ -170,6 +170,17 @@ class GdrRemoteRendezvous : public BaseRemoteRendezvous {
     // Record "call" in active_ so that it can be aborted cleanly.
     RegisterCall(call);
 
+    // RendezvousMgr already aborted, shouldn't send RPC call any more
+    if (!call->status().ok()) {
+      // NOTE: `*session()` can potentially be deleted before we return from
+      // `call->done()(...)`, so we must release the worker before calling the
+      // callback.
+      session()->worker_cache->ReleaseWorker(src_worker, rwi);
+      done(call->status(), Args(), Args(), Tensor(), false);
+      delete call;
+      return;
+    }
+
     // Start "call".
     Ref();
     call->Start([this, call, src_worker, rwi, done]() {
@@ -178,8 +189,11 @@ class GdrRemoteRendezvous : public BaseRemoteRendezvous {
       // If StartAbort was called prior to DeregisterCall, then the
       // current status should be bad.
       Status s = call->status();
-      done(s, Args(), call->recv_args(), call->tensor(), call->is_dead());
+      // NOTE: `*session()` can potentially be deleted before we return from
+      // `call->done()(...)`, so we must release the worker before calling the
+      // callback.
       session()->worker_cache->ReleaseWorker(src_worker, rwi);
+      done(s, Args(), call->recv_args(), call->tensor(), call->is_dead());
       delete call;
       Unref();
     });

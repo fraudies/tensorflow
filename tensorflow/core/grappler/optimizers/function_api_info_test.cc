@@ -49,15 +49,17 @@ void PopulateFunction(const string& name, const string& api_interface_name,
   OpDef* sig = func_def->mutable_signature();
   sig->set_name(name);
 
-  SetArgs(input_args, sig);
+  SetArgs(input_args, output_args, sig);
 
-  if (!api_interface_name.empty() || !preferred_device.empty()) {
-    auto* func_attr = func_def->mutable_attr();
-    if (!api_interface_name.empty())
-      (*func_attr)["experimental_api_implements"].set_s(api_interface_name);
-    if (!preferred_device.empty())
-      (*func_attr)["experimental_api_preferred_device"].set_s(preferred_device);
-  }
+  auto* func_attr = func_def->mutable_attr();
+  if (!api_interface_name.empty())
+    (*func_attr)["api_implements"].set_s(api_interface_name);
+  if (!preferred_device.empty())
+    (*func_attr)["api_preferred_device"].set_s(preferred_device);
+  if (!forward_function_name.empty())
+    (*func_attr)["forward_function_name"].set_s(forward_function_name);
+  if (!backward_function_name.empty())
+    (*func_attr)["backward_function_name"].set_s(backward_function_name);
 }
 
 void PopulateSampleLibrary(const bool mismatch_args,

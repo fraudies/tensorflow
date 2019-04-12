@@ -38,8 +38,7 @@ class MirrorPadOp : public XlaOpKernel {
     // - [1, 2, 3, 3, 2] in symmetric mode.
     int64 excluded_edges = mode == MirrorPadMode::REFLECT ? 1 : 0;
     xla::XlaOp accum = t;
-    for (int64 dimno = xla::ShapeUtil::Rank(original_shape) - 1; dimno >= 0;
-         --dimno) {
+    for (int64 dimno = original_shape.rank() - 1; dimno >= 0; --dimno) {
       auto t_rev = xla::Rev(accum, {dimno});
       TF_ASSIGN_OR_RETURN(int64 lhs_padding,
                           pad_literal.GetIntegralAsS64({dimno, 0}));

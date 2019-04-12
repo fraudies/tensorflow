@@ -32,6 +32,7 @@ from tensorflow.python.summary.writer import writer
 from tensorflow.python.training import tensorboard_logging
 
 
+@test_util.run_deprecated_v1
 class EventLoggingTest(test.TestCase):
 
   def setUp(self):

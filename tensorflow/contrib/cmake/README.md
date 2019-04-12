@@ -104,6 +104,211 @@ We are actively working on improving CMake and Windows support, and addressing
 these limitations. We would appreciate pull requests that implement missing
 ops or APIs.
 
+# CMake GUI build (all platforms)
+
+Install from CMake GUI would be a convenient way to generate C++ build projects.
+The software supports Windows, MacOS and Linux, while the posix platform
+provides an extra ccmake binary to run command line GUI. Both working principal
+of cmake, ccmake and cmake-gui are the same, the only difference is by providing
+suitable interface for project configuration and dependency setting.
+
+1.  Pre-buid checklist: The following binary/libraries should be setted in
+    system path, otherwise you need to set manualy via cmake.
+    *   Compiler (GCC for Linux, MSVC for Windows)
+    *   Make sure compiler directory has been set to system path
+    *   CUDA 9.0 (GPU build)
+    *   CUDNN (GPU build)
+    *   NCCL (GPU build on Linux)
+    *   SWIG (python binding)
+    *   Perl (required if you need ssl support, optional)
+    *   Go (required if you need ssl support, optional)
+    *   NASM/YASM (required by grpc for ssl support, optional)
+2.  Start CMake GUI
+3.  Click on `Browse Source` and direct to the folder
+    `<tensorflow-source>/tensorflow/contrib/cmake`
+4.  Click on `Browse Build` and spectify a location that you want tensorflow to
+    be build
+5.  Click on `Configure`, a new window will be prompted out, specify the
+    generator mode for the project generation. For Windows, choose `Visual
+    Studio <version> <year> Win64`, for Linux, choose `Unix Makefiles`, then
+    press `Finish`. Wait for a moment, the default project dependency would
+    automatically generate.
+6.  There are a few options that you can customize your own build. **The setting
+    here is crucial for a successful build, please check all items carefully.**
+
+    *   `tensorflow_BUILD_ALL_KERNELS` should always be `on`
+    *   `tensorflow_BUILD_CC_EXAMPLE` is default to be `on`. This can help you
+        to test build (optional)
+    *   `tensorflow_BUILD_CONTRIB_KERNELS` is default to be `on`, but it won't
+        affect tensorflow function, turn it to `off` if you want a slim build.
+        (optional)
+    *   `tensorflow_BUILD_PYTHON_BINDING` is default to be `on`. Set to `off` if
+        you don't need python interaface. If SWIG is not in system path, you
+        need set it manually. (optional)
+    *   `tensorflow_BUILD_SHARED_LIB` is default to be `off`. Set to `on` if you
+        want the c++ interface. (optional)
+    *   `tensorflow_ENABLE_GPU` is default to be `off`. Set to `on` if you want
+        GPU support. It will search CUDA and CUDNN dependecies if you have set
+        them to system path, otherwise CMake would prompt error and request you
+        to set it manually. (optional)
+    *   `tensorflow_ENABLE_GRPC_SUPPORT` is default to be `on`. For Linux build,
+        this option must always be `on`. This need to be `on` for a gpu build.
+        Reminded that Perl, Go and NASM/YASM are required for this option if you
+        want to build grpc with offical SSL support.
+    *   `tensorflow_ENABLE_POSITION_INDEPENDENT_CODE` should always be `on`
+    *   `tensorflow_ENABLE_SNAPPY_SUPPORT` should always be `on`
+    *   `tensorflow_OPTIMIZE_FOR_NATIVE_ARCH` should always be `on`
+    *   `CMAKE_INSTALL_PREFIX` is the location where the final package will be
+        installed. You may change it to your own preferred path (optional)
+
+7.  After changing the configuration in step 5, press `Configure` again
+
+8.  If not error is found, press `Generate`
+
+#### Windows
+
+1.  Open `tensorflow.sln` in the build folder (Windows). Change build type from
+    `Debug` to `Release`. Choose `Build`->`Build Solution`. This may take more
+    than hours of compilation. If everything is alright, the output window would
+    show no error.
+
+    ##### Python
+
+    In solution explorer, right click on `tf_python_build_pip_package` ->
+    `build`. It will generate the wheel file in
+    `<tensorflow-build>/tf_python/dist`. Install with following command:
+
+    `pip install --upgrade tensorflow-<config>.whl`
+
+    ***The wheel name varies depends on you config. Change to your own wheel
+    filename.***
+
+    Reminded that some pip installation requires administrator right command
+    prompt.
+
+    ##### C++
+
+    You can directly use the build folder tree for C++ interface with cmake. If
+    you want to do installation for api releasing, right click on `Install` ->
+    `build`. The headers and library will be installed in the directory specify
+    by `CMAKE_INSTALL_PREFIX` during configuration.
+
+1.  For smaller RAM computer, it is noticed that out of heap space error
+    appears. Change to command prompt build is an alternative to do step 1.
+
+    Open `VS2015 x64 Native Tools Command Prompt`. You can open it by press
+    `Start`, then type the binary name. Use `VS2017 x64 Native Tools Command
+    Prompt` if you are using MSVC 2017.
+
+    ##### Python
+
+    Directly build python wheel package by following command:
+
+    `MSBuild /p:Configuration=Release
+    <path-to-tf_python_build_pip_package.vcxproj>`
+
+    Remember to change `<path-to-tf_python_build_pip_package.vcxproj>` to the
+    actual path of the file, it can be found at the root of build directory
+
+    Install the wheel file generated as instructed by step 1.
+
+    ##### C++ interface
+
+    Build from VS native toolchain with following command: `MSBuild
+    /p:Configuration=Release <path-to-ALL_BUILD.vcxproj>`
+
+    Headers are discretely located in the build folders. Tensorflow library can
+    be found at `<path-to-build>/Release`, namely `tensorflow.dll` and
+    `tensorflow.lib`.
+
+    *   Build to install for api release (optional): `MSBuild
+        /p:Configuration=Release <path-to-INSTALL.vcxproj>`
+
+    Remember to change `<path-to-ALL_BUILD.vcxproj>` and
+    `<path-to-INSTALL.vcxproj>` to the actual path of the file, it can be found
+    at the root of build directory.
+
+#### Linux/MacOS (command line GNU build)
+
+1.  Open the terminal, change working directory to the one specified in step 3.
+
+2.  Type the following command:
+
+    `make -sj<number-of-threads> all`
+
+    ##### Python
+
+    **Important Note** CMake generated python wheel for Linux/MacOs is currently
+    under development. Please use bazel build.
+
+    Follow code is an expected Linux/MacOS python package build after
+    development work is completed.
+
+    ```
+    make -sj<number-of-threads> tf_python_build_pip_package
+    cd tf_python
+    pip install --upgrade tensorflow-<config>.whl
+    ```
+
+    ##### C++ interface
+
+    `make -sj<number-of-threads> install`
+
+    Where `<number-of-threads>` is the threads used for the compilation, change
+    to any integer less or equal to your computer's maximum thread number.
+
+    Headers are discretely located in the build folders. Tensorflow library can
+    be found at `<path-to-build>`, namely `tensorflow.so` (Linux) or
+    `tensorflow.dylib` (MacOS).
+
+#### Start a Tensorflow C++ project with CMake
+
+Here we assume that you have basic knowledge on gathering dependency with
+`CMakeLists.txt`. Here we introduce how the C++ api works with
+[official hello world tutorial](https://www.tensorflow.org/api_guides/cc/guide).
+
+1.  Create a new working directory and create a new text file named
+    `CMakeLists.txt` and the c++ file `main.cxx`
+2.  Fill in the `main.cxx` with the code provided in
+    [official c++ api basic](https://www.tensorflow.org/api_guides/cc/guide).
+3.  Fill in the `CMakeLists.txt` with following code:
+
+    ```cmake
+    cmake_minimum_required (VERSION 2.6) project (tf_hello)
+
+    # Tensorflow
+    find_package(Tensorflow REQUIRED)
+    include_directories(${TENSORFLOW_INCLUDE_DIRS})
+
+    # compiler setting required by tensorflow, to be tested on all compilers
+
+    # currently only tested on MSVC and GCC
+
+    if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC) add_definitions(-DCOMPILER_MSVC)
+    elseif (${CMAKE_CXX_COMPILER_ID} STREQUAL GNU) if
+    (${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS "3")
+    add_definitions(-DCOMPILER_GCC3) else() add_definitions(-D__GNUC__) endif()
+    else() message(ERROR " compiler ${CMAKE_CXX_COMPILER_ID} not supported by
+    this CMakeList.txt, under development") endif()
+
+    add_executable(tf_hello main.cxx) target_link_libraries(tf_hello
+    ${TENSORFLOW_LIBRARIES})
+    ```
+
+4.  Configure the folder with cmake-gui, an error should be prompted out,
+    requesting you to locate the folder containing `TensorflowConfig.cmake`.
+    This file can be found at `<tensorflow-build>` or `<tensorflow-intall>` (for
+    those have build install in previous steps).
+
+5.  Configure again, generate the project.
+
+6.  Compile the project with `Release` config (Windows). For Linux users, just
+    compile the project.
+
+7.  Copy the `tensorflow.dll`(Windows)/`tensorflow.so`(Linux) from build
+    directory to the build folder containing `tf_hello` binary.
+
+8.  Run `tf_hello` binary
 
 Step-by-step Windows build
 ==========================

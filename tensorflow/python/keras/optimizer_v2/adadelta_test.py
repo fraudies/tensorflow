@@ -74,41 +74,21 @@ class AdadeltaOptimizerTest(test.TestCase):
             # Assign slots
             slot = [None] * 2
             slot_update = [None] * 2
-            self.assertEqual(["accum", "accum_update"],
-                             adadelta_opt.get_slot_names())
-            slot[0] = adadelta_opt.get_slot(var0, "accum")
-            self.assertEquals(slot[0].get_shape(), var0.get_shape())
-            self.assertFalse(slot[0] in variables.trainable_variables())
+            slot[0] = adadelta_opt.get_slot(var0, "accum_grad")
+            self.assertEqual(slot[0].shape, var0.shape)
 
-            slot_update[0] = adadelta_opt.get_slot(var0, "accum_update")
-            self.assertEquals(slot_update[0].get_shape(), var0.get_shape())
-            self.assertFalse(slot_update[0] in variables.trainable_variables())
+            slot_update[0] = adadelta_opt.get_slot(var0, "accum_var")
+            self.assertEqual(slot_update[0].shape, var0.shape)
 
-            slot[1] = adadelta_opt.get_slot(var1, "accum")
-            self.assertEquals(slot[1].get_shape(), var1.get_shape())
-            self.assertFalse(slot[1] in variables.trainable_variables())
+            slot[1] = adadelta_opt.get_slot(var1, "accum_grad")
+            self.assertEqual(slot[1].shape, var1.shape)
 
-            slot_update[1] = adadelta_opt.get_slot(var1, "accum_update")
-            self.assertEquals(slot_update[1].get_shape(), var1.get_shape())
-            self.assertFalse(slot_update[1] in variables.trainable_variables())
+            slot_update[1] = adadelta_opt.get_slot(var1, "accum_var")
+            self.assertEqual(slot_update[1].shape, var1.shape)
 
-            # Fetch params to validate initial values
-            self.assertAllClose(var0_init, var0.eval())
-            self.assertAllClose(var1_init, var1.eval())
-
-            update = [None] * num_updates
-            tot_update = 0
-            for step in range(num_updates):
-              # Run adadelta update for comparison
-              adadelta_update.run()
-
-              # Perform initial update without previous accum values
-              accum = accum * rho + (grad**2) * (1 - rho)
-              update[step] = (np.sqrt(accum_update + epsilon) *
-                              (1. / np.sqrt(accum + epsilon)) * grad)
-              accum_update = (accum_update * rho + (update[step]**2) *
-                              (1.0 - rho))
-              tot_update += update[step] * lr
+          # Fetch params to validate initial values
+          self.assertAllClose(var0_init, self.evaluate(var0))
+          self.assertAllClose(var1_init, self.evaluate(var1))
 
               # Check that the accumulators have been updated
               for slot_idx in range(2):
@@ -159,24 +139,29 @@ class AdadeltaOptimizerTest(test.TestCase):
         # Run 1 step of sgd
         sgd_op.run()
         # Validate updated params
-        self.assertAllCloseAccordingToType(
-            [[-111, -138]], var0.eval())
+        self.assertAllCloseAccordingToType([[-111, -138]], self.evaluate(var0))
 
-  def testConfig(self):
+  def testConstructAdadeltaWithLR(self):
+    opt = adadelta.Adadelta(lr=1.0, rho=0.9, epsilon=1.)
+    opt_2 = adadelta.Adadelta(learning_rate=0.1, rho=0.9, epsilon=1., lr=1.0)
+    opt_3 = adadelta.Adadelta(learning_rate=0.1, rho=0.9, epsilon=1.)
+    self.assertIsInstance(opt.lr, variables.Variable)
+    self.assertIsInstance(opt_2.lr, variables.Variable)
+    self.assertIsInstance(opt_3.lr, variables.Variable)
 
-    def rho():
-      return ops.convert_to_tensor(1.0)
+    self.evaluate(variables.global_variables_initializer())
+    self.assertAllClose(self.evaluate(opt.lr), (1.0))
+    self.assertAllClose(self.evaluate(opt_2.lr), (1.0))
+    self.assertAllClose(self.evaluate(opt_3.lr), (0.1))
 
-    epsilon = ops.convert_to_tensor(1.0)
-
-    opt = adadelta.Adadelta(learning_rate=1.0, rho=rho, epsilon=epsilon)
+  def testConstructAdadeltaWithEpsilonValues(self):
+    opt = adadelta.Adadelta(epsilon=None)
     config = opt.get_config()
-    opt2 = adadelta.Adadelta.from_config(config)
-    self.assertEqual(opt._hyper["learning_rate"][1],
-                     opt2._hyper["learning_rate"][1])
-    self.assertEqual(opt._hyper["rho"][1].__name__,
-                     opt2._hyper["rho"][1].__name__)
-    self.assertEqual(opt._hyper["epsilon"][1], opt2._hyper["epsilon"][1])
+    self.assertEqual(config["epsilon"], 1e-7)
+
+    opt = adadelta.Adadelta(epsilon=1e-8)
+    config = opt.get_config()
+    self.assertEqual(config["epsilon"], 1e-8)
 
 
 if __name__ == "__main__":

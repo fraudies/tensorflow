@@ -21,9 +21,10 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "tensorflow/core/framework/stats_aggregator.h"
+#include "tensorflow/core/kernels/data/stats_utils.h"
 #include "tensorflow/core/lib/gtl/cleanup.h"
 #include "tensorflow/core/platform/cpu_info.h"
-#include "tensorflow/core/util/ptr_util.h"
 
 namespace tensorflow {
 namespace data {
@@ -43,7 +44,11 @@ class ParallelMapIteratorBase : public DatasetBaseIterator {
         mu_(std::make_shared<mutex>()),
         cond_var_(std::make_shared<condition_variable>()),
         num_parallel_calls_(std::make_shared<model::SharedState>(
-            num_parallel_calls, mu_, cond_var_)) {}
+            params.num_parallel_calls, mu_, cond_var_)),
+        sloppy_(params.sloppy),
+        preserve_cardinality_(params.preserve_cardinality) {
+    key_prefix_ = base_params.dataset->node_name();
+  }
 
   ~ParallelMapIteratorBase() override {
     mutex_lock l(*mu_);
@@ -141,8 +146,9 @@ class ParallelMapIteratorBase : public DatasetBaseIterator {
     mutex_lock l(*mu_);
     TF_RETURN_IF_ERROR(RestoreInput(ctx, reader, input_impl_));
     int64 invocation_results_size;
-    TF_RETURN_IF_ERROR(reader->ReadScalar(
-        full_name("invocation_results.size"), &invocation_results_size));
+    TF_RETURN_IF_ERROR(reader->ReadScalar(full_name("invocation_results.size"),
+                                          &invocation_results_size));
+    if (!invocation_results_.empty()) invocation_results_.clear();
     for (size_t i = 0; i < invocation_results_size; i++) {
       invocation_results_.push_back(std::make_shared<InvocationResult>());
       auto& result = *invocation_results_.back();
@@ -180,9 +186,9 @@ class ParallelMapIteratorBase : public DatasetBaseIterator {
       EXCLUSIVE_LOCKS_REQUIRED(*mu_) {
     if (!runner_thread_) {
       auto ctx_copy = std::make_shared<IteratorContext>(*ctx);
-      runner_thread_.reset(ctx->env()->StartThread(
-          {}, "runner_thread",
-          std::bind(&ParallelMapIteratorBase::RunnerThread, this, ctx_copy)));
+      runner_thread_ = ctx->StartThread(
+          "tf_data_parallel_map",
+          std::bind(&ParallelMapIterator::RunnerThread, this, ctx_copy));
     }
   }
 
@@ -190,6 +196,15 @@ class ParallelMapIteratorBase : public DatasetBaseIterator {
       LOCKS_EXCLUDED(*mu_) {
     mutex_lock l(*mu_);
     num_calls_--;
+    const auto& stats_aggregator = ctx->stats_aggregator();
+    if (stats_aggregator) {
+      stats_aggregator->AddScalar(
+          stats_utils::ThreadUtilizationScalarName(key_prefix_),
+          static_cast<float>(num_calls_) /
+              static_cast<float>(num_parallel_calls_->value),
+          num_elements());
+    }
+    RecordBufferEnqueue(ctx.get(), result->return_values);
     result->notification.Notify();
     cond_var_->notify_all();
   }
@@ -261,6 +276,14 @@ class ParallelMapIteratorBase : public DatasetBaseIterator {
           new_calls.push_back(invocation_results_.back());
           num_calls_++;
         }
+        const auto& stats_aggregator = ctx->stats_aggregator();
+        if (stats_aggregator) {
+          stats_aggregator->AddScalar(
+              stats_utils::ThreadUtilizationScalarName(key_prefix_),
+              static_cast<float>(num_calls_) /
+                  static_cast<float>(num_parallel_calls_->value),
+              num_elements());
+        }
         cond_var_->notify_all();
       }
       for (const auto& call : new_calls) {
@@ -330,56 +353,7 @@ class ParallelMapIteratorBase : public DatasetBaseIterator {
       GUARDED_BY(*mu_);
   std::unique_ptr<Thread> runner_thread_ GUARDED_BY(*mu_);
   bool cancelled_ GUARDED_BY(*mu_) = false;
-};
-
-class DeterministicParallelMapIterator : public ParallelMapIteratorBase {
- public:
-  DeterministicParallelMapIterator(
-      const typename DatasetBaseIterator::BaseParams& params,
-      const DatasetBase* input_dataset,
-      std::function<Status(IteratorContext*)> init_func,
-      ParallelMapIteratorFunction map_func, int32 num_parallel_calls)
-      : ParallelMapIteratorBase(params, input_dataset, init_func, map_func,
-                                num_parallel_calls) {}
-
- protected:
-  bool ShouldWait(std::shared_ptr<InvocationResult>* result) override
-      EXCLUSIVE_LOCKS_REQUIRED(*mu_) {
-    if (!invocation_results_.empty()) {
-      std::swap(*result, invocation_results_.front());
-      invocation_results_.pop_front();
-      cond_var_->notify_all();
-      return false;
-    }
-    return true;
-  }
-};
-
-class SloppyParallelMapIterator : public ParallelMapIteratorBase {
- public:
-  SloppyParallelMapIterator(
-      const typename DatasetBaseIterator::BaseParams& params,
-      const DatasetBase* input_dataset,
-      std::function<Status(IteratorContext*)> init_func,
-      ParallelMapIteratorFunction map_func, int32 num_parallel_calls)
-      : ParallelMapIteratorBase(params, input_dataset, init_func, map_func,
-                                num_parallel_calls) {}
-
- protected:
-  bool ShouldWait(std::shared_ptr<InvocationResult>* result) override
-      EXCLUSIVE_LOCKS_REQUIRED(*mu_) {
-    for (auto it = invocation_results_.begin(); it != invocation_results_.end();
-         ++it) {
-      if ((*it)->notification.HasBeenNotified() &&
-          (it == invocation_results_.begin() || !(*it)->end_of_input)) {
-        std::swap(*result, *it);
-        invocation_results_.erase(it);
-        cond_var_->notify_all();
-        return false;
-      }
-    }
-    return true;
-  }
+  string key_prefix_;
 };
 
 }  // namespace
@@ -387,17 +361,13 @@ class SloppyParallelMapIterator : public ParallelMapIteratorBase {
 std::unique_ptr<IteratorBase> NewParallelMapIterator(
     const DatasetBaseIterator::BaseParams& params,
     const DatasetBase* input_dataset,
-    std::function<Status(IteratorContext*)> init_func,
-    ParallelMapIteratorFunction map_func, int32 num_parallel_calls,
-    bool sloppy) {
-  if (sloppy) {
-    return MakeUnique<SloppyParallelMapIterator>(
-        params, input_dataset, std::move(init_func), std::move(map_func),
-        num_parallel_calls);
-  }
-  return MakeUnique<DeterministicParallelMapIterator>(
-      params, input_dataset, std::move(init_func), std::move(map_func),
-      num_parallel_calls);
+    std::unique_ptr<ParallelMapFunctor> parallel_map_functor,
+    int32 num_parallel_calls, bool sloppy, bool preserve_cardinality) {
+  return absl::make_unique<ParallelMapIterator>(
+      params, input_dataset,
+      ParallelMapIterator::Params{std::move(parallel_map_functor),
+                                  num_parallel_calls, sloppy,
+                                  preserve_cardinality});
 }
 
 }  // namespace data

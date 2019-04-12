@@ -12,9 +12,59 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Basic arithmetic operators.
+"""Math Operations.
 
-See the [python/math_ops](python/math_ops) guide.
+Note: Functions taking `Tensor` arguments can also take anything accepted by
+`tf.convert_to_tensor`.
+
+Note: Elementwise binary operations in TensorFlow follow [numpy-style
+broadcasting](http://docs.scipy.org/doc/numpy/user/basics.broadcasting.html).
+
+TensorFlow provides a variety of math functions including:
+
+* Basic arithmetic operators and trigonometric functions.
+* Special math functions (like: `tf.math.igamma` and `tf.math.zeta`)
+* Complex number functions (like: `tf.math.imag` and `tf.math.angle`)
+* Reductions and scans (like: `tf.math.reduce_mean` and `tf.math.cumsum`)
+* Segment functions (like: `tf.math.segment_sum`)
+
+See: `tf.linalg` for matrix and tensor functions.
+
+<a id=Segmentation></a>
+
+## About Segmentation
+
+TensorFlow provides several operations that you can use to perform common
+math computations on tensor segments.
+Here a segmentation is a partitioning of a tensor along
+the first dimension, i.e. it  defines a mapping from the first dimension onto
+`segment_ids`. The `segment_ids` tensor should be the size of
+the first dimension, `d0`, with consecutive IDs in the range `0` to `k`,
+where `k<d0`.
+In particular, a segmentation of a matrix tensor is a mapping of rows to
+segments.
+
+For example:
+
+```python
+c = tf.constant([[1,2,3,4], [-1,-2,-3,-4], [5,6,7,8]])
+tf.segment_sum(c, tf.constant([0, 0, 1]))
+#  ==>  [[0 0 0 0]
+#        [5 6 7 8]]
+```
+
+The standard `segment_*` functions assert that the segment indices are sorted.
+If you have unsorted indices use the equivalent `unsorted_segment_` function.
+Thses functions take an additional argument `num_segments` so that the output
+tensor can be efficiently allocated.
+
+``` python
+c = tf.constant([[1,2,3,4], [-1,-2,-3,-4], [5,6,7,8]])
+tf.unsorted_segment_sum(c, tf.constant([0, 1, 0]), num_segments=2)
+# ==> [[ 6,  8, 10, 12],
+#       [-1, -2, -3, -4]]
+```
+
 """
 from __future__ import absolute_import
 from __future__ import division
@@ -23,6 +73,7 @@ from __future__ import print_function
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 
+from tensorflow.python.compat import compat as fwd_compat
 from tensorflow.python.eager import context
 from tensorflow.python.framework import common_shapes
 from tensorflow.python.framework import constant_op
@@ -49,6 +100,7 @@ from tensorflow.python.util.tf_export import tf_export
 
 # Aliases for some automatically-generated names.
 linspace = gen_math_ops.lin_space
+nextafter = gen_math_ops.next_after
 
 arg_max = deprecation.deprecated(None, "Use `argmax` instead")(arg_max)  # pylint: disable=used-before-assignment
 arg_min = deprecation.deprecated(None, "Use `argmin` instead")(arg_min)  # pylint: disable=used-before-assignment
@@ -83,6 +135,43 @@ def argmax(input,
            output_type=dtypes.int64):
   axis = deprecation.deprecated_argument_lookup(
       "axis", axis, "dimension", dimension)
+  return argmax_v2(input, axis, output_type, name)
+
+
+@tf_export("math.argmax", "argmax", v1=[])
+def argmax_v2(input,
+              axis=None,
+              output_type=dtypes.int64,
+              name=None):
+  """Returns the index with the largest value across axes of a tensor.
+
+  Note that in case of ties the identity of the return value is not guaranteed.
+
+  Args:
+    input: A `Tensor`. Must be one of the following types: `float32`, `float64`,
+    `int32`, `uint8`, `int16`, `int8`, `complex64`, `int64`, `qint8`, `quint8`,
+    `qint32`, `bfloat16`, `uint16`, `complex128`, `half`, `uint32`, `uint64`.
+    axis: A `Tensor`. Must be one of the following types: `int32`, `int64`.
+      int32 or int64, must be in the range `-rank(input), rank(input))`.
+      Describes which axis of the input Tensor to reduce across. For vectors,
+      use axis = 0.
+    output_type: An optional `tf.DType` from: `tf.int32, tf.int64`.
+      Defaults to `tf.int64`.
+    name: A name for the operation (optional).
+
+  Returns:
+    A `Tensor` of type `output_type`.
+
+  Usage:
+  ```python
+  import tensorflow as tf
+  a = [1, 10, 26.9, 2.8, 166.32, 62.3]
+  b = tf.math.argmax(input = a)
+  c = tf.keras.backend.eval(b)
+  # c = 4
+  # here a[4] = 166.32 which is the largest element of a across axis 0
+  ```
+  """
   if axis is None:
     axis = 0
   return gen_math_ops.arg_max(input, axis, name=name, output_type=output_type)
@@ -101,6 +190,43 @@ def argmin(input,
            output_type=dtypes.int64):
   axis = deprecation.deprecated_argument_lookup(
       "axis", axis, "dimension", dimension)
+  return argmin_v2(input, axis, output_type, name)
+
+
+@tf_export("math.argmin", "argmin", v1=[])
+def argmin_v2(input,
+              axis=None,
+              output_type=dtypes.int64,
+              name=None):
+  """Returns the index with the smallest value across axes of a tensor.
+
+  Note that in case of ties the identity of the return value is not guaranteed.
+
+  Args:
+    input: A `Tensor`. Must be one of the following types: `float32`, `float64`,
+    `int32`, `uint8`, `int16`, `int8`, `complex64`, `int64`, `qint8`, `quint8`,
+    `qint32`, `bfloat16`, `uint16`, `complex128`, `half`, `uint32`, `uint64`.
+    axis: A `Tensor`. Must be one of the following types: `int32`, `int64`.
+      int32 or int64, must be in the range `-rank(input), rank(input))`.
+      Describes which axis of the input Tensor to reduce across. For vectors,
+      use axis = 0.
+    output_type: An optional `tf.DType` from: `tf.int32, tf.int64`.
+      Defaults to `tf.int64`.
+    name: A name for the operation (optional).
+
+  Returns:
+    A `Tensor` of type `output_type`.
+
+  Usage:
+  ```python
+  import tensorflow as tf
+  a = [1, 10, 26.9, 2.8, 166.32, 62.3]
+  b = tf.math.argmin(input = a)
+  c = tf.keras.backend.eval(b)
+  # c = 0
+  # here a[0] = 1 which is the smallest element of a across axis 0
+  ```
+  """
   if axis is None:
     axis = 0
   return gen_math_ops.arg_min(input, axis, name=name, output_type=output_type)
@@ -713,8 +839,8 @@ def saturate_cast(value, dtype, name=None):
                                        name="max"))
     return cast(value, dtype, name=name)
 
-
-@tf_export("to_float")
+@deprecation.deprecated(date=None, instructions="Use `tf.cast` instead.")
+@tf_export(v1=["to_float"])
 def to_float(x, name="ToFloat"):
   """Casts a tensor to type `float32`.
 
@@ -732,7 +858,8 @@ def to_float(x, name="ToFloat"):
   return cast(x, dtypes.float32, name=name)
 
 
-@tf_export("to_double")
+@deprecation.deprecated(date=None, instructions="Use `tf.cast` instead.")
+@tf_export(v1=["to_double"])
 def to_double(x, name="ToDouble"):
   """Casts a tensor to type `float64`.
 
@@ -750,7 +877,8 @@ def to_double(x, name="ToDouble"):
   return cast(x, dtypes.float64, name=name)
 
 
-@tf_export("to_int32")
+@deprecation.deprecated(date=None, instructions="Use `tf.cast` instead.")
+@tf_export(v1=["to_int32"])
 def to_int32(x, name="ToInt32"):
   """Casts a tensor to type `int32`.
 
@@ -768,7 +896,8 @@ def to_int32(x, name="ToInt32"):
   return cast(x, dtypes.int32, name=name)
 
 
-@tf_export("to_int64")
+@deprecation.deprecated(date=None, instructions="Use `tf.cast` instead.")
+@tf_export(v1=["to_int64"])
 def to_int64(x, name="ToInt64"):
   """Casts a tensor to type `int64`.
 
@@ -786,7 +915,8 @@ def to_int64(x, name="ToInt64"):
   return cast(x, dtypes.int64, name=name)
 
 
-@tf_export("to_bfloat16")
+@deprecation.deprecated(date=None, instructions="Use `tf.cast` instead.")
+@tf_export(v1=["to_bfloat16"])
 def to_bfloat16(x, name="ToBFloat16"):
   """Casts a tensor to type `bfloat16`.
 
@@ -804,7 +934,8 @@ def to_bfloat16(x, name="ToBFloat16"):
   return cast(x, dtypes.bfloat16, name=name)
 
 
-@tf_export("to_complex64")
+@deprecation.deprecated(date=None, instructions="Use `tf.cast` instead.")
+@tf_export(v1=["to_complex64"])
 def to_complex64(x, name="ToComplex64"):
   """Casts a tensor to type `complex64`.
 
@@ -822,7 +953,8 @@ def to_complex64(x, name="ToComplex64"):
   return cast(x, dtypes.complex64, name=name)
 
 
-@tf_export("to_complex128")
+@deprecation.deprecated(date=None, instructions="Use `tf.cast` instead.")
+@tf_export(v1=["to_complex128"])
 def to_complex128(x, name="ToComplex128"):
   """Casts a tensor to type `complex128`.
 
@@ -866,7 +998,8 @@ def _OverrideBinaryOperatorHelper(func, op_name, clazz_object=ops.Tensor):
         return func(x, y, name=name)
       elif not isinstance(y, sparse_tensor.SparseTensor):
         try:
-          y = ops.convert_to_tensor(y, dtype=x.dtype.base_dtype, name="y")
+          y = ops.convert_to_tensor_v2(y, dtype_hint=x.dtype.base_dtype,
+                                       name="y")
         except TypeError:
           # If the RHS is not a tensor, it might be a tensor aware object
           # that can implement the operator with knowledge of itself
@@ -1053,7 +1186,9 @@ def div(x, y, name=None):
   return _div_python2(x, y, name)
 
 
-@tf_export("div_no_nan")
+@tf_export("math.divide_no_nan", v1=["math.divide_no_nan", "div_no_nan"])
+@deprecation.deprecated_endpoints("div_no_nan")
+@dispatch.add_dispatch_support
 def div_no_nan(x, y, name=None):
   """Computes an unsafe divide which returns 0 if the y is zero.
 
@@ -1074,6 +1209,31 @@ def div_no_nan(x, y, name=None):
       raise TypeError("x and y must have the same dtype, got %r != %r" %
                       (x_dtype, y_dtype))
     return gen_math_ops.div_no_nan(x, y, name=name)
+
+
+@tf_export("math.multiply_no_nan")
+@dispatch.add_dispatch_support
+def multiply_no_nan(x, y, name=None):
+  """Computes the product of x and y and returns 0 if the y is zero, even if x is NaN or infinite.
+
+  Args:
+    x: A `Tensor`. Must be one of the following types: `float32`, `float64`.
+    y: A `Tensor` whose dtype is compatible with `x`.
+    name: A name for the operation (optional).
+
+  Returns:
+    The element-wise value of the x times y.
+  """
+
+  with ops.name_scope(name, "multiply_no_nan", [x, y]) as name:
+    x = ops.convert_to_tensor(x, name="x")
+    y = ops.convert_to_tensor(y, name="y", dtype=x.dtype.base_dtype)
+    x_dtype = x.dtype.base_dtype
+    y_dtype = y.dtype.base_dtype
+    if x_dtype != y_dtype:
+      raise TypeError(
+          "x and y must have the same dtype, got %r != %r" % (x_dtype, y_dtype))
+    return gen_math_ops.mul_no_nan(x, y, name=name)
 
 
 # TODO(aselle): This should be removed
@@ -1345,16 +1505,60 @@ def reduce_sum(input_tensor,
                                    name=name))
 
 
-@tf_export("math.count_nonzero", "count_nonzero")
+@tf_export("math.reduce_euclidean_norm")
+def reduce_euclidean_norm(input_tensor, axis=None, keepdims=False, name=None):
+  """Computes the Euclidean norm of elements across dimensions of a tensor.
+
+  Reduces `input_tensor` along the dimensions given in `axis`.
+  Unless `keepdims` is true, the rank of the tensor is reduced by 1 for each
+  entry in `axis`. If `keepdims` is true, the reduced dimensions
+  are retained with length 1.
+
+  If `axis` is None, all dimensions are reduced, and a
+  tensor with a single element is returned.
+
+  For example:
+
+  ```python
+  x = tf.constant([[1, 2, 3], [1, 1, 1]])
+  tf.reduce_euclidean_norm(x)  # sqrt(17)
+  tf.reduce_euclidean_norm(x, 0)  # [sqrt(2), sqrt(5), sqrt(10)]
+  tf.reduce_euclidean_norm(x, 1)  # [sqrt(14), sqrt(3)]
+  tf.reduce_euclidean_norm(x, 1, keepdims=True)  # [[sqrt(14)], [sqrt(3)]]
+  tf.reduce_euclidean_norm(x, [0, 1])  # sqrt(17)
+  ```
+
+  Args:
+    input_tensor: The tensor to reduce. Should have numeric type.
+    axis: The dimensions to reduce. If `None` (the default), reduces all
+      dimensions. Must be in the range `[-rank(input_tensor),
+      rank(input_tensor))`.
+    keepdims: If true, retains reduced dimensions with length 1.
+    name: A name for the operation (optional).
+
+  Returns:
+    The reduced tensor, of the same dtype as the input_tensor.
+  """
+  return _may_reduce_to_scalar(
+      keepdims, axis,
+      gen_math_ops.euclidean_norm(
+          input_tensor, _ReductionDims(input_tensor, axis), keepdims,
+          name=name))
+
+
+@tf_export(v1=["math.count_nonzero", "count_nonzero"])
 @deprecation.deprecated_args(
     None, "keep_dims is deprecated, use keepdims instead", "keep_dims")
-def count_nonzero(input_tensor,
+@deprecation.deprecated_args(
+    None, "reduction_indices is deprecated, use axis instead", "axis")
+def count_nonzero(input_tensor=None,
                   axis=None,
                   keepdims=None,
                   dtype=dtypes.int64,
                   name=None,
                   reduction_indices=None,
-                  keep_dims=None):
+                  keep_dims=None,
+                  input=None):  # pylint: disable=redefined-builtin
   """Computes number of nonzero elements across dimensions of a tensor.
 
   Reduces `input_tensor` along the dimensions given in `axis`.
@@ -1400,12 +1604,76 @@ def count_nonzero(input_tensor,
     name: A name for the operation (optional).
     reduction_indices: The old (deprecated) name for axis.
     keep_dims: Deprecated alias for `keepdims`.
+    input: Overrides input_tensor. For compatibility.
 
   Returns:
     The reduced tensor (number of nonzero values).
   """
   keepdims = deprecation.deprecated_argument_lookup("keepdims", keepdims,
                                                     "keep_dims", keep_dims)
+  input_tensor = deprecation.deprecated_argument_lookup(
+      "input", input, "input_tensor", input_tensor)
+  axis = deprecation.deprecated_argument_lookup(
+      "axis", axis,
+      "reduction_indices", reduction_indices
+      )
+
+  return count_nonzero_v2(input_tensor, axis, keepdims, dtype, name)
+
+
+@tf_export("math.count_nonzero", v1=[])
+def count_nonzero_v2(input,  # pylint: disable=redefined-builtin
+                     axis=None,
+                     keepdims=None,
+                     dtype=dtypes.int64,
+                     name=None):
+  """Computes number of nonzero elements across dimensions of a tensor.
+
+  Reduces `input` along the dimensions given in `axis`.
+  Unless `keepdims` is true, the rank of the tensor is reduced by 1 for each
+  entry in `axis`. If `keepdims` is true, the reduced dimensions
+  are retained with length 1.
+
+  If `axis` has no entries, all dimensions are reduced, and a
+  tensor with a single element is returned.
+
+  **NOTE** Floating point comparison to zero is done by exact floating point
+  equality check.  Small values are **not** rounded to zero for purposes of
+  the nonzero check.
+
+  For example:
+
+  ```python
+  x = tf.constant([[0, 1, 0], [1, 1, 0]])
+  tf.count_nonzero(x)  # 3
+  tf.count_nonzero(x, 0)  # [1, 2, 0]
+  tf.count_nonzero(x, 1)  # [1, 2]
+  tf.count_nonzero(x, 1, keepdims=True)  # [[1], [2]]
+  tf.count_nonzero(x, [0, 1])  # 3
+  ```
+
+  **NOTE** Strings are compared against zero-length empty string `""`. Any
+  string with a size greater than zero is already considered as nonzero.
+
+  For example:
+  ```python
+  x = tf.constant(["", "a", "  ", "b", ""])
+  tf.count_nonzero(x) # 3, with "a", "  ", and "b" as nonzero strings.
+  ```
+
+  Args:
+    input: The tensor to reduce. Should be of numeric type, `bool`,
+      or `string`.
+    axis: The dimensions to reduce. If `None` (the default),
+      reduces all dimensions. Must be in the range
+      `[-rank(input), rank(input))`.
+    keepdims: If true, retains reduced dimensions with length 1.
+    dtype: The output dtype; defaults to `tf.int64`.
+    name: A name for the operation (optional).
+
+  Returns:
+    The reduced tensor (number of nonzero values).
+  """
   if keepdims is None:
     keepdims = False
 
@@ -2004,9 +2272,20 @@ def matmul(a,
     # TODO(apassos) remove _shape_tuple here when it is not needed.
     a_shape = a._shape_tuple()  # pylint: disable=protected-access
     b_shape = b._shape_tuple()  # pylint: disable=protected-access
+
+    if fwd_compat.forward_compatible(2019, 4, 18):
+      output_may_have_non_empty_batch_shape = (
+          (a_shape is None or len(a_shape) > 2) or
+          (b_shape is None or len(b_shape) > 2))
+      batch_mat_mul_fn = gen_math_ops.batch_mat_mul_v2
+    else:
+      output_may_have_non_empty_batch_shape = (
+          (a_shape is None or len(a_shape) > 2) and
+          (b_shape is None or len(b_shape) > 2))
+      batch_mat_mul_fn = gen_math_ops.batch_mat_mul
+
     if (not a_is_sparse and
-        not b_is_sparse) and ((a_shape is None or len(a_shape) > 2) and
-                              (b_shape is None or len(b_shape) > 2)):
+        not b_is_sparse) and output_may_have_non_empty_batch_shape:
       # BatchMatmul does not support transpose, so we conjugate the matrix and
       # use adjoint instead. Conj() is a noop for real matrices.
       if transpose_a:
@@ -2015,8 +2294,7 @@ def matmul(a,
       if transpose_b:
         b = conj(b)
         adjoint_b = True
-      return gen_math_ops.batch_mat_mul(
-          a, b, adj_x=adjoint_a, adj_y=adjoint_b, name=name)
+      return batch_mat_mul_fn(a, b, adj_x=adjoint_a, adj_y=adjoint_b, name=name)
 
     # Neither matmul nor sparse_matmul support adjoint, so we conjugate
     # the matrix and use transpose instead. Conj() is a noop for real
@@ -2142,6 +2420,22 @@ def _as_indexed_slices_list(inputs, optimize=True):
 def add_n(inputs, name=None):
   """Adds all input tensors element-wise.
 
+  Converts `IndexedSlices` objects into dense tensors prior to adding.
+
+  `tf.math.add_n` performs the same operation as `tf.math.accumulate_n` but it
+  waits for all of its inputs to be ready before beginning to sum.This can
+  consume more memory when inputs are ready at different times, since
+  the minimum temporary storage required is proportional to the input
+  size rather than the output size.
+
+  For example:
+
+  ```python
+  a = tf.constant([[3, 5], [4, 8]])
+  b = tf.constant([[1, 6], [2, 9]])
+  tf.math.add_n([a, b, a])  # [[7, 16], [10, 25]]
+  ```
+
   Args:
     inputs: A list of `Tensor` or `IndexedSlices` objects, each with same shape
       and type.
@@ -2155,11 +2449,11 @@ def add_n(inputs, name=None):
     cannot be inferred.
   """
   if not inputs or not isinstance(inputs, (list, tuple)):
-    raise ValueError("inputs must be a list of at least one"
+    raise ValueError("inputs must be a list of at least one "
                      "Tensor/IndexedSlices with the same dtype and shape")
   inputs = ops.convert_n_to_tensor_or_indexed_slices(inputs)
   if not all(isinstance(x, (ops.Tensor, ops.IndexedSlices)) for x in inputs):
-    raise ValueError("inputs must be a list of at least one"
+    raise ValueError("inputs must be a list of at least one "
                      "Tensor/IndexedSlices with the same dtype and shape")
 
   if len(inputs) == 1:
@@ -2546,8 +2840,8 @@ def reduced_shape(input_shape, axes):
     input_shape[axes] = 1
     return input_shape
 
-  input_shape = to_int32(input_shape)  # [2, 3, 5, 7]
-  axes = to_int32(axes)  # [1, 2]
+  input_shape = cast(input_shape, dtypes.int32)  # [2, 3, 5, 7]
+  axes = cast(axes, dtypes.int32)  # [1, 2]
 
   input_rank = array_ops.size(input_shape)  # 4
   axes = (axes + input_rank) % input_rank
@@ -2586,7 +2880,7 @@ def unsorted_segment_mean(data, segment_ids, num_segments, name=None):
   r"""Computes the mean along segments of a tensor.
 
   Read [the section on
-  segmentation](https://tensorflow.org/api_guides/python/math_ops#segmentation)
+  segmentation](https://tensorflow.org/api_docs/python/tf/math#Segmentation)
   for an explanation of segments.
 
   This operator is similar to the unsorted segment sum operator found
@@ -2631,7 +2925,7 @@ def unsorted_segment_sqrt_n(data, segment_ids, num_segments, name=None):
   r"""Computes the sum along segments of a tensor divided by the sqrt(N).
 
   Read [the section on
-  segmentation](https://tensorflow.org/api_guides/python/math_ops#segmentation)
+  segmentation](https://tensorflow.org/api_docs/python/tf/math#Segmentation)
   for an explanation of segments.
 
   This operator is similar to the unsorted segment sum operator found
@@ -2679,7 +2973,7 @@ def sparse_segment_sum(data, indices, segment_ids, name=None,
   r"""Computes the sum along sparse segments of a tensor.
 
   Read [the section on
-  segmentation](https://tensorflow.org/api_guides/python/math_ops#Segmentation)
+  segmentation](https://tensorflow.org/api_docs/python/tf/math#Segmentation)
   for an explanation of segments.
 
   Like `SegmentSum`, but `segment_ids` can have rank less than `data`'s first
@@ -2757,7 +3051,7 @@ def sparse_segment_mean(data,
   r"""Computes the mean along sparse segments of a tensor.
 
   Read [the section on
-  segmentation](https://tensorflow.org/api_guides/python/math_ops#Segmentation)
+  segmentation](https://tensorflow.org/api_docs/python/tf/math#Segmentation)
   for an explanation of segments.
 
   Like `SegmentMean`, but `segment_ids` can have rank less than `data`'s first
@@ -2793,9 +3087,44 @@ def sparse_segment_mean(data,
         data=data, indices=indices, segment_ids=segment_ids, name=name)
 
 
-@tf_export(
-    "sparse.segment_sqrt_n",
-    v1=["sparse.segment_sqrt_n", "sparse_segment_sqrt_n"])
+@tf_export("sparse.segment_mean", v1=[])
+def sparse_segment_mean_v2(data,
+                           indices,
+                           segment_ids,
+                           num_segments=None,
+                           name=None):
+  r"""Computes the mean along sparse segments of a tensor.
+
+  Read [the section on
+  segmentation](https://tensorflow.org/api_docs/python/tf/math#Segmentation)
+  for an explanation of segments.
+
+  Like `SegmentMean`, but `segment_ids` can have rank less than `data`'s first
+  dimension, selecting a subset of dimension 0, specified by `indices`.
+  `segment_ids` is allowed to have missing ids, in which case the output will
+  be zeros at those indices. In those cases `num_segments` is used to determine
+  the size of the output.
+
+  Args:
+    data: A `Tensor` with data that will be assembled in the output.
+    indices: A 1-D `Tensor` with indices into `data`. Has same rank as
+      `segment_ids`.
+    segment_ids: A 1-D `Tensor` with indices into the output `Tensor`. Values
+      should be sorted and can be repeated.
+    num_segments: An optional int32 scalar. Indicates the size of the output
+      `Tensor`.
+    name: A name for the operation (optional).
+
+  Returns:
+    A `tensor` of the shape as data, except for dimension 0 which
+    has size `k`, the number of segments specified via `num_segments` or
+    inferred for the last element in `segments_ids`.
+  """
+  return sparse_segment_mean(
+      data, indices, segment_ids, name=name, num_segments=num_segments)
+
+
+@tf_export(v1=["sparse.segment_sqrt_n", "sparse_segment_sqrt_n"])
 @deprecation.deprecated_endpoints("sparse_segment_sqrt_n")
 def sparse_segment_sqrt_n(data,
                           indices,

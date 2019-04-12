@@ -27,9 +27,9 @@ from tensorflow.python.platform import test
 from tensorflow.python.training.rmsprop import RMSPropOptimizer
 
 
-class LocallyConnectedLayersTest(test.TestCase):
+@tf_test_util.run_all_in_graph_and_eager_modes
+class LocallyConnected1DLayersTest(test.TestCase):
 
-  @tf_test_util.run_in_graph_and_eager_modes
   def test_locallyconnected_1d(self):
     num_samples = 2
     num_steps = 8
@@ -111,7 +111,10 @@ class LocallyConnectedLayersTest(test.TestCase):
               self.assertEqual(layer.kernel.constraint, k_constraint)
               self.assertEqual(layer.bias.constraint, b_constraint)
 
-  @tf_test_util.run_in_graph_and_eager_modes
+
+@tf_test_util.run_all_in_graph_and_eager_modes
+class LocallyConnected2DLayersTest(test.TestCase):
+
   def test_locallyconnected_2d(self):
     num_samples = 8
     filters = 3
@@ -125,6 +128,16 @@ class LocallyConnectedLayersTest(test.TestCase):
           if padding == 'same' and strides != (1, 1):
             continue
 
+  def test_locallyconnected_2d_channels_first(self):
+    with self.cached_session():
+      num_samples = 8
+      filters = 3
+      stack_size = 4
+      num_row = 6
+      num_col = 10
+
+      for implementation in [1, 2]:
+        for padding in ['valid', 'same']:
           kwargs = {
               'filters': filters,
               'kernel_size': 3,
@@ -226,59 +239,70 @@ class LocallyConnectedLayersTest(test.TestCase):
     n_classes = 3
     n_epochs = 2
 
-    np.random.seed(1)
-    targets = np.random.randint(0, n_classes, (n_train,))
+@tf_test_util.run_all_in_graph_and_eager_modes
+class LocallyConnectedImplementationModeTest(test.TestCase):
 
-    for width in [1, 17]:
-      for height in [16]:
-        for filters in [2]:
-          for data_format in ['channels_first', 'channels_last']:
-            inputs = get_inputs(data_format, filters, height, n_train, width)
+  def test_locallyconnected_implementation(self):
+    with self.cached_session():
+      num_samples = 4
+      num_classes = 3
+      num_epochs = 2
 
-            for kernel_x in [(3,)]:
-              for kernel_y in [()] if width == 1 else [(2,)]:
-                for stride_x in [(1,)]:
-                  for stride_y in [()] if width == 1 else [(3,)]:
-                    for layers in [2]:
-                      kwargs = {
-                          'layers': layers,
-                          'filters': filters,
-                          'kernel_size': kernel_x + kernel_y,
-                          'strides': stride_x + stride_y,
-                          'data_format': data_format,
-                          'n_classes': n_classes,
-                          'input_shape': inputs.shape
-                      }
+      np.random.seed(1)
+      targets = np.random.randint(0, num_classes, (num_samples,))
 
-                      model_1 = get_model(implementation=1, **kwargs)
-                      model_2 = get_model(implementation=2, **kwargs)
+      for width in [1, 6]:
+        for height in [7]:
+          for filters in [2]:
+            for data_format in ['channels_first', 'channels_last']:
+              inputs = get_inputs(
+                  data_format, filters, height, num_samples, width)
 
-                      copy_model_weights(model_2, model_1)
+              for kernel_x in [(3,)]:
+                for kernel_y in [()] if width == 1 else [(2,)]:
+                  for stride_x in [(1,)]:
+                    for stride_y in [()] if width == 1 else [(3,)]:
+                      for layers in [2]:
+                        kwargs = {
+                            'layers': layers,
+                            'filters': filters,
+                            'kernel_size': kernel_x + kernel_y,
+                            'strides': stride_x + stride_y,
+                            'data_format': data_format,
+                            'num_classes': num_classes
+                        }
+                        model_1 = get_model(implementation=1, **kwargs)
+                        model_2 = get_model(implementation=2, **kwargs)
 
-                      # Compare outputs at initialization.
-                      out_1 = model_1.call(inputs)
-                      out_2 = model_2.call(inputs)
-                      self.assertAllCloseAccordingToType(out_1, out_2,
-                                                         rtol=1e-5, atol=1e-5)
+                        # Build models.
+                        model_1.train_on_batch(inputs, targets)
+                        model_2.train_on_batch(inputs, targets)
 
-                      # Train.
-                      model_1.fit(x=inputs,
-                                  y=targets,
-                                  epochs=n_epochs,
-                                  batch_size=n_train)
+                        # Copy weights.
+                        copy_model_weights(model_2, model_1)
 
-                      model_2.fit(x=inputs,
-                                  y=targets,
-                                  epochs=n_epochs,
-                                  batch_size=n_train)
+                        # Compare outputs at initialization.
+                        out_1 = model_1.call(inputs)
+                        out_2 = model_2.call(inputs)
+                        self.assertAllCloseAccordingToType(out_1, out_2,
+                                                           rtol=1e-5, atol=1e-5)
 
-                      # Compare outputs after a few training steps.
-                      out_1 = model_1.call(inputs)
-                      out_2 = model_2.call(inputs)
-                      self.assertAllCloseAccordingToType(out_1, out_2,
-                                                         rtol=1e-5, atol=1e-5)
+                        # Train.
+                        model_1.fit(x=inputs,
+                                    y=targets,
+                                    epochs=num_epochs,
+                                    batch_size=num_samples)
+                        model_2.fit(x=inputs,
+                                    y=targets,
+                                    epochs=num_epochs,
+                                    batch_size=num_samples)
 
-  @tf_test_util.run_in_graph_and_eager_modes
+                        # Compare outputs after a few training steps.
+                        out_1 = model_1.call(inputs)
+                        out_2 = model_2.call(inputs)
+                        self.assertAllCloseAccordingToType(
+                            out_1, out_2, atol=2e-4)
+
   def test_make_2d(self):
     input_shapes = [
         (0,),

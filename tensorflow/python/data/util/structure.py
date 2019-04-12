@@ -25,7 +25,10 @@ from tensorflow.python.framework import ops
 from tensorflow.python.framework import sparse_tensor as sparse_tensor_lib
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.framework import tensor_util
+from tensorflow.python.ops import list_ops
 from tensorflow.python.ops import sparse_ops
+from tensorflow.python.ops import tensor_array_ops
+from tensorflow.python.util.tf_export import tf_export
 
 
 _STRUCTURE_CONVERSION_FUNCTION_REGISTRY = {}
@@ -144,6 +147,8 @@ class Structure(object):
         value,
         (sparse_tensor_lib.SparseTensor, sparse_tensor_lib.SparseTensorValue)):
       return SparseTensorStructure.from_value(value)
+    elif isinstance(value, tensor_array_ops.TensorArray):
+      return TensorArrayStructure.from_value(value)
     elif isinstance(value, (tuple, dict)):
       return NestedStructure.from_value(value)
     else:
@@ -216,6 +221,105 @@ class Structure(object):
         type represented by `type_object`) and returns a `Structure`.
     """
     _STRUCTURE_CONVERSION_FUNCTION_REGISTRY[type_object] = converter_fn
+
+  @abc.abstractmethod
+  def _to_legacy_output_types(self):
+    raise NotImplementedError("Structure._to_legacy_output_types()")
+
+  @abc.abstractmethod
+  def _to_legacy_output_shapes(self):
+    raise NotImplementedError("Structure._to_legacy_output_shapes()")
+
+  @abc.abstractmethod
+  def _to_legacy_output_classes(self):
+    raise NotImplementedError("Structure._to_legacy_output_classes()")
+
+
+def normalize_tensors(tensors):
+  """Converts a nested structure of tensor-like objects to tensors.
+
+  * `SparseTensor`-like inputs are converted to `SparseTensor`.
+  * `TensorArray` inputs are passed through.
+  * Everything else is converted to a dense `Tensor`.
+
+  Args:
+    tensors: A nested structure of tensor-like, list,
+      `SparseTensor`, `SparseTensorValue`, or `TensorArray` objects.
+
+  Returns:
+    A nested structure of tensor, `SparseTensor`, or `TensorArray` objects.
+  """
+  flat_tensors = nest.flatten(tensors)
+  prepared = []
+  with ops.name_scope("normalize_tensors"):
+    for i, t in enumerate(flat_tensors):
+      if sparse_tensor_lib.is_sparse(t):
+        prepared.append(sparse_tensor_lib.SparseTensor.from_value(t))
+      elif isinstance(t, tensor_array_ops.TensorArray):
+        prepared.append(t)
+      else:
+        prepared.append(ops.convert_to_tensor(t, name="component_%d" % i))
+  return nest.pack_sequence_as(tensors, prepared)
+
+
+def convert_legacy_structure(output_types, output_shapes, output_classes):
+  """Returns a `Structure` that represents the given legacy structure.
+
+  This method provides a way to convert from the existing `Dataset` and
+  `Iterator` structure-related properties to a `Structure` object. A "legacy"
+  structure is represented by the `tf.data.Dataset.output_types`,
+  `tf.data.Dataset.output_shapes`, and `tf.data.Dataset.output_classes`
+  properties.
+
+  TODO(b/110122868): Remove this function once `Structure` is used throughout
+  `tf.data`.
+
+  Args:
+    output_types: A nested structure of `tf.DType` objects corresponding to
+      each component of a structured value.
+    output_shapes: A nested structure of `tf.TensorShape` objects
+      corresponding to each component a structured value.
+    output_classes: A nested structure of Python `type` objects corresponding
+      to each component of a structured value.
+
+  Returns:
+    A `Structure`.
+
+  Raises:
+    TypeError: If a structure cannot be built from the arguments, because one of
+      the component classes in `output_classes` is not supported.
+  """
+  flat_types = nest.flatten(output_types)
+  flat_shapes = nest.flatten(output_shapes)
+  flat_classes = nest.flatten(output_classes)
+  flat_ret = []
+  for flat_type, flat_shape, flat_class in zip(flat_types, flat_shapes,
+                                               flat_classes):
+    if isinstance(flat_class, Structure):
+      flat_ret.append(flat_class)
+    elif issubclass(flat_class, sparse_tensor_lib.SparseTensor):
+      flat_ret.append(SparseTensorStructure(flat_type, flat_shape))
+    elif issubclass(flat_class, ops.Tensor):
+      flat_ret.append(TensorStructure(flat_type, flat_shape))
+    elif issubclass(flat_class, tensor_array_ops.TensorArray):
+      # We sneaked the dynamic_size and infer_shape into the legacy shape.
+      flat_ret.append(
+          TensorArrayStructure(
+              flat_type, flat_shape[2:],
+              dynamic_size=tensor_shape.dimension_value(flat_shape[0]),
+              infer_shape=tensor_shape.dimension_value(flat_shape[1])))
+    else:
+      # NOTE(mrry): Since legacy structures produced by iterators only
+      # comprise Tensors, SparseTensors, and nests, we do not need to
+      # support all structure types here.
+      raise TypeError(
+          "Could not build a structure for output class %r" % (flat_class,))
+
+  ret = nest.pack_sequence_as(output_classes, flat_ret)
+  if isinstance(ret, Structure):
+    return ret
+  else:
+    return NestedStructure(ret)
 
 
 # NOTE(mrry): The following classes make extensive use of non-public methods of
@@ -372,3 +476,113 @@ class SparseTensorStructure(Structure):
     return SparseTensorStructure(
         sparse_tensor.dtype,
         tensor_util.constant_value_as_shape(sparse_tensor.dense_shape))
+
+  def _to_legacy_output_types(self):
+    return self._dtype
+
+  def _to_legacy_output_shapes(self):
+    return self._dense_shape
+
+  def _to_legacy_output_classes(self):
+    return sparse_tensor_lib.SparseTensor
+
+  def _batch(self, batch_size):
+    return SparseTensorStructure(
+        self._dtype,
+        tensor_shape.TensorShape([batch_size]).concatenate(self._dense_shape))
+
+  def _unbatch(self):
+    if self._dense_shape.ndims == 0:
+      raise ValueError("Unbatching a tensor is only supported for rank >= 1")
+    return SparseTensorStructure(self._dtype, self._dense_shape[1:])
+
+
+@tf_export("data.experimental.TensorArrayStructure")
+class TensorArrayStructure(Structure):
+  """Represents structural information about a `tf.TensorArray`."""
+
+  def __init__(self, dtype, element_shape, dynamic_size, infer_shape):
+    self._dtype = dtypes.as_dtype(dtype)
+    self._element_shape = tensor_shape.as_shape(element_shape)
+    self._dynamic_size = dynamic_size
+    self._infer_shape = infer_shape
+
+  @property
+  def _flat_shapes(self):
+    # A TensorArray is represented via its variant object, which is a scalar.
+    return [tensor_shape.scalar()]
+
+  @property
+  def _flat_types(self):
+    return [dtypes.variant]
+
+  def is_compatible_with(self, other):
+    return (isinstance(other, TensorArrayStructure) and
+            self._dtype.is_compatible_with(other._dtype) and
+            self._element_shape.is_compatible_with(other._element_shape) and
+            self._dynamic_size == other._dynamic_size)
+
+  def _to_tensor_list(self, value):
+    if not isinstance(value, tensor_array_ops.TensorArray):
+      raise TypeError("value must be a TensorArray, but saw: {}"
+                      .format(type(value)))
+    if value.flow is not None and value.flow.dtype == dtypes.variant:
+      return [value.flow]
+    else:
+      # Convert to a TF2-style TensorArray.
+      # TODO(ebrevdo): Add an "_as_variant" method to TensorArray class, or
+      # "implementation / as_variant" arg to TensorArray constructor.
+      with ops.name_scope("convert_tensor_array"):
+        flow = list_ops.tensor_list_from_tensor(
+            tensor=value.stack(), element_shape=value.element_shape)
+      return [flow]
+
+  def _to_batched_tensor_list(self, value):
+    raise NotImplementedError("TensorArrayStructure._to_batched_tensor_list")
+
+  def _from_tensor_list(self, flat_value):
+    if (len(flat_value) != 1 or flat_value[0].dtype != dtypes.variant or
+        not flat_value[0].shape.is_compatible_with(tensor_shape.scalar())):
+      raise ValueError("TensorArrayStructure corresponds to a single "
+                       "tf.variant scalar.")
+    return self._from_compatible_tensor_list(flat_value)
+
+  def _from_compatible_tensor_list(self, flat_value):
+    # This will return a TF2 Graph-style TensorArray because flat_value[0] is
+    # a variant object.  size == -1 implies unknown size.
+    ret = tensor_array_ops.TensorArray(
+        dtype=self._dtype,
+        flow=flat_value[0],
+        dynamic_size=self._dynamic_size,
+        infer_shape=self._infer_shape)
+    ret._element_shape = [self._element_shape]
+    return ret
+
+  @staticmethod
+  def from_value(value):
+    if not isinstance(value, tensor_array_ops.TensorArray):
+      raise TypeError("Expected value to be a TensorArray, but saw: {}".
+                      format(type(value)))
+
+    return TensorArrayStructure(
+        dtype=value.dtype,
+        element_shape=value.element_shape,
+        dynamic_size=value.dynamic_size,
+        infer_shape=value._infer_shape)
+
+  def _to_legacy_output_types(self):
+    return self._dtype
+
+  def _to_legacy_output_shapes(self):
+    # Sneak the dynamic_size and infer_shape values into the legacy shape.
+    return (tensor_shape.matrix(self._dynamic_size, self._infer_shape)
+            .concatenate(self._element_shape))
+
+  def _to_legacy_output_classes(self):
+    return tensor_array_ops.TensorArray
+
+  def _batch(self, batch_size):
+    raise NotImplementedError("TensorArrayStructure._batch")
+
+  def _unbatch(self):
+    raise NotImplementedError("TensorArrayStructure._unbatch")

@@ -33,6 +33,7 @@ from tensorflow.python.platform import test
 
 class CopyToDeviceTest(test_base.DatasetTestBase):
 
+  @test_util.deprecated_graph_mode_only
   def testCopyToDevice(self):
     host_dataset = dataset_ops.Dataset.range(10)
     device_dataset = host_dataset.apply(
@@ -42,12 +43,10 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       iterator = device_dataset.make_one_shot_iterator()
       next_element = iterator.get_next()
 
-    self.assertEqual(host_dataset.output_types, device_dataset.output_types)
-    self.assertEqual(host_dataset.output_types, iterator.output_types)
-    self.assertEqual(host_dataset.output_shapes, device_dataset.output_shapes)
-    self.assertEqual(host_dataset.output_shapes, iterator.output_shapes)
-    self.assertEqual(host_dataset.output_classes, device_dataset.output_classes)
-    self.assertEqual(host_dataset.output_classes, iterator.output_classes)
+    self.assertTrue(dataset_ops.get_structure(host_dataset).is_compatible_with(
+        dataset_ops.get_structure(device_dataset)))
+    self.assertTrue(dataset_ops.get_structure(host_dataset).is_compatible_with(
+        dataset_ops.get_structure(iterator)))
 
     self.assertEqual(dtypes.int64, next_element.dtype)
     self.assertEqual([], next_element.shape)
@@ -59,6 +58,7 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       with self.assertRaises(errors.OutOfRangeError):
         sess.run(next_element)
 
+  @test_util.deprecated_graph_mode_only
   def testCopyToDeviceInt32(self):
     host_dataset = dataset_ops.Dataset.from_tensors([0, 1, 2, 3])
     device_dataset = host_dataset.apply(
@@ -68,12 +68,10 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       iterator = device_dataset.make_one_shot_iterator()
       next_element = iterator.get_next()
 
-    self.assertEqual(host_dataset.output_types, device_dataset.output_types)
-    self.assertEqual(host_dataset.output_types, iterator.output_types)
-    self.assertEqual(host_dataset.output_shapes, device_dataset.output_shapes)
-    self.assertEqual(host_dataset.output_shapes, iterator.output_shapes)
-    self.assertEqual(host_dataset.output_classes, device_dataset.output_classes)
-    self.assertEqual(host_dataset.output_classes, iterator.output_classes)
+    self.assertTrue(dataset_ops.get_structure(host_dataset).is_compatible_with(
+        dataset_ops.get_structure(device_dataset)))
+    self.assertTrue(dataset_ops.get_structure(host_dataset).is_compatible_with(
+        dataset_ops.get_structure(iterator)))
 
     self.assertEqual(dtypes.int32, next_element.dtype)
     self.assertEqual((4,), next_element.shape)
@@ -84,6 +82,7 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       with self.assertRaises(errors.OutOfRangeError):
         sess.run(next_element)
 
+  @test_util.deprecated_graph_mode_only
   def testCopyToSameDevice(self):
     host_dataset = dataset_ops.Dataset.range(10)
     device_dataset = host_dataset.apply(
@@ -93,12 +92,10 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       iterator = device_dataset.make_one_shot_iterator()
       next_element = iterator.get_next()
 
-    self.assertEqual(host_dataset.output_types, device_dataset.output_types)
-    self.assertEqual(host_dataset.output_types, iterator.output_types)
-    self.assertEqual(host_dataset.output_shapes, device_dataset.output_shapes)
-    self.assertEqual(host_dataset.output_shapes, iterator.output_shapes)
-    self.assertEqual(host_dataset.output_classes, device_dataset.output_classes)
-    self.assertEqual(host_dataset.output_classes, iterator.output_classes)
+    self.assertTrue(dataset_ops.get_structure(host_dataset).is_compatible_with(
+        dataset_ops.get_structure(device_dataset)))
+    self.assertTrue(dataset_ops.get_structure(host_dataset).is_compatible_with(
+        dataset_ops.get_structure(iterator)))
 
     self.assertEqual(dtypes.int64, next_element.dtype)
     self.assertEqual([], next_element.shape)
@@ -110,6 +107,7 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       with self.assertRaises(errors.OutOfRangeError):
         sess.run(next_element)
 
+  @test_util.deprecated_graph_mode_only
   def testCopyToDeviceWithPrefetch(self):
     host_dataset = dataset_ops.Dataset.range(10)
     device_dataset = host_dataset.apply(
@@ -119,12 +117,10 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       iterator = device_dataset.make_one_shot_iterator()
       next_element = iterator.get_next()
 
-    self.assertEqual(host_dataset.output_types, device_dataset.output_types)
-    self.assertEqual(host_dataset.output_types, iterator.output_types)
-    self.assertEqual(host_dataset.output_shapes, device_dataset.output_shapes)
-    self.assertEqual(host_dataset.output_shapes, iterator.output_shapes)
-    self.assertEqual(host_dataset.output_classes, device_dataset.output_classes)
-    self.assertEqual(host_dataset.output_classes, iterator.output_classes)
+    self.assertTrue(dataset_ops.get_structure(host_dataset).is_compatible_with(
+        dataset_ops.get_structure(device_dataset)))
+    self.assertTrue(dataset_ops.get_structure(host_dataset).is_compatible_with(
+        dataset_ops.get_structure(iterator)))
 
     self.assertEqual(dtypes.int64, next_element.dtype)
     self.assertEqual([], next_element.shape)
@@ -136,6 +132,7 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       with self.assertRaises(errors.OutOfRangeError):
         sess.run(next_element)
 
+  @test_util.deprecated_graph_mode_only
   def testCopyDictToDevice(self):
     host_dataset = dataset_ops.Dataset.range(10).map(lambda x: {"a": x})
     device_dataset = host_dataset.apply(
@@ -145,12 +142,10 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       iterator = device_dataset.make_one_shot_iterator()
       next_element = iterator.get_next()
 
-    self.assertEqual(host_dataset.output_types, device_dataset.output_types)
-    self.assertEqual(host_dataset.output_types, iterator.output_types)
-    self.assertEqual(host_dataset.output_shapes, device_dataset.output_shapes)
-    self.assertEqual(host_dataset.output_shapes, iterator.output_shapes)
-    self.assertEqual(host_dataset.output_classes, device_dataset.output_classes)
-    self.assertEqual(host_dataset.output_classes, iterator.output_classes)
+    self.assertTrue(dataset_ops.get_structure(host_dataset).is_compatible_with(
+        dataset_ops.get_structure(device_dataset)))
+    self.assertTrue(dataset_ops.get_structure(host_dataset).is_compatible_with(
+        dataset_ops.get_structure(iterator)))
 
     self.assertEqual(dtypes.int64, next_element["a"].dtype)
     self.assertEqual([], next_element["a"].shape)
@@ -162,6 +157,7 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       with self.assertRaises(errors.OutOfRangeError):
         sess.run(next_element)
 
+  @test_util.deprecated_graph_mode_only
   def testCopyDictToDeviceWithPrefetch(self):
     host_dataset = dataset_ops.Dataset.range(10).map(lambda x: {"a": x})
     device_dataset = host_dataset.apply(
@@ -171,12 +167,10 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       iterator = device_dataset.make_one_shot_iterator()
       next_element = iterator.get_next()
 
-    self.assertEqual(host_dataset.output_types, device_dataset.output_types)
-    self.assertEqual(host_dataset.output_types, iterator.output_types)
-    self.assertEqual(host_dataset.output_shapes, device_dataset.output_shapes)
-    self.assertEqual(host_dataset.output_shapes, iterator.output_shapes)
-    self.assertEqual(host_dataset.output_classes, device_dataset.output_classes)
-    self.assertEqual(host_dataset.output_classes, iterator.output_classes)
+    self.assertTrue(dataset_ops.get_structure(host_dataset).is_compatible_with(
+        dataset_ops.get_structure(device_dataset)))
+    self.assertTrue(dataset_ops.get_structure(host_dataset).is_compatible_with(
+        dataset_ops.get_structure(iterator)))
 
     self.assertEqual(dtypes.int64, next_element["a"].dtype)
     self.assertEqual([], next_element["a"].shape)
@@ -188,6 +182,7 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       with self.assertRaises(errors.OutOfRangeError):
         sess.run(next_element)
 
+  @test_util.deprecated_graph_mode_only
   def testCopySparseTensorsToDevice(self):
 
     def make_tensor(i):
@@ -203,12 +198,10 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       iterator = device_dataset.make_one_shot_iterator()
       next_element = iterator.get_next()
 
-    self.assertEqual(host_dataset.output_types, device_dataset.output_types)
-    self.assertEqual(host_dataset.output_types, iterator.output_types)
-    self.assertEqual(host_dataset.output_shapes, device_dataset.output_shapes)
-    self.assertEqual(host_dataset.output_shapes, iterator.output_shapes)
-    self.assertEqual(host_dataset.output_classes, device_dataset.output_classes)
-    self.assertEqual(host_dataset.output_classes, iterator.output_classes)
+    self.assertTrue(dataset_ops.get_structure(host_dataset).is_compatible_with(
+        dataset_ops.get_structure(device_dataset)))
+    self.assertTrue(dataset_ops.get_structure(host_dataset).is_compatible_with(
+        dataset_ops.get_structure(iterator)))
 
     self.assertEqual(dtypes.int64, next_element.dtype)
 
@@ -222,6 +215,7 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       with self.assertRaises(errors.OutOfRangeError):
         sess.run(next_element)
 
+  @test_util.deprecated_graph_mode_only
   def testCopySparseTensorsToDeviceWithPrefetch(self):
 
     def make_tensor(i):
@@ -237,12 +231,10 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       iterator = device_dataset.make_one_shot_iterator()
       next_element = iterator.get_next()
 
-    self.assertEqual(host_dataset.output_types, device_dataset.output_types)
-    self.assertEqual(host_dataset.output_types, iterator.output_types)
-    self.assertEqual(host_dataset.output_shapes, device_dataset.output_shapes)
-    self.assertEqual(host_dataset.output_shapes, iterator.output_shapes)
-    self.assertEqual(host_dataset.output_classes, device_dataset.output_classes)
-    self.assertEqual(host_dataset.output_classes, iterator.output_classes)
+    self.assertTrue(dataset_ops.get_structure(host_dataset).is_compatible_with(
+        dataset_ops.get_structure(device_dataset)))
+    self.assertTrue(dataset_ops.get_structure(host_dataset).is_compatible_with(
+        dataset_ops.get_structure(iterator)))
 
     self.assertEqual(dtypes.int64, next_element.dtype)
 
@@ -256,6 +248,7 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       with self.assertRaises(errors.OutOfRangeError):
         sess.run(next_element)
 
+  @test_util.deprecated_graph_mode_only
   def testCopyToDeviceGpu(self):
     if not test_util.is_gpu_available():
       self.skipTest("No GPU available")
@@ -275,6 +268,7 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       with self.assertRaises(errors.OutOfRangeError):
         sess.run(next_element)
 
+  @test_util.deprecated_graph_mode_only
   def testCopyToDeviceGpuWithPrefetch(self):
     if not test_util.is_gpu_available():
       self.skipTest("No GPU available")
@@ -292,8 +286,47 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       for i in range(10):
         self.assertEqual(i, sess.run(next_element))
       with self.assertRaises(errors.OutOfRangeError):
-        sess.run(next_element)
+        self.evaluate(next_element)
 
+  @test_util.deprecated_graph_mode_only
+  def testCopyToDeviceGpuWithMap(self):
+    if not test_util.is_gpu_available():
+      self.skipTest("No GPU available")
+
+    def generator():
+      for i in range(10):
+        yield i, float(i), str(i)
+
+    host_dataset = dataset_ops.Dataset.from_generator(
+        generator, output_types=(dtypes.int32, dtypes.float32, dtypes.string))
+    device_dataset = host_dataset.apply(
+        prefetching_ops.copy_to_device("/gpu:0"))
+
+    def gpu_map_func(x, y, z):
+      return math_ops.square(x), math_ops.square(y), z
+
+    device_dataset = device_dataset.apply(
+        prefetching_ops.map_on_gpu(gpu_map_func))
+    options = dataset_ops.Options()
+    options.experimental_optimization.autotune = False
+    device_dataset = device_dataset.with_options(options)
+
+    with ops.device("/gpu:0"):
+      iterator = dataset_ops.make_initializable_iterator(device_dataset)
+      next_element = iterator.get_next()
+
+    with self.cached_session(
+        config=config_pb2.ConfigProto(allow_soft_placement=False)):
+      self.evaluate(iterator.initializer)
+      for i in range(10):
+        x, y, z = self.evaluate(next_element)
+        self.assertEqual(i**2, x)
+        self.assertEqual(float(i**2), y)
+        self.assertEqual(util_compat.as_bytes(str(i)), z)
+      with self.assertRaises(errors.OutOfRangeError):
+        self.evaluate(next_element)
+
+  @test_util.deprecated_graph_mode_only
   def testCopyToDeviceGpuInt32(self):
     if not test_util.is_gpu_available():
       self.skipTest("No GPU available")
@@ -312,6 +345,7 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       with self.assertRaises(errors.OutOfRangeError):
         sess.run(next_element)
 
+  @test_util.deprecated_graph_mode_only
   def testCopyToDeviceGpuInt32AndPrefetch(self):
     if not test_util.is_gpu_available():
       self.skipTest("No GPU available")
@@ -330,6 +364,7 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       with self.assertRaises(errors.OutOfRangeError):
         sess.run(next_element)
 
+  @test_util.deprecated_graph_mode_only
   def testCopyToDeviceGpuStrings(self):
     if not test_util.is_gpu_available():
       self.skipTest("No GPU available")
@@ -348,6 +383,7 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       with self.assertRaises(errors.OutOfRangeError):
         sess.run(next_element)
 
+  @test_util.deprecated_graph_mode_only
   def testCopyToDeviceGpuStringsAndPrefetch(self):
     if not test_util.is_gpu_available():
       self.skipTest("No GPU available")
@@ -366,6 +402,7 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       with self.assertRaises(errors.OutOfRangeError):
         sess.run(next_element)
 
+  @test_util.deprecated_graph_mode_only
   def testCopyToDevicePingPongCPUGPU(self):
     if not test_util.is_gpu_available():
       self.skipTest("No GPU available")
@@ -388,6 +425,7 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
         with self.assertRaises(errors.OutOfRangeError):
           sess.run(next_element)
 
+  @test_util.deprecated_graph_mode_only
   def testCopyToDeviceWithReInit(self):
     host_dataset = dataset_ops.Dataset.range(10)
     device_dataset = host_dataset.apply(
@@ -397,12 +435,10 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       iterator = device_dataset.make_initializable_iterator()
       next_element = iterator.get_next()
 
-    self.assertEqual(host_dataset.output_types, device_dataset.output_types)
-    self.assertEqual(host_dataset.output_types, iterator.output_types)
-    self.assertEqual(host_dataset.output_shapes, device_dataset.output_shapes)
-    self.assertEqual(host_dataset.output_shapes, iterator.output_shapes)
-    self.assertEqual(host_dataset.output_classes, device_dataset.output_classes)
-    self.assertEqual(host_dataset.output_classes, iterator.output_classes)
+    self.assertTrue(dataset_ops.get_structure(host_dataset).is_compatible_with(
+        dataset_ops.get_structure(device_dataset)))
+    self.assertTrue(dataset_ops.get_structure(host_dataset).is_compatible_with(
+        dataset_ops.get_structure(iterator)))
 
     self.assertEqual(dtypes.int64, next_element.dtype)
     self.assertEqual([], next_element.shape)
@@ -418,6 +454,7 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       with self.assertRaises(errors.OutOfRangeError):
         sess.run(next_element)
 
+  @test_util.deprecated_graph_mode_only
   def testCopyToDeviceWithReInitAndPrefetch(self):
     host_dataset = dataset_ops.Dataset.range(10)
     device_dataset = host_dataset.apply(
@@ -427,12 +464,10 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       iterator = device_dataset.make_initializable_iterator()
       next_element = iterator.get_next()
 
-    self.assertEqual(host_dataset.output_types, device_dataset.output_types)
-    self.assertEqual(host_dataset.output_types, iterator.output_types)
-    self.assertEqual(host_dataset.output_shapes, device_dataset.output_shapes)
-    self.assertEqual(host_dataset.output_shapes, iterator.output_shapes)
-    self.assertEqual(host_dataset.output_classes, device_dataset.output_classes)
-    self.assertEqual(host_dataset.output_classes, iterator.output_classes)
+    self.assertTrue(dataset_ops.get_structure(host_dataset).is_compatible_with(
+        dataset_ops.get_structure(device_dataset)))
+    self.assertTrue(dataset_ops.get_structure(host_dataset).is_compatible_with(
+        dataset_ops.get_structure(iterator)))
 
     self.assertEqual(dtypes.int64, next_element.dtype)
     self.assertEqual([], next_element.shape)
@@ -448,6 +483,7 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       with self.assertRaises(errors.OutOfRangeError):
         sess.run(next_element)
 
+  @test_util.deprecated_graph_mode_only
   def testCopyToDeviceGpuWithReInit(self):
     if not test_util.is_gpu_available():
       self.skipTest("No GPU available")
@@ -470,6 +506,7 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       with self.assertRaises(errors.OutOfRangeError):
         sess.run(next_element)
 
+  @test_util.deprecated_graph_mode_only
   def testCopyToDeviceGpuWithReInitAndPrefetch(self):
     if not test_util.is_gpu_available():
       self.skipTest("No GPU available")
@@ -492,6 +529,7 @@ class CopyToDeviceTest(test_base.DatasetTestBase):
       with self.assertRaises(errors.OutOfRangeError):
         sess.run(next_element)
 
+  @test_util.deprecated_graph_mode_only
   def testIteratorGetNextAsOptionalOnGPU(self):
     if not test_util.is_gpu_available():
       self.skipTest("No GPU available")

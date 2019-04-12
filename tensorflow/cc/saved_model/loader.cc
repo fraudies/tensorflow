@@ -21,11 +21,11 @@ limitations under the License.
 #include "tensorflow/cc/saved_model/reader.h"
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/lib/monitoring/counter.h"
+#include "tensorflow/core/lib/monitoring/sampler.h"
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/lib/strings/strcat.h"
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/core/platform/protobuf_internal.h"
-#include "tensorflow/core/protobuf/saved_model.pb.h"
 #include "tensorflow/core/protobuf/saver.pb.h"
 #include "tensorflow/core/public/session.h"
 #include "tensorflow/core/public/session_options.h"
@@ -42,8 +42,27 @@ auto* load_latency = monitoring::Counter<1>::New(
     "/tensorflow/cc/saved_model/load_latency",
     "Latency in microseconds for SavedModels that were successfully loaded.",
     "model_path");
+auto* load_latency_by_stage = monitoring::Sampler<2>::New(
+    {
+        "/tensorflow/cc/saved_model/load_latency_by_stage",  // metric name
+        "Distribution of wall time spent (in microseconds) in each stage "
+        "(restore graph from disk, run init graph op, etc) when loading the "
+        "model",
+        "model_path",
+        "stage",
+    },
+    // Scale of 10, power of 1.8 with bucket count 33 (~20 minutes).
+    monitoring::Buckets::Exponential(10, 1.8, 33));
+
 constexpr char kLoadAttemptFail[] = "fail";
 constexpr char kLoadAttemptSuccess[] = "success";
+
+uint64 GetLatencyMicroseconds(const uint64 start_microseconds) {
+  const uint64 end_microseconds = Env::Default()->NowMicros();
+  // Avoid clock skew.
+  if (end_microseconds < start_microseconds) return 0;
+  return end_microseconds - start_microseconds;
+}
 
 Status LoadMetaGraphIntoSession(const MetaGraphDef& meta_graph_def,
                                 const SessionOptions& session_options,
@@ -122,7 +141,39 @@ Status RunOnce(const RunOptions& run_options,
   return run_status;
 }
 
-bool HasMainOp(const MetaGraphDef& meta_graph_def) {
+// RunInitOp will return OK if the initialization op was run successfully.
+// An empty init_op_name indicates that there are no init ops to run.
+Status RunInitOp(const RunOptions& run_options, const string& export_dir,
+                 const MetaGraphDef& meta_graph_def,
+                 const std::vector<AssetFileDef>& asset_file_defs,
+                 Session* session, const string& init_op_name) {
+  if (!init_op_name.empty()) {
+    LOG(INFO) << "Running initialization op on SavedModel bundle at path: "
+              << export_dir;
+    std::vector<std::pair<string, Tensor>> inputs;
+    AddAssetsTensorsToInputs(export_dir, asset_file_defs, &inputs);
+    RunMetadata run_metadata;
+    return RunOnce(run_options, inputs, {}, {init_op_name},
+                   nullptr /* outputs */, &run_metadata, session);
+  }
+  return Status::OK();
+}
+
+// A SavedModel may store the name of the initialization op to run in the
+// in the SignatureDef (v2) or a collection (v1). If an init_op collection
+// exists, then the collection must contain exactly one op.
+Status GetInitOp(const string& export_dir, const MetaGraphDef& meta_graph_def,
+                 string* init_op_name) {
+  const auto& sig_def_map = meta_graph_def.signature_def();
+  const auto& init_op_sig_it =
+      meta_graph_def.signature_def().find(kSavedModelInitOpSignatureKey);
+  if (init_op_sig_it != sig_def_map.end()) {
+    *init_op_name = init_op_sig_it->second.outputs()
+                        .find(kSavedModelInitOpSignatureKey)
+                        ->second.name();
+    return Status::OK();
+  }
+
   const auto& collection_def_map = meta_graph_def.collection_def();
   if (collection_def_map.find(kSavedModelMainOpKey) !=
       collection_def_map.end()) {
@@ -213,6 +264,7 @@ Status LoadSavedModelInternal(const SessionOptions& session_options,
                               const string& export_dir,
                               const std::unordered_set<string>& tags,
                               SavedModelBundle* const bundle) {
+  const uint64 read_start_microseconds = Env::Default()->NowMicros();
   TF_RETURN_IF_ERROR(ReadMetaGraphDefFromSavedModel(export_dir, tags,
                                                     &bundle->meta_graph_def));
 
@@ -227,15 +279,23 @@ Status LoadSavedModelInternal(const SessionOptions& session_options,
                  bundle->meta_graph_def.saver_def().restore_op_name(),
                  bundle->meta_graph_def.saver_def().filename_tensor_name(),
                  asset_file_defs, bundle->session.get()));
-  if (HasMainOp(bundle->meta_graph_def)) {
-    TF_RETURN_IF_ERROR(RunMainOp(run_options, export_dir,
-                                 bundle->meta_graph_def, asset_file_defs,
-                                 bundle->session.get(), kSavedModelMainOpKey));
-  } else {
-    TF_RETURN_IF_ERROR(RunMainOp(
-        run_options, export_dir, bundle->meta_graph_def, asset_file_defs,
-        bundle->session.get(), kSavedModelLegacyInitOpKey));
-  }
+  // Record walltime spent in restoring graph from disk, but postpone metric
+  // increments until graph init finishes.
+  const uint64 restore_graph_walltime =
+      GetLatencyMicroseconds(read_start_microseconds);
+
+  const uint64 graph_init_start_microseconds = Env::Default()->NowMicros();
+  string init_op_name;
+  TF_RETURN_IF_ERROR(
+      GetInitOp(export_dir, bundle->meta_graph_def, &init_op_name));
+  TF_RETURN_IF_ERROR(RunInitOp(run_options, export_dir, bundle->meta_graph_def,
+                               asset_file_defs, bundle->session.get(),
+                               init_op_name));
+  load_latency_by_stage->GetCell(export_dir, "restore_graph")
+      ->Add(restore_graph_walltime);
+  // Record wall time spent in init op.
+  load_latency_by_stage->GetCell(export_dir, "init_graph")
+      ->Add(GetLatencyMicroseconds(graph_init_start_microseconds));
   return Status::OK();
 }
 
@@ -249,16 +309,10 @@ Status LoadSavedModel(const SessionOptions& session_options,
   const uint64 start_microseconds = Env::Default()->NowMicros();
   const Status status = LoadSavedModelInternal(session_options, run_options,
                                                export_dir, tags, bundle);
-  const uint64 load_latency_microsecs = [&]() -> uint64 {
-    const uint64 end_microseconds = Env::Default()->NowMicros();
-    // Avoid clock skew.
-    if (end_microseconds < start_microseconds) return 0;
-    return end_microseconds - start_microseconds;
-  }();
   auto log_and_count = [&](const string& status_str) {
     LOG(INFO) << "SavedModel load for tags { " << str_util::Join(tags, " ")
               << " }; Status: " << status_str << ". Took "
-              << load_latency_microsecs << " microseconds.";
+              << GetLatencyMicroseconds(start_microseconds) << " microseconds.";
     load_attempt_count->GetCell(export_dir, status_str)->IncrementBy(1);
   };
   if (status.ok()) {
@@ -266,7 +320,8 @@ Status LoadSavedModel(const SessionOptions& session_options,
   } else {
     log_and_count(kLoadAttemptFail);
   }
-  load_latency->GetCell(export_dir)->IncrementBy(load_latency_microsecs);
+  load_latency->GetCell(export_dir)
+      ->IncrementBy(GetLatencyMicroseconds(start_microseconds));
   return status;
 }
 

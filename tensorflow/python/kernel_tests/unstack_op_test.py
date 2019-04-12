@@ -41,20 +41,20 @@ class UnstackOpTest(test.TestCase):
 
   def testSimple(self):
     np.random.seed(7)
-    with self.test_session(use_gpu=True):
-      for shape in (2,), (3,), (2, 3), (3, 2), (4, 3, 2):
-        for dtype in [
-            np.bool, np.float16, np.float32, np.float64, np.int32, np.int64
-        ]:
-          data = np.random.randn(*shape).astype(dtype)
-          # Convert data to a single tensorflow tensor
-          x = constant_op.constant(data)
-          # Unstack into a list of tensors
-          cs = array_ops.unstack(x, num=shape[0])
-          self.assertEqual(type(cs), list)
-          self.assertEqual(len(cs), shape[0])
-          cs = [c.eval() for c in cs]
-          self.assertAllEqual(cs, data)
+    for shape in (2,), (3,), (2, 3), (3, 2), (4, 3, 2):
+      for dtype in [
+          np.bool, np.float16, np.float32, np.float64, np.uint8, np.int32,
+          np.int64
+      ]:
+        data = np.random.randn(*shape).astype(dtype)
+        # Convert data to a single tensorflow tensor
+        x = constant_op.constant(data)
+        # Unstack into a list of tensors
+        cs = array_ops.unstack(x, num=shape[0])
+        self.assertEqual(type(cs), list)
+        self.assertEqual(len(cs), shape[0])
+        cs = [self.evaluate(c) for c in cs]
+        self.assertAllEqual(cs, data)
 
   def testSimpleGpu(self):
     if not test_util.is_gpu_available():
@@ -62,7 +62,10 @@ class UnstackOpTest(test.TestCase):
     np.random.seed(7)
     with self.test_session(use_gpu=True, force_gpu=True):
       for shape in (2,), (3,), (2, 3), (3, 2), (4, 3, 2):
-        for dtype in [np.float16, np.float32, np.float64, np.int32, np.int64]:
+        for dtype in [
+            np.bool, np.float16, np.float32, np.float64, np.uint8, np.int32,
+            np.int64
+        ]:
           data = np.random.randn(*shape).astype(dtype)
           # Convert data to a single tensorflow tensor
           x = constant_op.constant(data)
@@ -78,7 +81,7 @@ class UnstackOpTest(test.TestCase):
       data = np.random.randn(*shape)
       shapes = [shape[1:]] * shape[0]
       for i in xrange(shape[0]):
-        with self.test_session(use_gpu=True):
+        with self.cached_session():
           x = constant_op.constant(data)
           cs = array_ops.unstack(x, num=shape[0])
           err = gradient_checker.compute_gradient_error(x, shape, cs[i],
@@ -91,7 +94,7 @@ class UnstackOpTest(test.TestCase):
       out_shape = list(shape)
       del out_shape[1]
       for i in xrange(shape[1]):
-        with self.test_session(use_gpu=True):
+        with self.cached_session():
           x = constant_op.constant(data)
           cs = array_ops.unstack(x, num=shape[1], axis=1)
           err = gradient_checker.compute_gradient_error(x, shape, cs[i],
@@ -99,12 +102,11 @@ class UnstackOpTest(test.TestCase):
           self.assertLess(err, 1e-6)
 
   def testInferNum(self):
-    with self.cached_session():
-      for shape in (2,), (3,), (2, 3), (3, 2), (4, 3, 2):
-        x = array_ops.placeholder(np.float32, shape=shape)
-        cs = array_ops.unstack(x)
-        self.assertEqual(type(cs), list)
-        self.assertEqual(len(cs), shape[0])
+    for shape in (2,), (3,), (2, 3), (3, 2), (4, 3, 2):
+      x = array_ops.placeholder(np.float32, shape=shape)
+      cs = array_ops.unstack(x)
+      self.assertEqual(type(cs), list)
+      self.assertEqual(len(cs), shape[0])
 
   def testCannotInferNumFromUnknownShape(self):
     x = array_ops.placeholder(np.float32)

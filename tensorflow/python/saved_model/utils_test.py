@@ -19,6 +19,9 @@ from __future__ import division
 from __future__ import print_function
 
 from tensorflow.core.framework import types_pb2
+from tensorflow.python.eager import context
+from tensorflow.python.eager import function
+from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import sparse_tensor
@@ -51,6 +54,13 @@ class UtilsTest(test.TestCase):
     self.assertEqual(42, x_tensor_info.tensor_shape.dim[0].size)
     self.assertEqual(69, x_tensor_info.tensor_shape.dim[1].size)
 
+  def testBuildTensorInfoEager(self):
+    x = constant_op.constant(1, name="x")
+    with context.eager_mode(), self.assertRaisesRegexp(
+        RuntimeError, "build_tensor_info is not supported in Eager mode"):
+      utils.build_tensor_info(x)
+
+  @test_util.run_v1_only("b/120545219")
   def testGetTensorFromInfoDense(self):
     expected = array_ops.placeholder(dtypes.float32, 1, name="x")
     tensor_info = utils.build_tensor_info(expected)

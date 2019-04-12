@@ -23,6 +23,7 @@ import csv
 import numpy as np
 
 from tensorflow.python.data.experimental.ops import batching
+from tensorflow.python.data.experimental.ops import error_ops
 from tensorflow.python.data.experimental.ops import interleave_ops
 from tensorflow.python.data.experimental.ops import optimization
 from tensorflow.python.data.experimental.ops import parsing_ops
@@ -327,6 +328,7 @@ def make_csv_dataset(
     sloppy=False,
     num_rows_for_inference=100,
     compression_type=None,
+    ignore_errors=False,
 ):
   """Reads CSV files into a dataset.
 
@@ -401,6 +403,10 @@ def make_csv_dataset(
       the files. Defaults to 100.
     compression_type: (Optional.) A `tf.string` scalar evaluating to one of
       `""` (no compression), `"ZLIB"`, or `"GZIP"`. Defaults to no compression.
+    ignore_errors: (Optional.) If `True`, ignores errors with CSV file parsing,
+      such as malformed data or empty lines, and moves on to the next valid
+      CSV record. Otherwise, the dataset raises an error and stops processing
+      when encountering any invalid records. Defaults to `False`.
 
   Returns:
     A dataset, where each element is a (features, labels) tuple that corresponds
@@ -456,7 +462,7 @@ def make_csv_dataset(
     raise ValueError("`label_name` provided must be one of the columns.")
 
   def filename_to_dataset(filename):
-    return CsvDataset(
+    dataset = CsvDataset(
         filename,
         record_defaults=column_defaults,
         field_delim=field_delim,
@@ -464,8 +470,11 @@ def make_csv_dataset(
         na_value=na_value,
         select_cols=select_columns,
         header=header,
-        compression_type=compression_type,
+        compression_type=compression_type
     )
+    if ignore_errors:
+      dataset = dataset.apply(error_ops.ignore_errors())
+    return dataset
 
   def map_fn(*columns):
     """Organizes columns into a features dictionary.
@@ -506,6 +515,38 @@ def make_csv_dataset(
   return dataset
 
 
+@tf_export(v1=["data.experimental.make_csv_dataset"])
+def make_csv_dataset_v1(
+    file_pattern,
+    batch_size,
+    column_names=None,
+    column_defaults=None,
+    label_name=None,
+    select_columns=None,
+    field_delim=",",
+    use_quote_delim=True,
+    na_value="",
+    header=True,
+    num_epochs=None,
+    shuffle=True,
+    shuffle_buffer_size=10000,
+    shuffle_seed=None,
+    prefetch_buffer_size=optimization.AUTOTUNE,
+    num_parallel_reads=1,
+    sloppy=False,
+    num_rows_for_inference=100,
+    compression_type=None,
+    ignore_errors=False,
+):  # pylint: disable=missing-docstring
+  return dataset_ops.DatasetV1Adapter(make_csv_dataset_v2(
+      file_pattern, batch_size, column_names, column_defaults, label_name,
+      select_columns, field_delim, use_quote_delim, na_value, header,
+      num_epochs, shuffle, shuffle_buffer_size, shuffle_seed,
+      prefetch_buffer_size, num_parallel_reads, sloppy, num_rows_for_inference,
+      compression_type, ignore_errors))
+make_csv_dataset_v1.__doc__ = make_csv_dataset_v2.__doc__
+
+
 _DEFAULT_READER_BUFFER_SIZE_BYTES = 4 * 1024 * 1024  # 4 MB
 
 
@@ -539,6 +580,7 @@ class CsvDataset(dataset_ops.DatasetSource):
     ```
 
     We can construct a CsvDataset from it as follows:
+
     ```python
     dataset = tf.data.experimental.CsvDataset(
         "my_file*.csv",
@@ -551,6 +593,7 @@ class CsvDataset(dataset_ops.DatasetSource):
     ```
 
     The expected output of its iterations is:
+
     ```python
     next_element = dataset.make_one_shot_iterator().get_next()
     with tf.Session() as sess:
@@ -593,7 +636,6 @@ class CsvDataset(dataset_ops.DatasetSource):
         the input data. If specified, only this subset of columns will be
         parsed. Defaults to parsing all columns.
     """
-    super(CsvDataset, self).__init__()
     self._filenames = ops.convert_to_tensor(
         filenames, dtype=dtypes.string, name="filenames")
     self._compression_type = convert.optional_param_to_tensor(
@@ -623,15 +665,10 @@ class CsvDataset(dataset_ops.DatasetSource):
         argument_default=[],
         argument_dtype=dtypes.int64,
     )
-    self._output_shapes = tuple(
-        tensor_shape.scalar() for _ in range(len(record_defaults)))
-    self._output_types = tuple(d.dtype for d in self._record_defaults)
-    self._output_classes = tuple(
-        ops.Tensor for _ in range(len(record_defaults)))
-
-  def _as_variant_tensor(self):
-    # Constructs graph node for the dataset op.
-    return gen_experimental_dataset_ops.experimental_csv_dataset(
+    self._structure = structure.NestedStructure(
+        tuple(structure.TensorStructure(d.dtype, [])
+              for d in self._record_defaults))
+    variant_tensor = gen_experimental_dataset_ops.experimental_csv_dataset(
         filenames=self._filenames,
         record_defaults=self._record_defaults,
         buffer_size=self._buffer_size,
@@ -641,8 +678,8 @@ class CsvDataset(dataset_ops.DatasetSource):
         use_quote_delim=self._use_quote_delim,
         na_value=self._na_value,
         select_cols=self._select_cols,
-        compression_type=self._compression_type,
-    )
+        compression_type=self._compression_type)
+    super(CsvDatasetV2, self).__init__(variant_tensor)
 
   @property
   def output_types(self):
@@ -780,7 +817,8 @@ def make_batched_features_dataset(file_pattern,
           sloppy=sloppy_ordering))
 
   # Extract values if the `Example` tensors are stored as key-value tuples.
-  if dataset.output_types == (dtypes.string, dtypes.string):
+  if dataset_ops.get_legacy_output_types(dataset) == (
+      dtypes.string, dtypes.string):
     dataset = dataset_ops.MapDataset(
         dataset, lambda _, v: v, use_inter_op_parallelism=False)
 
@@ -875,20 +913,19 @@ class SqlDataset(dataset_ops.DatasetSource):
       output_types: A tuple of `tf.DType` objects representing the types of the
         columns returned by `query`.
     """
-    super(SqlDataset, self).__init__()
     self._driver_name = ops.convert_to_tensor(
         driver_name, dtype=dtypes.string, name="driver_name")
     self._data_source_name = ops.convert_to_tensor(
         data_source_name, dtype=dtypes.string, name="data_source_name")
     self._query = ops.convert_to_tensor(
         query, dtype=dtypes.string, name="query")
-    self._output_types = output_types
-
-  def _as_variant_tensor(self):
-    return gen_dataset_ops.sql_dataset(self._driver_name,
-                                       self._data_source_name, self._query,
-                                       nest.flatten(self.output_types),
-                                       nest.flatten(self.output_shapes))
+    self._structure = structure.NestedStructure(
+        nest.map_structure(
+            lambda dtype: structure.TensorStructure(dtype, []), output_types))
+    variant_tensor = gen_experimental_dataset_ops.experimental_sql_dataset(
+        self._driver_name, self._data_source_name, self._query,
+        **dataset_ops.flat_structure(self))
+    super(SqlDatasetV2, self).__init__(variant_tensor)
 
   @property
   def output_classes(self):

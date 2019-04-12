@@ -41,7 +41,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":utils",
-        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/types:optional",
         "//tensorflow/core/grappler/utils:functions",
         "//tensorflow/core/grappler/utils:topological_sort",
         "//tensorflow/core/grappler:graph_view",
@@ -53,6 +53,7 @@ cc_library(
         "//tensorflow/core/grappler:grappler_item",
         "//tensorflow/core/grappler:utils",
         "//tensorflow/core/grappler/clusters:cluster",
+        "//tensorflow/core/grappler/optimizers:evaluation_utils",
     ] + tf_protos_grappler(),
 )
 
@@ -168,10 +169,22 @@ tf_cc_test(
 
 cc_library(
     name = "cost_estimator",
+    srcs = ["cost_estimator.cc"],
     hdrs = ["cost_estimator.h"],
     visibility = ["//visibility:public"],
     deps = [
         "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+    ],
+)
+
+tf_cc_test(
+    name = "cost_estimator_test",
+    srcs = ["cost_estimator_test.cc"],
+    deps = [
+        ":cost_estimator",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
     ],
 )
 

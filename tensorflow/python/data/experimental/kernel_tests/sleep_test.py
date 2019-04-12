@@ -25,12 +25,11 @@ from tensorflow.python.data.ops import dataset_ops
 from tensorflow.python.framework import errors
 from tensorflow.python.platform import test
 
-_NUMPY_RANDOM_SEED = 42
-
 
 class SleepTest(test_base.DatasetTestBase):
 
   def testSleep(self):
+    self.skipTest("b/123597912")
     sleep_microseconds = 100
     dataset = dataset_ops.Dataset.range(10).apply(
         sleep.sleep(sleep_microseconds))

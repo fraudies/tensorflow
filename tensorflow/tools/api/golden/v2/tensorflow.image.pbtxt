@@ -33,6 +33,10 @@ tf_module {
     argspec: "args=[\'image\', \'central_fraction\'], varargs=None, keywords=None, defaults=None"
   }
   member_method {
+    name: "combined_non_max_suppression"
+    argspec: "args=[\'boxes\', \'scores\', \'max_output_size_per_class\', \'max_total_size\', \'iou_threshold\', \'score_threshold\', \'pad_per_class\', \'clip_boxes\', \'name\'], varargs=None, keywords=None, defaults=[\'0.5\', \'-inf\', \'False\', \'True\', \'None\'], "
+  }
+  member_method {
     name: "convert_image_dtype"
     argspec: "args=[\'image\', \'dtype\', \'saturate\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
   }
@@ -70,7 +74,7 @@ tf_module {
   }
   member_method {
     name: "draw_bounding_boxes"
-    argspec: "args=[\'images\', \'boxes\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+    argspec: "args=[\'images\', \'boxes\', \'colors\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
     name: "encode_jpeg"
@@ -82,7 +86,7 @@ tf_module {
   }
   member_method {
     name: "extract_glimpse"
-    argspec: "args=[\'input\', \'size\', \'offsets\', \'centered\', \'normalized\', \'uniform_noise\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'True\', \'True\', \'None\'], "
+    argspec: "args=[\'input\', \'size\', \'offsets\', \'centered\', \'normalized\', \'noise\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'True\', \'uniform\', \'None\'], "
   }
   member_method {
     name: "extract_image_patches"
@@ -173,24 +177,16 @@ tf_module {
     argspec: "args=[\'image\', \'lower\', \'upper\', \'seed\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
-    name: "resize_area"
-    argspec: "args=[\'images\', \'size\', \'align_corners\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
-  }
-  member_method {
-    name: "resize_bicubic"
-    argspec: "args=[\'images\', \'size\', \'align_corners\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
-  }
-  member_method {
-    name: "resize_bilinear"
-    argspec: "args=[\'images\', \'size\', \'align_corners\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+    name: "resize"
+    argspec: "args=[\'images\', \'size\', \'method\', \'preserve_aspect_ratio\', \'antialias\', \'name\'], varargs=None, keywords=None, defaults=[\'bilinear\', \'False\', \'False\', \'None\'], "
   }
   member_method {
     name: "resize_image_with_crop_or_pad"
     argspec: "args=[\'image\', \'target_height\', \'target_width\'], varargs=None, keywords=None, defaults=None"
   }
   member_method {
-    name: "resize_image_with_pad"
-    argspec: "args=[\'image\', \'target_height\', \'target_width\', \'method\'], varargs=None, keywords=None, defaults=[\'0\'], "
+    name: "resize_with_pad"
+    argspec: "args=[\'image\', \'target_height\', \'target_width\', \'method\', \'antialias\'], varargs=None, keywords=None, defaults=[\'bilinear\', \'False\'], "
   }
   member_method {
     name: "resize_images"

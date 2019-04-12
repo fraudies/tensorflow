@@ -76,7 +76,7 @@ class RandomGammaGradTest(test.TestCase):
     shape = [2, 3]
     alpha = array_ops.ones([2, 2])
     beta = array_ops.ones([1, 2])
-    sample = random_ops.random_gamma(shape, alpha, beta)
+    sample = random_ops.random_gamma(shape, alpha, beta, seed=12345)
     grads_alpha, grads_beta = gradients_impl.gradients(sample, [alpha, beta])
     self.assertAllEqual(grads_alpha.shape, alpha.shape)
     self.assertAllEqual(grads_beta.shape, beta.shape)
@@ -85,7 +85,7 @@ class RandomGammaGradTest(test.TestCase):
     shape = []
     alpha = array_ops.ones([2, 2])
     beta = array_ops.ones([1, 2])
-    sample = random_ops.random_gamma(shape, alpha, beta)
+    sample = random_ops.random_gamma(shape, alpha, beta, seed=12345)
     grads_alpha, grads_beta = gradients_impl.gradients(sample, [alpha, beta])
     self.assertAllEqual(grads_alpha.shape, alpha.shape)
     self.assertAllEqual(grads_beta.shape, beta.shape)
@@ -94,7 +94,7 @@ class RandomGammaGradTest(test.TestCase):
     shape = array_ops.placeholder(dtypes.int32)
     alpha = array_ops.placeholder(dtypes.float32)
     beta = array_ops.placeholder(dtypes.float32)
-    sample = random_ops.random_gamma(shape, alpha, beta)
+    sample = random_ops.random_gamma(shape, alpha, beta, seed=12345)
     grads_alpha, grads_beta = gradients_impl.gradients(sample, [alpha, beta])
 
     alpha_val = np.ones([1, 2])
@@ -124,7 +124,8 @@ class RandomGammaGradTest(test.TestCase):
 
       alpha_val = np.logspace(-2, 3, dtype=np_dtype)
       alpha = constant_op.constant(alpha_val)
-      sample = random_ops.random_gamma([], alpha, np_dtype(1.0), dtype=dtype)
+      sample = random_ops.random_gamma(
+          [], alpha, np_dtype(1.0), dtype=dtype, seed=12345)
       actual = gradients_impl.gradients(sample, alpha)[0]
 
       (sample_val, actual_val) = self.evaluate((sample, actual))
@@ -168,7 +169,8 @@ class RandomGammaGradTest(test.TestCase):
     """
     np_dtype = dtype.as_numpy_dtype
     alpha = constant_op.constant(np.logspace(-2, 3, dtype=np_dtype))
-    sample = random_ops.random_gamma([], alpha, np_dtype(1.0), dtype=dtype)
+    sample = random_ops.random_gamma(
+        [], alpha, np_dtype(1.0), dtype=dtype, seed=12345)
     actual = gradients_impl.gradients(sample, alpha)[0]
 
     sample_sg = array_ops.stop_gradient(sample)
@@ -197,9 +199,9 @@ class RandomGammaGradTest(test.TestCase):
     Here we verify that the rhs is fairly close to one.
     The convergence speed is not great, so we use many samples and loose bounds.
     """
-    num_samples = 1000
+    num_samples = 10000
     alpha = constant_op.constant([0.8, 1e1, 1e3], dtype=dtypes.float32)
-    sample = random_ops.random_gamma([num_samples], alpha)
+    sample = random_ops.random_gamma([num_samples], alpha, seed=12345)
     # We need to average the gradients, which is equivalent to averaging the
     # samples and then doing backprop.
     mean_sample = math_ops.reduce_mean(sample, axis=0)
@@ -223,13 +225,13 @@ class RandomGammaGradTest(test.TestCase):
     We compare the Monte-Carlo estimate of the expectation with the
     true gradient.
     """
-    num_samples = 1000
+    num_samples = 10000
     t = 0.3
     alpha = 0.5
     expected = 1 + 2 * alpha - 2 * t
 
     alpha = constant_op.constant(alpha)
-    sample = random_ops.random_gamma([num_samples], alpha, 1.0)
+    sample = random_ops.random_gamma([num_samples], alpha, 1.0, seed=12345)
     loss = math_ops.reduce_mean(math_ops.square(sample - t))
     dloss_dalpha = gradients_impl.gradients(loss, alpha)[0]
     dloss_dalpha_val = self.evaluate(dloss_dalpha)

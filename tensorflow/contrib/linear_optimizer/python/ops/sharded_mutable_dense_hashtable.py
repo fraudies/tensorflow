@@ -30,7 +30,9 @@ from tensorflow.python.ops import data_flow_ops
 from tensorflow.python.ops import math_ops
 
 
-class ShardedMutableDenseHashTable(lookup.LookupInterface):
+# TODO(rohanj): This should subclass Trackable and implement
+# _gather_saveables_for_checkpoint.
+class ShardedMutableDenseHashTable(object):
   """A sharded version of MutableDenseHashTable.
 
   It is designed to be interface compatible with LookupInterface and

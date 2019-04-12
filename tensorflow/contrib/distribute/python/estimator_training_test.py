@@ -27,14 +27,16 @@ import threading
 from absl.testing import parameterized
 import numpy as np
 
-from tensorflow.contrib.distribute.python import combinations
+from tensorflow.contrib.distribute.python import collective_all_reduce_strategy
 from tensorflow.contrib.distribute.python import mirrored_strategy
-from tensorflow.contrib.distribute.python import multi_worker_test_base
 from tensorflow.contrib.distribute.python import parameter_server_strategy
 from tensorflow.contrib.optimizer_v2 import adagrad
 from tensorflow.python.data.ops import dataset_ops
+from tensorflow.python.distribute import combinations
+from tensorflow.python.distribute import cross_device_ops as cross_device_ops_lib
 from tensorflow.python.distribute import distribute_coordinator as dc
 from tensorflow.python.distribute import estimator_training as dc_training
+from tensorflow.python.distribute import multi_worker_test_base
 from tensorflow.python.distribute.distribute_config import DistributeConfig
 from tensorflow.python.eager import context
 from tensorflow.python.estimator import exporter as exporter_lib
@@ -259,6 +261,12 @@ class DistributeCoordinatorIntegrationTest(test.TestCase,
     ])
     self.assertAllEqual((BATCH_SIZE, LABEL_DIMENSION), predicted_proba.shape)
 
+  def _get_strategy_object(self, strategy_cls):
+    if strategy_cls == mirrored_strategy.CoreMirroredStrategy:
+      return strategy_cls()
+    else:
+      return strategy_cls(num_gpus_per_worker=context.num_gpus())
+
   @combinations.generate(
       combinations.combine(
           mode=["graph"],
@@ -267,8 +275,11 @@ class DistributeCoordinatorIntegrationTest(test.TestCase,
               parameter_server_strategy.ParameterServerStrategy
           ],
           eval_distribute_cls=[
-              None, mirrored_strategy.MirroredStrategy,
-              parameter_server_strategy.ParameterServerStrategy
+              None,
+              mirrored_strategy.MirroredStrategy,
+              mirrored_strategy.CoreMirroredStrategy,
+              parameter_server_strategy.ParameterServerStrategy,
+              collective_all_reduce_strategy.CollectiveAllReduceStrategy,
           ],
           required_gpus=1))
   def test_complete_flow_standalone_client(self, train_distribute_cls,
@@ -282,6 +293,68 @@ class DistributeCoordinatorIntegrationTest(test.TestCase,
       eval_distribute = eval_distribute_cls()
     else:
       eval_distribute = None
+
+    cluster_spec = copy.deepcopy(self._cluster_spec)
+    if (train_distribute_cls !=
+        parameter_server_strategy.ParameterServerStrategy):
+      cluster_spec.pop("ps", None)
+    estimator = self._complete_flow(train_distribute, eval_distribute,
+                                    cluster_spec)
+    self._inspect_train_and_eval_events(estimator)
+
+  @combinations.generate(
+      combinations.combine(
+          mode=["graph"],
+          eval_distribute_class=[
+              None,
+              mirrored_strategy.MirroredStrategy,
+              mirrored_strategy.CoreMirroredStrategy,
+              parameter_server_strategy.ParameterServerStrategy,
+          ],
+          required_gpus=[0, 1]))
+  def test_complete_flow_standalone_client_collective_nccl(
+      self, eval_distribute_class):
+    train_distribute = (
+        collective_all_reduce_strategy.CollectiveAllReduceStrategy(
+            num_gpus_per_worker=context.num_gpus(),
+            communication=cross_device_ops_lib.CollectiveCommunication.NCCL))
+
+    if eval_distribute_class:
+      eval_distribute = self._get_strategy_object(eval_distribute_class)
+    else:
+      eval_distribute = None
+
+    cluster_spec = copy.deepcopy(self._cluster_spec)
+    cluster_spec.pop("ps", None)
+    estimator = self._complete_flow(train_distribute, eval_distribute,
+                                    cluster_spec)
+    self._inspect_train_and_eval_events(estimator)
+
+  @combinations.generate(
+      combinations.combine(
+          mode=["graph"],
+          train_distribute_cls=[
+              mirrored_strategy.MirroredStrategy,
+              mirrored_strategy.CoreMirroredStrategy,
+          ],
+          eval_distribute_cls=[
+              None,
+              mirrored_strategy.MirroredStrategy,
+              mirrored_strategy.CoreMirroredStrategy,
+          ],
+          required_gpus=[0, 1]))
+  def test_estimator_standalone_client(self, train_distribute_cls,
+                                       eval_distribute_cls):
+    train_distribute = self._get_strategy_object(train_distribute_cls)
+
+    if eval_distribute_cls:
+      eval_distribute = self._get_strategy_object(eval_distribute_cls)
+    else:
+      eval_distribute = None
+
+    # We use the whole cluster for evaluation.
+    cluster = copy.deepcopy(self._cluster_spec)
+    cluster.pop("evaluator", None)
 
     estimator = self._complete_flow(
         train_distribute, eval_distribute, remote_cluster=self._cluster_spec)
@@ -342,11 +415,14 @@ class DistributeCoordinatorIntegrationTest(test.TestCase,
               parameter_server_strategy.ParameterServerStrategy,
           ],
           eval_distribute_cls=[
-              None, mirrored_strategy.MirroredStrategy,
-              parameter_server_strategy.ParameterServerStrategy
+              None,
+              mirrored_strategy.MirroredStrategy,
+              mirrored_strategy.CoreMirroredStrategy,
+              parameter_server_strategy.ParameterServerStrategy,
+              collective_all_reduce_strategy.CollectiveAllReduceStrategy,
           ],
-          required_gpus=1))
-  def test_complete_flow_indepedent_worker_between_graph(
+          required_gpus=[0, 1]))
+  def test_complete_flow_independent_worker_between_graph(
       self, train_distribute_cls, eval_distribute_cls):
     train_distribute = train_distribute_cls(
         num_gpus_per_worker=context.num_gpus())
@@ -375,12 +451,19 @@ class DistributeCoordinatorIntegrationTest(test.TestCase,
   @combinations.generate(
       combinations.combine(
           mode=["graph"],
-          train_distribute_cls=[mirrored_strategy.MirroredStrategy],
-          eval_distribute_cls=[None, mirrored_strategy.MirroredStrategy],
-          required_gpus=1))
-  def test_complete_flow_indepedent_worker_in_graph(self, train_distribute_cls,
-                                                    eval_distribute_cls):
-    train_distribute = train_distribute_cls(num_gpus=context.num_gpus())
+          train_distribute_cls=[
+              mirrored_strategy.MirroredStrategy,
+              mirrored_strategy.CoreMirroredStrategy
+          ],
+          eval_distribute_cls=[
+              None,
+              mirrored_strategy.MirroredStrategy,
+              mirrored_strategy.CoreMirroredStrategy
+          ],
+          required_gpus=[0, 1]))
+  def test_complete_flow_independent_worker_in_graph(self, train_distribute_cls,
+                                                     eval_distribute_cls):
+    train_distribute = self._get_strategy_object(train_distribute_cls)
 
     if eval_distribute_cls:
       eval_distribute = eval_distribute_cls()

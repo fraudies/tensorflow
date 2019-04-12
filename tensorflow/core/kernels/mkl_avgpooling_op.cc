@@ -671,31 +671,49 @@ class MklAvgPoolingGradOp : public MklPoolingBackwardOpBase<T> {
   }
 };  // MklAvgPoolingGradOp
 
-REGISTER_KERNEL_BUILDER(Name("_MklAvgPool3D")
-                            .Device(DEVICE_CPU)
-                            .TypeConstraint<float>("T")
-                            .Label(mkl_op_registry::kMklOpLabel),
-                        MklAvgPoolingOp<CPUDevice, float>);
+#define REGISTER_MKL_AVGPOOL3D_KERNELS(T)                           \
+  REGISTER_KERNEL_BUILDER(Name("_MklAvgPool3D")                     \
+                              .Device(DEVICE_CPU)                   \
+                              .TypeConstraint<T>("T")               \
+                              .Label(mkl_op_registry::kMklOpLabel), \
+                          MklAvgPoolingOp<CPUDevice, T>);           \
+  REGISTER_KERNEL_BUILDER(Name("_MklAvgPool3DGrad")                 \
+                              .Device(DEVICE_CPU)                   \
+                              .TypeConstraint<T>("T")               \
+                              .Label(mkl_op_registry::kMklOpLabel), \
+                          MklAvgPoolingGradOp<CPUDevice, T>);
 
-REGISTER_KERNEL_BUILDER(Name("_MklAvgPool3DGrad")
-                            .Device(DEVICE_CPU)
-                            .TypeConstraint<float>("T")
-                            .Label(mkl_op_registry::kMklOpLabel),
-                        MklAvgPoolingGradOp<CPUDevice, float>);
+TF_CALL_float(REGISTER_MKL_AVGPOOL3D_KERNELS);
+TF_CALL_bfloat16(REGISTER_MKL_AVGPOOL3D_KERNELS);
 
 #endif  // INTEL_MKL_ML_ONLY
 
-REGISTER_KERNEL_BUILDER(Name("_MklAvgPool")
-                            .Device(DEVICE_CPU)
-                            .TypeConstraint<float>("T")
-                            .Label(mkl_op_registry::kMklOpLabel),
-                        MklAvgPoolingOp<CPUDevice, float>);
+#define REGISTER_MKL_AVGPOOL_KERNELS(T)                             \
+  REGISTER_KERNEL_BUILDER(Name("_MklAvgPool")                       \
+                              .Device(DEVICE_CPU)                   \
+                              .TypeConstraint<T>("T")               \
+                              .Label(mkl_op_registry::kMklOpLabel), \
+                          MklAvgPoolingOp<CPUDevice, T>);           \
+  REGISTER_KERNEL_BUILDER(Name("_MklAvgPoolGrad")                   \
+                              .Device(DEVICE_CPU)                   \
+                              .TypeConstraint<T>("T")               \
+                              .Label(mkl_op_registry::kMklOpLabel), \
+                          MklAvgPoolingGradOp<CPUDevice, T>);
 
-REGISTER_KERNEL_BUILDER(Name("_MklAvgPoolGrad")
+TF_CALL_float(REGISTER_MKL_AVGPOOL_KERNELS);
+TF_CALL_bfloat16(REGISTER_MKL_AVGPOOL_KERNELS);
+
+REGISTER_KERNEL_BUILDER(Name("_MklQuantizedAvgPool")
                             .Device(DEVICE_CPU)
-                            .TypeConstraint<float>("T")
-                            .Label(mkl_op_registry::kMklOpLabel),
-                        MklAvgPoolingGradOp<CPUDevice, float>);
+                            .TypeConstraint<quint8>("T")
+                            .Label(mkl_op_registry::kMklQuantizedOpLabel),
+                        MklAvgPoolingOp<CPUDevice, quint8>);
+
+REGISTER_KERNEL_BUILDER(Name("_MklQuantizedAvgPool")
+                            .Device(DEVICE_CPU)
+                            .TypeConstraint<qint8>("T")
+                            .Label(mkl_op_registry::kMklQuantizedOpLabel),
+                        MklAvgPoolingOp<CPUDevice, qint8>);
 
 }  // namespace tensorflow
 #endif  // INTEL_MKL

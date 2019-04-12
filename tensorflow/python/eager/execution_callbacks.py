@@ -45,7 +45,7 @@ class InfOrNanError(Exception):
     """Constructor of InfOrNanError.
 
     Args:
-      op_type: Type name of the op that generated the tensor that generated the
+      op_type: Type name of the op that generated the tensor with
         `inf`(s) or `nan`(s) (e.g., `Div`).
       op_name: Name of the op that generated the tensor with `inf`(s) or
         `nan`(s). This name is set by client and can be `None` if it is unset.
@@ -162,6 +162,7 @@ def inf_nan_callback(op_type,
             "T", outputs[0].dtype.as_datatype_enum)
         # TODO(cais): Consider moving this into execute.py.
         # pylint: disable=protected-access
+        ctx.ensure_initialized()
         pywrap_tensorflow.TFE_Py_Execute(
             ctx._handle, output.device, "CheckNumerics", [output],
             check_numerics_op_attrs, 1)

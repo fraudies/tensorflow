@@ -33,9 +33,68 @@ bool IsTrivialOp(const NodeDef& node, const GraphRewriter& rewriter) {
     return true;
   }
   if (IsIdentity(node) || IsIdentityNSingleInput(node)) {
-    if (rewriter.FeedsMerge(node) || rewriter.IsDrivenBySwitch(node) ||
-        rewriter.IsDrivenByControlDependency(node) ||
-        rewriter.DrivesControlDependency(node)) {
+    return IsTrivialIdentity(node, graph_view);
+  }
+  if (IsNoOp(node) && node.input().empty()) {
+    return true;
+  }
+  // Const nodes are always executed before anything else, so if they only
+  // have control outputs we can remove them.
+  if (IsConstant(node) && node.input().empty() &&
+      graph_view.NumFanouts(node, /*include_controlled_nodes=*/false) == 0) {
+    return true;
+  }
+  return IsAddN(node) && NumNonControlInputs(node) <= 1;
+}
+
+bool RemovalIncreasesEdgeCount(const NodeDef& node,
+                               const MutableGraphView& graph_view) {
+  int in_degree =
+      graph_view.NumFanins(node, /*include_controlling_nodes=*/true);
+  int out_degree =
+      graph_view.NumFanouts(node, /*include_controlling_nodes=*/true);
+  return in_degree * out_degree > in_degree + out_degree;
+}
+
+bool IsOutputPortRefValue(const NodeDef& node, int port_id,
+                          const OpRegistryInterface& op_registry) {
+  const OpRegistrationData* op_reg_data = nullptr;
+  Status s = op_registry.LookUp(node.op(), &op_reg_data);
+  if (s.ok()) {
+    DataType output_type;
+    s = OutputTypeForNode(node, op_reg_data->op_def, port_id, &output_type);
+    if (s.ok() && IsRefType(output_type)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool CanRemoveNode(const NodeDef& node, const MutableGraphView& graph_view,
+                   const absl::flat_hash_set<string>& function_names,
+                   const OpRegistryInterface& op_registry) {
+  if (IsNoOp(node) && node.input().empty()) {
+    return true;
+  }
+  if (IsConstant(node) && node.input().empty() &&
+      graph_view.NumFanouts(node, /*include_controlled_nodes=*/false) == 0) {
+    return true;
+  }
+  if (RemovalIncreasesEdgeCount(node, graph_view)) {
+    return false;
+  }
+  for (const auto input :
+       graph_view.GetFanins(node, /*include_controlling_nodes=*/true)) {
+    if (node.device() != input.node->device()) {
+      // Node is driven by a different device.
+      return false;
+    } else if (input.port_id == Graph::kControlSlot) {
+      // Node is driven by control dependency.
+      continue;
+    } else if (function_names.find(input.node->op()) != function_names.end()) {
+      // Node input is a function call.
+      return false;
+    } else if (IsOutputPortRefValue(*input.node, input.port_id, op_registry)) {
       return false;
     } else {
       return true;

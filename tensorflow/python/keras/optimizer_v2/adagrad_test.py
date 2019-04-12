@@ -26,6 +26,7 @@ from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.keras.optimizer_v2 import adagrad
+from tensorflow.python.keras.optimizer_v2 import learning_rate_schedule
 from tensorflow.python.ops import embedding_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import resource_variable_ops
@@ -69,6 +70,53 @@ class AdagradOptimizerTest(test.TestCase):
   def testBasicResource(self):
     self.doTestBasic(use_resource=True)
 
+  def testBasicWithLearningRateInverseTimeDecay(self):
+    for dtype in [dtypes.float32, dtypes.float64]:
+      with self.cached_session():
+        var0_np = np.array([1.0, 2.0], dtype=dtype.as_numpy_dtype)
+        var1_np = np.array([3.0, 4.0], dtype=dtype.as_numpy_dtype)
+        grads0_np = np.array([0.1, 0.1], dtype=dtype.as_numpy_dtype)
+        grads1_np = np.array([0.01, 0.01], dtype=dtype.as_numpy_dtype)
+        var0 = resource_variable_ops.ResourceVariable(var0_np)
+        var1 = resource_variable_ops.ResourceVariable(var1_np)
+        grads0 = constant_op.constant(grads0_np)
+        grads1 = constant_op.constant(grads1_np)
+
+        learning_rate = 3.0
+        decay = 0.5
+        lr_schedule = learning_rate_schedule.InverseTimeDecay(
+            learning_rate, decay_steps=1.0, decay_rate=decay)
+
+        ada_opt = adagrad.Adagrad(lr_schedule)
+
+        accum0_np = np.array([0.1, 0.1], dtype=dtype.as_numpy_dtype)
+        accum1_np = np.array([0.1, 0.1], dtype=dtype.as_numpy_dtype)
+
+        if not context.executing_eagerly():
+          ada_update = ada_opt.apply_gradients(
+              zip([grads0, grads1], [var0, var1]))
+          self.evaluate(variables.global_variables_initializer())
+
+        # Fetch params to validate initial values
+        v0_val, v1_val = self.evaluate([var0, var1])
+        self.assertAllClose([1.0, 2.0], v0_val)
+        self.assertAllClose([3.0, 4.0], v1_val)
+
+        # Run 3 steps of adagrad
+        for t in range(3):
+          if not context.executing_eagerly():
+            self.evaluate(ada_update)
+          else:
+            ada_opt.apply_gradients(zip([grads0, grads1], [var0, var1]))
+          lr_np = learning_rate / (1 + decay * t)
+          var0_np, accum0_np = adagrad_update_numpy(var0_np, accum0_np,
+                                                    grads0_np, lr_np)
+          var1_np, accum1_np = adagrad_update_numpy(var1_np, accum1_np,
+                                                    grads1_np, lr_np)
+          self.assertAllCloseAccordingToType(var0_np, self.evaluate(var0))
+          self.assertAllCloseAccordingToType(var1_np, self.evaluate(var1))
+
+  @test_util.run_deprecated_v1
   def testMinimizeSparseResourceVariable(self):
     for dtype in [dtypes.half, dtypes.float32, dtypes.float64]:
       with self.cached_session():
@@ -247,9 +295,9 @@ class AdagradOptimizerTest(test.TestCase):
             zip([grads0, grads1], [var0, var1]))
         self.assertEqual(["accumulator"], ada_opt.get_slot_names())
         slot0 = ada_opt.get_slot(var0, "accumulator")
-        self.assertEquals(slot0.get_shape(), var0.get_shape())
+        self.assertEqual(slot0.shape, var0.shape)
         slot1 = ada_opt.get_slot(var1, "accumulator")
-        self.assertEquals(slot1.get_shape(), var1.get_shape())
+        self.assertEqual(slot1.shape, var1.shape)
         variables.global_variables_initializer().run()
 
         # Fetch params to validate initial values.
@@ -259,30 +307,42 @@ class AdagradOptimizerTest(test.TestCase):
         ada_update1.run()
         ada_update2.run()
         ada_update1.run()
-        # Validate updated params (the same as with only 1 Adagrad).
-        self.assertAllCloseAccordingToType(
-            np.array([-1.6026098728179932, -0.6026098728179932]), var0.eval())
-        self.assertAllCloseAccordingToType(
-            np.array([2.715679168701172, 3.715679168701172]), var1.eval())
 
-  def testDynamicShapeVariable_Ok(self):
-    with self.cached_session():
-      v = variable_scope.get_variable("v", initializer=constant_op.constant(1.),
-                                      validate_shape=False)
-      self.assertFalse(v.shape.is_fully_defined())
-      # Creating optimizer should cause no exception.
-      adagrad.Adagrad(3.0, initial_accumulator_value=0.1)
+        accum0_np = np.array([0.1, 0.1], dtype=dtype.as_numpy_dtype)
+        accum1_np = np.array([0.1, 0.1], dtype=dtype.as_numpy_dtype)
+        for _ in range(3):
+          var0_np, accum0_np = adagrad_update_numpy(var0_np, accum0_np,
+                                                    grads0_np, learning_rate)
+          var1_np, accum1_np = adagrad_update_numpy(var1_np, accum1_np,
+                                                    grads1_np, learning_rate)
+        self.assertAllCloseAccordingToType(var0_np, self.evaluate(var0))
+        self.assertAllCloseAccordingToType(var1_np, self.evaluate(var1))
 
-  def testConfig(self):
-    opt = adagrad.Adagrad(
-        learning_rate=lambda: ops.convert_to_tensor(1.0),
-        initial_accumulator_value=2.0)
+  def testConstructAdagradWithLR(self):
+    opt = adagrad.Adagrad(lr=1.0)
+    opt_2 = adagrad.Adagrad(learning_rate=0.1, lr=1.0)
+    opt_3 = adagrad.Adagrad(learning_rate=0.1)
+    self.assertIsInstance(opt.lr, variables.Variable)
+    self.assertIsInstance(opt_2.lr, variables.Variable)
+    self.assertIsInstance(opt_3.lr, variables.Variable)
+
+    self.evaluate(variables.global_variables_initializer())
+    self.assertAllClose(self.evaluate(opt.lr), (1.0))
+    self.assertAllClose(self.evaluate(opt_2.lr), (1.0))
+    self.assertAllClose(self.evaluate(opt_3.lr), (0.1))
+
+  def testConstructAdagradWithEpsilonValues(self):
+    opt = adagrad.Adagrad(epsilon=None)
     config = opt.get_config()
-    opt2 = adagrad.Adagrad.from_config(config)
-    self.assertIsInstance(opt2._hyper["learning_rate"][1],
-                          python_types.LambdaType)
-    self.assertEqual(opt._initial_accumulator_value,
-                     opt2._initial_accumulator_value)
+    self.assertEqual(config["epsilon"], 1e-7)
+
+    opt = adagrad.Adagrad(epsilon=1e-6)
+    config = opt.get_config()
+    self.assertEqual(config["epsilon"], 1e-6)
+
+    with self.assertRaisesRegexp(ValueError,
+                                 "epsilon must be larger than 1e-7"):
+      opt = adagrad.Adagrad(epsilon=1e-8)
 
 
 if __name__ == "__main__":

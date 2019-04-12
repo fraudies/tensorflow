@@ -99,7 +99,7 @@ class XlaCompilationCache : public ResourceBase {
   xla::LocalClient* client() const { return client_; }
   const DeviceType& device_type() const { return device_type_; }
 
-  string DebugString() override;
+  string DebugString() const override;
 
  private:
   // Common implementation of Compile and CompileSingleOp.
@@ -126,7 +126,9 @@ class XlaCompilationCache : public ResourceBase {
   struct Signature {
     string name;
 
-    std::vector<std::pair<DataType, TensorShape>> arg_types;
+    // List of Tensor types & shapes for compile-time constant arguments to the
+    // compilation, ordered by argument number.
+    std::vector<std::pair<DataType, std::vector<int64>>> arg_shapes;
 
     // List of Tensor values for compile-time constant arguments to the
     // compilation, ordered by argument number. Tensors must be in host memory.

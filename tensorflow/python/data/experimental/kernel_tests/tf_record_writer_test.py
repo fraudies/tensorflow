@@ -23,7 +23,8 @@ from tensorflow.python.data.experimental.ops import writers
 from tensorflow.python.data.kernel_tests import test_base
 from tensorflow.python.data.ops import dataset_ops
 from tensorflow.python.data.ops import readers
-from tensorflow.python.framework import dtypes
+from tensorflow.python.eager import function
+from tensorflow.python.framework import test_util
 from tensorflow.python.lib.io import python_io
 from tensorflow.python.lib.io import tf_record
 from tensorflow.python.ops import array_ops
@@ -112,6 +113,20 @@ class TFRecordWriterTest(test_base.DatasetTestBase):
     with self.assertRaises(TypeError):
       writers.TFRecordWriter(self._outputFilename(),
                              self.compression_type).write(input_dataset)
+
+  def testSideEffect(self):
+    def writer_fn():
+      input_dataset = readers.TFRecordDataset(self._createFile())
+      return writers.TFRecordWriter(self._outputFilename()).write(input_dataset)
+
+    @function.defun
+    def fn():
+      _ = writer_fn()
+      return "hello"
+
+    self.assertEqual(self.evaluate(fn()), b"hello")
+    for i, r in enumerate(tf_record.tf_record_iterator(self._outputFilename())):
+      self.assertAllEqual(self._record(i), r)
 
 
 if __name__ == "__main__":

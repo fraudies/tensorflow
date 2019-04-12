@@ -14,7 +14,11 @@
 # ==============================================================================
 
 # pylint: disable=invalid-name
-"""Save and restore variables."""
+"""Save and restore variables.
+
+Symbols in this file are deprecated. See replacements in
+tensorflow/python/training/trackable and tensorflow/python/training/saving.
+"""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -25,11 +29,9 @@ import time
 import uuid
 
 import numpy as np
-import six
-
-from tensorflow.core.protobuf import checkpointable_object_graph_pb2
 from tensorflow.core.protobuf import meta_graph_pb2
 from tensorflow.core.protobuf import saver_pb2
+from tensorflow.core.protobuf import trackable_object_graph_pb2
 from tensorflow.python import pywrap_tensorflow
 from tensorflow.python.client import session
 from tensorflow.python.eager import context
@@ -51,7 +53,9 @@ from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python.training import checkpoint_management
 from tensorflow.python.training import saveable_object
 from tensorflow.python.training import training_util
-from tensorflow.python.training.checkpointable import base as checkpointable
+from tensorflow.python.training.saving import saveable_object
+from tensorflow.python.training.saving import saveable_object_util
+from tensorflow.python.training.tracking import base as trackable
 from tensorflow.python.util import compat
 from tensorflow.python.util.tf_export import tf_export
 
@@ -1353,7 +1357,8 @@ class Saver(object):
            meta_graph_suffix="meta",
            write_meta_graph=True,
            write_state=True,
-           strip_default_attrs=False):
+           strip_default_attrs=False,
+           save_debug_info=False):
     # pylint: disable=line-too-long
     """Saves variables.
 
@@ -1383,6 +1388,10 @@ class Saver(object):
       strip_default_attrs: Boolean. If `True`, default-valued attributes will be
         removed from the NodeDefs. For a detailed guide, see
         [Stripping Default-Valued Attributes](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/saved_model/README.md#stripping-default-valued-attributes).
+      save_debug_info: If `True`, save the GraphDebugInfo to a separate file,
+        which in the same directory of save_path and with `_debug` added before
+        the file extension. This is only enabled when `write_meta_graph` is
+        `True`
 
     Returns:
       A string: path prefix used for the checkpoint files.  If the saver is
@@ -1468,7 +1477,8 @@ class Saver(object):
       if not context.executing_eagerly():
         with sess.graph.as_default():
           self.export_meta_graph(
-              meta_graph_filename, strip_default_attrs=strip_default_attrs)
+              meta_graph_filename, strip_default_attrs=strip_default_attrs,
+              save_debug_info=save_debug_info)
 
     if self._is_empty:
       return None
@@ -1482,7 +1492,8 @@ class Saver(object):
                         export_scope=None,
                         clear_devices=False,
                         clear_extraneous_savers=False,
-                        strip_default_attrs=False):
+                        strip_default_attrs=False,
+                        save_debug_info=False):
     # pylint: disable=line-too-long
     """Writes `MetaGraphDef` to save_path/filename.
 
@@ -1499,6 +1510,9 @@ class Saver(object):
       strip_default_attrs: Boolean. If `True`, default-valued attributes will be
         removed from the NodeDefs. For a detailed guide, see
         [Stripping Default-Valued Attributes](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/saved_model/README.md#stripping-default-valued-attributes).
+      save_debug_info: If `True`, save the GraphDebugInfo to a separate file,
+        which in the same directory of filename and with `_debug` added before
+        the file extension.
 
     Returns:
       A `MetaGraphDef` proto.
@@ -1513,7 +1527,8 @@ class Saver(object):
         export_scope=export_scope,
         clear_devices=clear_devices,
         clear_extraneous_savers=clear_extraneous_savers,
-        strip_default_attrs=strip_default_attrs)
+        strip_default_attrs=strip_default_attrs,
+        save_debug_info=save_debug_info)
 
   def restore(self, sess, save_path):
     """Restores previously saved variables.
@@ -1741,6 +1756,7 @@ def export_meta_graph(filename=None,
                       clear_devices=False,
                       clear_extraneous_savers=False,
                       strip_default_attrs=False,
+                      save_debug_info=False,
                       **kwargs):
   # pylint: disable=line-too-long
   """Returns `MetaGraphDef` proto. Optionally writes it to filename.
@@ -1771,6 +1787,9 @@ def export_meta_graph(filename=None,
     strip_default_attrs: Boolean. If `True`, default-valued attributes will be
       removed from the NodeDefs. For a detailed guide, see
       [Stripping Default-Valued Attributes](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/saved_model/README.md#stripping-default-valued-attributes).
+    save_debug_info: If `True`, save the GraphDebugInfo to a separate file,
+      which in the same directory of filename and with `_debug` added before
+      the file extend.
     **kwargs: Optional keyed arguments.
 
   Returns:
@@ -1781,12 +1800,13 @@ def export_meta_graph(filename=None,
     RuntimeError: If called with eager execution enabled.
 
   @compatibility(eager)
-  Exporting/importing meta graphs is not supported. No graph exists when eager
-  execution is enabled.
+  Exporting/importing meta graphs is not supported unless both `graph_def` and
+  `graph` are provided. No graph exists when eager execution is enabled.
   @end_compatibility
   """
   # pylint: enable=line-too-long
-  if context.executing_eagerly():
+  if context.executing_eagerly() and not (graph_def is not None and
+                                          graph is not None):
     raise RuntimeError("Exporting/importing meta graphs is not supported when "
                        "eager execution is enabled. No graph exists when eager "
                        "execution is enabled.")
@@ -1802,6 +1822,7 @@ def export_meta_graph(filename=None,
       clear_devices=clear_devices,
       clear_extraneous_savers=clear_extraneous_savers,
       strip_default_attrs=strip_default_attrs,
+      save_debug_info=save_debug_info,
       **kwargs)
   return meta_graph_def
 
@@ -1832,9 +1853,9 @@ def object_graph_key_mapping(checkpoint_path):
   """
   reader = pywrap_tensorflow.NewCheckpointReader(checkpoint_path)
   object_graph_string = reader.get_tensor(
-      checkpointable.OBJECT_GRAPH_PROTO_KEY)
+      trackable.OBJECT_GRAPH_PROTO_KEY)
   object_graph_proto = (
-      checkpointable_object_graph_pb2.CheckpointableObjectGraph())
+      trackable_object_graph_pb2.TrackableObjectGraph())
   object_graph_proto.ParseFromString(object_graph_string)
   names_to_keys = {}
   for node in object_graph_proto.nodes:

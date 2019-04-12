@@ -35,9 +35,20 @@ namespace {
 
 TEST(AttrTypeMap, Lookup) {
   const AttrTypeMap* m = nullptr;
-  Status s = AttrTypeMapForOp("ThisOpCannotPossiblyExist", &m);
-  EXPECT_FALSE(s.ok());
-  s = AttrTypeMapForOp("MatMul", &m);
+  // Unknown ops are assumed to be functions.
+  // Their maps are filled with default attributes.
+  bool is_function = false;
+  Status s = AttrTypeMapForOp("SomeFunctionName", &m, &is_function);
+  EXPECT_TRUE(s.ok());
+  EXPECT_TRUE(is_function);
+  ASSERT_NE(m->end(), m->find("executor_type"));
+  EXPECT_EQ(TF_ATTR_STRING, m->find("executor_type")->second);
+  ASSERT_NE(m->end(), m->find("config_proto"));
+  EXPECT_EQ(TF_ATTR_STRING, m->find("config_proto")->second);
+
+  is_function = true;
+  s = AttrTypeMapForOp("MatMul", &m, &is_function);
+  EXPECT_FALSE(is_function);
   ASSERT_TRUE(s.ok()) << s;
 
   TF_AttrType t;
@@ -56,6 +67,19 @@ TEST(AttrTypeMap, Lookup) {
   ASSERT_TRUE(s.ok()) << s;
   EXPECT_EQ(TF_ATTR_INT, t);
   EXPECT_NE(is_list, 0);
+}
+
+TEST(AttrTypeMap, CacheKey) {
+  AttrBuilder a("op_name");
+  a.NumInputs(2);
+  a.Set("T", TF_FLOAT);
+  tensorflow::Fprint128 cache_key = a.CacheKey("cpu:0");
+
+  ASSERT_FALSE(cache_key == a.CacheKey("cpu:1"));
+  ASSERT_TRUE(cache_key == a.CacheKey("cpu:0"));
+
+  a.Set("x", 1.0);
+  ASSERT_FALSE(cache_key == a.CacheKey("cpu:0"));
 }
 
 }  // namespace

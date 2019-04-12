@@ -178,9 +178,11 @@ class LinSpaceOp : public XlaOpKernel {
           flat(0) = start;
         } else {
           const float step = (stop - start) / (num - 1);
-          for (int64 i = 0; i < num; ++i) {
+          for (int64 i = 0; i < num - 1; ++i) {
             flat(i) = start + step * i;
           }
+          // The last value in the sequence must be equal to stop.
+          flat(num - 1) = stop;
         }
         break;
       }
@@ -193,9 +195,11 @@ class LinSpaceOp : public XlaOpKernel {
           flat(0) = start;
         } else {
           const double step = (stop - start) / (num - 1);
-          for (int64 i = 0; i < num; ++i) {
+          for (int64 i = 0; i < num - 1; ++i) {
             flat(i) = start + step * i;
           }
+          // The last value in the sequence must be equal to stop.
+          flat(num - 1) = stop;
         }
         break;
       }

@@ -18,50 +18,84 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
+
+from tensorflow.python.framework import ops
+from tensorflow.python.keras import backend_config
 from tensorflow.python.keras.optimizer_v2 import optimizer_v2
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import gen_array_ops
 from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import math_ops
-from tensorflow.python.training import training_ops
+from tensorflow.python.ops import resource_variable_ops
+from tensorflow.python.ops import state_ops
+from tensorflow.python.util.tf_export import keras_export
 
 
+@keras_export('keras.optimizers.Adagrad')
 class Adagrad(optimizer_v2.OptimizerV2):
   """Adagrad optimizer.
 
   It is recommended to leave the parameters of this optimizer at their default
   values.
 
-  See this [paper](http://www.jmlr.org/papers/volume12/duchi11a/duchi11a.pdf)
-  or this
-  [intro](https://ppasupat.github.io/a9online/uploads/proximal_notes.pdf).
+  Initialization:
+  $$accum_{g_0} := \text{initial_accumulator_value}$$
 
-  The learning_rate arg below is a hyperparameter, where a hyperparameter is
-  defined as a scalar Tensor, a regular Python value, or a callable (which
-  will be evaluated when `apply_gradients` is called) returning a scalar
-  Tensor or a Python value.
+  Update step:
+  $$t := t + 1$$
+  $$accum_{g_t} := accum_{g_{t-1}} + g^2$$
+  $$\theta_t := \theta_{t-1} - lr * g / (\sqrt{accum_{g_t}} + \epsilon)$$
 
-  Arguments:
-      learning_rate: float hyperparameter >= 0. Learning rate.
-      initial_accumulator_value: A floating point value. Starting value for the
-        accumulators, must be positive.
-      name: Optional name prefix for the operations created when applying
-        gradients.  Defaults to 'Adagrad'.
+  References:
 
-  Raises:
-    ValueError: If the `initial_accumulator_value` is invalid.
+  * [Paper](http://www.jmlr.org/papers/volume12/duchi11a/duchi11a.pdf).
+  * [Introduction]
+    (https://ppasupat.github.io/a9online/uploads/proximal_notes.pdf).
   """
 
   def __init__(self,
                learning_rate=0.001,
                initial_accumulator_value=0.1,
-               name="Adagrad"):
-    if initial_accumulator_value <= 0.0:
-      raise ValueError("initial_accumulator_value must be positive: %s" %
-                       initial_accumulator_value)
-    super(Adagrad, self).__init__(name)
-    self._set_hyper("learning_rate", learning_rate)
+               epsilon=1e-7,
+               name='Adagrad',
+               **kwargs):
+    """Construct a new Adagrad optimizer.
 
+    Args:
+      learning_rate: A `Tensor` or a floating point value.  The learning rate.
+      initial_accumulator_value: A floating point value.
+        Starting value for the accumulators, must be positive.
+      epsilon: A floating point value.
+        Starting value for the accumulators, must be positive.
+      name: Optional name prefix for the operations created when applying
+        gradients.  Defaults to "Adagrad".
+      **kwargs: keyword arguments. Allowed to be {`clipnorm`, `clipvalue`, `lr`,
+        `decay`}. `clipnorm` is clip gradients by norm; `clipvalue` is clip
+        gradients by value, `decay` is included for backward compatibility to
+        allow time inverse decay of learning rate. `lr` is included for backward
+        compatibility, recommended to use `learning_rate` instead.
+
+    Raises:
+      ValueError: If the `initial_accumulator_value` or `epsilon` is invalid.
+
+    @compatibility(eager)
+    When eager execution is enabled, `learning_rate` can be a callable that
+    takes no arguments and returns the actual value to use. This can be useful
+    for changing these values across different invocations of optimizer
+    functions.
+    @end_compatibility
+    """
+    if initial_accumulator_value < 0.0:
+      raise ValueError('initial_accumulator_value must be non-negative: %s' %
+                       initial_accumulator_value)
+    if epsilon is None:
+      epsilon = backend_config.epsilon()
+    if epsilon < 1e-7:
+      raise ValueError('epsilon must be larger than 1e-7: %s' % epsilon)
+    super(Adagrad, self).__init__(name, **kwargs)
+    self._set_hyper('learning_rate', kwargs.get('lr', learning_rate))
+    self._set_hyper('decay', self._initial_decay)
     self._initial_accumulator_value = initial_accumulator_value
 
   def _create_vars(self, var_list, state):

@@ -90,7 +90,6 @@ string DeviceMgr::DeviceMappingString() const {
 }
 
 Status DeviceMgr::LookupDevice(StringPiece name, Device** device) const {
-  Status s;
   auto iter = device_map_.find(name);
   if (iter == device_map_.end()) {
     std::vector<StringPiece> device_names;

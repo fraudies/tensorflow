@@ -416,6 +416,9 @@ class ConditionalAccumulatorTest(test.TestCase):
                                                      if x >= ls), val)
 
   def testParallelApplyGrad(self):
+    # We need each thread to keep its own device stack or the device scopes
+    # won't be properly nested.
+    ops.get_default_graph().switch_to_thread_local()
     with self.cached_session() as sess:
       q = data_flow_ops.ConditionalAccumulator(
           dtypes_lib.float32, name="Q", shape=tensor_shape.TensorShape([1]))
@@ -441,6 +444,9 @@ class ConditionalAccumulatorTest(test.TestCase):
       self.assertEqual(val, sum(elems) / len(elems))
 
   def testParallelTakeGrad(self):
+    # We need each thread to keep its own device stack or the device scopes
+    # won't be properly nested.
+    ops.get_default_graph().switch_to_thread_local()
     with self.cached_session() as sess:
       q = data_flow_ops.ConditionalAccumulator(
           dtypes_lib.float32, name="Q", shape=tensor_shape.TensorShape([1]))
@@ -473,6 +479,9 @@ class ConditionalAccumulatorTest(test.TestCase):
       self.assertItemsEqual(elems, results)
 
   def testAccumulatorApplyAndBlockingTake(self):
+    # We need each thread to keep its own device stack or the device scopes
+    # won't be properly nested.
+    ops.get_default_graph().switch_to_thread_local()
     with self.cached_session() as sess:
       q = data_flow_ops.ConditionalAccumulator(
           dtypes_lib.float32, name="Q", shape=tensor_shape.TensorShape([1]))

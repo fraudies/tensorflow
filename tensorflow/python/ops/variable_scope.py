@@ -229,6 +229,26 @@ def enable_resource_variables():
   _DEFAULT_USE_RESOURCE = True
 
 
+@tf_export(v1=["resource_variables_enabled"])
+def resource_variables_enabled():
+  """Returns `True` if resource variables are enabled.
+
+  Resource variables are improved versions of TensorFlow variables with a
+  well-defined memory model. Accessing a resource variable reads its value, and
+  all ops which access a specific read value of the variable are guaranteed to
+  see the same value for that tensor. Writes which happen after a read (by
+  having a control or data dependency on the read) are guaranteed not to affect
+  the value of the read tensor, and similarly writes which happen before a read
+  are guaranteed to affect the value. No guarantees are made about unordered
+  read/write pairs.
+
+  Calling tf.enable_resource_variables() lets you opt-in to this TensorFlow 2.0
+  feature.
+  """
+  global _DEFAULT_USE_RESOURCE
+  return _DEFAULT_USE_RESOURCE
+
+
 @deprecation.deprecated(
     None, "non-resource variables are not supported in the long term")
 @tf_export(v1=["disable_resource_variables"])
@@ -491,9 +511,9 @@ class _VariableStore(object):
           synchronization=synchronization,
           aggregation=aggregation)
 
-    # Set trainable value based on synchronization value.
-    trainable = _get_trainable_value(
-        synchronization=synchronization, trainable=trainable)
+    synchronization, aggregation, trainable = (
+        variables.validate_synchronization_aggregation_trainable(
+            synchronization, aggregation, trainable, name))
 
     if custom_getter is not None:
       # Handle backwards compatibility with getter arguments that were added
@@ -851,14 +871,21 @@ class _VariableStore(object):
     if name in self._vars:
       # Here we handle the case when returning an existing variable.
       if reuse is False:
-        tb = self._vars[name].op.traceback[::-1]
-        # Throw away internal tf entries and only take a few lines.
-        tb = [x for x in tb if "tensorflow/python" not in x[0]][:3]
-        raise ValueError("Variable %s already exists, disallowed."
-                         " Did you mean to set reuse=True or "
-                         "reuse=tf.AUTO_REUSE in VarScope? "
-                         "Originally defined at:\n\n%s" % (
-                             name, "".join(traceback.format_list(tb))))
+        var = self._vars[name]
+        err_msg = ("Variable %s already exists, disallowed."
+                   " Did you mean to set reuse=True or "
+                   "reuse=tf.AUTO_REUSE in VarScope?" % name)
+        # ResourceVariables don't have an op associated with so no traceback
+        if isinstance(var, resource_variable_ops.ResourceVariable):
+          raise ValueError(err_msg)
+        tb = var.op.traceback[::-1]
+        # Throw away internal tf entries and only take a few lines. In some
+        # cases the traceback can be longer (e.g. if someone uses factory
+        # functions to create variables) so we take more than needed in the
+        # default case.
+        tb = [x for x in tb if "tensorflow/python" not in x[0]][:5]
+        raise ValueError("%s Originally defined at:\n\n%s" % (err_msg, "".join(
+            traceback.format_list(tb))))
       found_var = self._vars[name]
       if not shape.is_compatible_with(found_var.get_shape()):
         raise ValueError("Trying to share variable %s, but specified shape %s"
@@ -1799,6 +1826,7 @@ class _pure_variable_scope(object):  # pylint: disable=invalid-name
     self._constraint = constraint
     self._var_store = _get_default_variable_store()
     self._var_scope_store = get_variable_scope_store()
+    self._last_variable_scope_object = None
     if isinstance(self._name_or_scope, VariableScope):
       self._new_name = self._name_or_scope.name
       name_scope = self._name_or_scope._name_scope  # pylint: disable=protected-access
@@ -1895,9 +1923,13 @@ class _pure_variable_scope(object):  # pylint: disable=invalid-name
         variable_scope_object.set_use_resource(self._use_resource)
       self._var_scope_store.open_variable_scope(self._new_name)
     self._var_scope_store.current_scope = variable_scope_object
+    self._last_variable_scope_object = variable_scope_object
     return variable_scope_object
 
   def __exit__(self, type_arg, value_arg, traceback_arg):
+    if (self._var_scope_store.current_scope is not
+        self._last_variable_scope_object):
+      raise RuntimeError("Improper nesting of variable_scope.")
     # If jumping out from a non-prolonged scope, restore counts.
     if isinstance(self._name_or_scope, VariableScope):
       self._var_scope_store.variable_scopes_count = self._old_subscopes
@@ -2189,10 +2221,10 @@ class variable_scope(object):
 
     try:
       return self._enter_scope_uncached()
-    except:
-      if self._graph_context_manager is not None:
+    finally:
+      if (self._in_graph_mode and not self._building_function and
+          self._graph_context_manager is not None):
         self._graph_context_manager.__exit__(*sys.exc_info())
-      raise
 
   def _enter_scope_uncached(self):
     """Enters the context manager when there is no cached scope yet.
@@ -2385,23 +2417,6 @@ def _compute_slice_dim_and_shape(full_shape, slicing):
   return slice_dim, slice_shape
 
 
-def _get_trainable_value(synchronization, trainable):
-  """Computes the trainable value based on the given arguments."""
-  if synchronization == VariableSynchronization.ON_READ:
-    if trainable:
-      raise ValueError(
-          "Synchronization value can be set to "
-          "VariableSynchronization.ON_READ only for non-trainable variables. "
-          "You have specified trainable=True and "
-          "synchronization=VariableSynchronization.ON_READ.")
-    else:
-      # Set trainable to be false when variable is to be synced on read.
-      trainable = False
-  elif trainable is None:
-    trainable = True
-  return trainable
-
-
 def default_variable_creator(next_creator=None, **kwargs):
   """Default variable creator."""
   assert next_creator is None
@@ -2417,11 +2432,8 @@ def default_variable_creator(next_creator=None, **kwargs):
   import_scope = kwargs.get("import_scope", None)
   constraint = kwargs.get("constraint", None)
   use_resource = kwargs.get("use_resource", None)
-
-  # Set trainable value based on synchronization value.
-  synchronization = kwargs.get("synchronization", VariableSynchronization.AUTO)
-  trainable = _get_trainable_value(
-      synchronization=synchronization, trainable=trainable)
+  synchronization = kwargs.get("synchronization", None)
+  aggregation = kwargs.get("aggregation", None)
 
   if use_resource is None:
     use_resource = get_variable_scope().use_resource
@@ -2429,19 +2441,22 @@ def default_variable_creator(next_creator=None, **kwargs):
     use_resource = _DEFAULT_USE_RESOURCE
   use_resource = use_resource or context.executing_eagerly()
   if use_resource:
+    distribute_strategy = kwargs.get("distribute_strategy", None)
     return resource_variable_ops.ResourceVariable(
         initial_value=initial_value, trainable=trainable,
         collections=collections, validate_shape=validate_shape,
         caching_device=caching_device, name=name, dtype=dtype,
         constraint=constraint, variable_def=variable_def,
-        import_scope=import_scope)
+        import_scope=import_scope, distribute_strategy=distribute_strategy,
+        synchronization=synchronization, aggregation=aggregation)
   else:
     return variables.RefVariable(
         initial_value=initial_value, trainable=trainable,
         collections=collections, validate_shape=validate_shape,
         caching_device=caching_device, name=name, dtype=dtype,
         constraint=constraint, variable_def=variable_def,
-        expected_shape=expected_shape, import_scope=import_scope)
+        expected_shape=expected_shape, import_scope=import_scope,
+        synchronization=synchronization, aggregation=aggregation)
 
 
 def default_variable_creator_v2(next_creator=None, **kwargs):
@@ -2456,17 +2471,16 @@ def default_variable_creator_v2(next_creator=None, **kwargs):
   dtype = kwargs.get("dtype", None)
   import_scope = kwargs.get("import_scope", None)
   constraint = kwargs.get("constraint", None)
-
-  # Set trainable value based on synchronization value.
-  synchronization = kwargs.get("synchronization", VariableSynchronization.AUTO)
-  trainable = _get_trainable_value(
-      synchronization=synchronization, trainable=trainable)
+  distribute_strategy = kwargs.get("distribute_strategy", None)
+  synchronization = kwargs.get("synchronization", None)
+  aggregation = kwargs.get("aggregation", None)
 
   return resource_variable_ops.ResourceVariable(
       initial_value=initial_value, trainable=trainable,
       validate_shape=validate_shape, caching_device=caching_device,
       name=name, dtype=dtype, constraint=constraint, variable_def=variable_def,
-      import_scope=import_scope)
+      import_scope=import_scope, distribute_strategy=distribute_strategy,
+      synchronization=synchronization, aggregation=aggregation)
 
 
 variables.default_variable_creator = default_variable_creator

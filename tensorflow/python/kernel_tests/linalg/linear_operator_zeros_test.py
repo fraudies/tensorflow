@@ -35,7 +35,8 @@ class LinearOperatorZerosTest(
 
   @property
   def _tests_to_skip(self):
-    return ["log_abs_det", "solve", "solve_with_broadcast"]
+    return [
+        "cholesky", "log_abs_det", "inverse", "solve", "solve_with_broadcast"]
 
   @property
   def _operator_build_infos(self):

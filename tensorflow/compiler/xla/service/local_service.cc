@@ -52,8 +52,10 @@ namespace xla {
   }
 
   BackendOptions backend_options;
-  backend_options.set_platform(platform).set_intra_op_parallelism_threads(
-      options.intra_op_parallelism_threads());
+  backend_options.set_platform(platform)
+      .set_intra_op_parallelism_threads(options.intra_op_parallelism_threads())
+      .set_allowed_devices(options.allowed_devices());
+
   TF_ASSIGN_OR_RETURN(std::unique_ptr<Backend> backend,
                       Backend::CreateBackend(backend_options));
 
@@ -128,12 +130,7 @@ ExecutionOptions CreateExecutionOptions(
     LayoutUtil::SetToDefaultLayout(
         execution_options.mutable_shape_with_output_layout());
   }
-
-  for (const std::string& disabled_pass : build_options.disabled_hlo_passes()) {
-    execution_options.mutable_debug_options()->add_xla_disable_hlo_passes(
-        disabled_pass);
-  }
-
+  execution_options.set_num_replicas(build_options.num_replicas());
   return execution_options;
 }
 

@@ -121,7 +121,11 @@ def generate_checkpoint_state_proto(save_dir,
   return coord_checkpoint_proto
 
 
-@tf_export("train.update_checkpoint_state")
+@deprecation.deprecated(
+    date=None,
+    instructions=("Use `tf.train.CheckpointManager` to manage checkpoints "
+                  "rather than manually editing the Checkpoint proto."))
+@tf_export(v1=["train.update_checkpoint_state"])
 def update_checkpoint_state(save_dir,
                             model_checkpoint_path,
                             all_model_checkpoint_paths=None,
@@ -606,7 +610,8 @@ class CheckpointManager(object):
                >= self._last_preserved_timestamp)):
         self._last_preserved_timestamp = timestamp
         continue
-      remove_checkpoint(filename)
+      _delete_file_if_exists(filename + ".index")
+      _delete_file_if_exists(filename + ".data-?????-of-?????")
 
   def _record_state(self):
     """Saves the `CheckpointManager`'s state in `directory`."""

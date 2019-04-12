@@ -1,6 +1,10 @@
 path: "tensorflow.keras.layers"
 tf_module {
   member {
+    name: "AbstractRNNCell"
+    mtype: "<type \'type\'>"
+  }
+  member {
     name: "Activation"
     mtype: "<type \'type\'>"
   }
@@ -14,6 +18,10 @@ tf_module {
   }
   member {
     name: "AlphaDropout"
+    mtype: "<type \'type\'>"
+  }
+  member {
+    name: "Attention"
     mtype: "<type \'type\'>"
   }
   member {
@@ -113,11 +121,7 @@ tf_module {
     mtype: "<type \'type\'>"
   }
   member {
-    name: "CuDNNGRU"
-    mtype: "<type \'type\'>"
-  }
-  member {
-    name: "CuDNNLSTM"
+    name: "Dense"
     mtype: "<type \'type\'>"
   }
   member {
@@ -234,6 +238,10 @@ tf_module {
   }
   member {
     name: "Layer"
+    mtype: "<type \'type\'>"
+  }
+  member {
+    name: "LayerNormalization"
     mtype: "<type \'type\'>"
   }
   member {
@@ -413,6 +421,10 @@ tf_module {
     argspec: "args=[\'inputs\', \'axis\'], varargs=None, keywords=kwargs, defaults=[\'-1\'], "
   }
   member_method {
+    name: "deserialize"
+    argspec: "args=[\'config\', \'custom_objects\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
     name: "dot"
     argspec: "args=[\'inputs\', \'axes\', \'normalize\'], varargs=None, keywords=kwargs, defaults=[\'False\'], "
   }
@@ -427,6 +439,10 @@ tf_module {
   member_method {
     name: "multiply"
     argspec: "args=[\'inputs\'], varargs=None, keywords=kwargs, defaults=None"
+  }
+  member_method {
+    name: "serialize"
+    argspec: "args=[\'layer\'], varargs=None, keywords=None, defaults=None"
   }
   member_method {
     name: "subtract"

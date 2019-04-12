@@ -91,8 +91,9 @@ class GatherTest(test.TestCase, parameterized.TestCase):
     params = np.array([[b"asdf", b"zxcv"], [b"qwer", b"uiop"]])
     with self.cached_session():
       indices_tf = constant_op.constant([1])
-      self.assertAllEqual([[b"qwer", b"uiop"]],
-                          array_ops.batch_gather(params, indices_tf).eval())
+      self.assertAllEqual(
+          [[b"qwer", b"uiop"]],
+          self.evaluate(array_ops.batch_gather(params, indices_tf)))
 
   def testUnknownIndices(self):
     params = constant_op.constant([[0, 1, 2]])
@@ -104,7 +105,7 @@ class GatherTest(test.TestCase, parameterized.TestCase):
     with self.test_session(use_gpu=False):
       params = [[0, 1, 2], [3, 4, 5]]
       with self.assertRaisesOpError(r"indices\[0\] = 7 is not in \[0, 2\)"):
-        array_ops.batch_gather(params, [7]).eval()
+        self.evaluate(array_ops.batch_gather(params, [7]))
 
   def testEmptySlices(self):
     with self.test_session(use_gpu=True):
@@ -112,8 +113,9 @@ class GatherTest(test.TestCase, parameterized.TestCase):
         for itype in np.int32, np.int64:
           params = np.zeros((7, 0, 0), dtype=dtype.as_numpy_dtype)
           indices = np.array([3, 4], dtype=itype)
-          gather = array_ops.batch_gather(params, indices)
-          self.assertAllEqual(gather.eval(), np.zeros((2, 0, 0)))
+          self.assertAllEqual(
+              self.evaluate(array_ops.batch_gather(params, indices)),
+              np.zeros((2, 0, 0)))
 
 if __name__ == "__main__":
   test.main()

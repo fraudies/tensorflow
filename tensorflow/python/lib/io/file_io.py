@@ -196,8 +196,14 @@ class FileIO(object):
 
   def tell(self):
     """Returns the current position in the file."""
-    self._preread_check()
-    return self._read_buf.Tell()
+    if self._read_check_passed:
+      self._preread_check()
+      return self._read_buf.Tell()
+    else:
+      self._prewrite_check()
+
+      with errors.raise_exception_on_not_ok_status() as status:
+        return pywrap_tensorflow.TellFile(self._writable_file, status)
 
   def __enter__(self):
     """Make usable with "with" statement."""
@@ -240,6 +246,11 @@ class FileIO(object):
         pywrap_tensorflow.Set_TF_Status_from_Status(status, ret_status)
     self._writable_file = None
 
+  @property
+  def seekable(self):
+    """Returns True as FileIO supports random access ops of seek()/tell()"""
+    return True
+
 
 @tf_export("gfile.Exists")
 def file_exists(filename):
@@ -249,7 +260,24 @@ def file_exists(filename):
     filename: string, a path
 
   Returns:
-    True if the path exists, whether its a file or a directory.
+    True if the path exists, whether it's a file or a directory.
+    False if the path does not exist and there are no filesystem errors.
+
+  Raises:
+    errors.OpError: Propagates any errors reported by the FileSystem API.
+  """
+  return file_exists_v2(filename)
+
+
+@tf_export("io.gfile.exists")
+def file_exists_v2(path):
+  """Determines whether a path exists or not.
+
+  Args:
+    path: string, a path
+
+  Returns:
+    True if the path exists, whether it's a file or a directory.
     False if the path does not exist and there are no filesystem errors.
 
   Raises:
@@ -483,8 +511,30 @@ def list_directory(dirname):
   Raises:
     errors.NotFoundError if directory doesn't exist
   """
-  if not is_directory(dirname):
-    raise errors.NotFoundError(None, None, "Could not find directory")
+  return list_directory_v2(dirname)
+
+
+@tf_export("io.gfile.listdir")
+def list_directory_v2(path):
+  """Returns a list of entries contained within a directory.
+
+  The list is in arbitrary order. It does not contain the special entries "."
+  and "..".
+
+  Args:
+    path: string, path to a directory
+
+  Returns:
+    [filename1, filename2, ... filenameN] as strings
+
+  Raises:
+    errors.NotFoundError if directory doesn't exist
+  """
+  if not is_directory(path):
+    raise errors.NotFoundError(
+        node_def=None,
+        op=None,
+        message="Could not find directory {}".format(path))
   with errors.raise_exception_on_not_ok_status() as status:
     # Convert each element to string, since the return values of the
     # vector of string should be interpreted as strings, not bytes.

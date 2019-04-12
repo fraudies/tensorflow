@@ -258,6 +258,9 @@ class IndexedSlicesConditionalAccumulatorTest(test.TestCase):
       self.assertAllEqual(val.dense_shape, [-1, 2])
 
   def testParallelApplyGradMean(self):
+    # We need each thread to keep its own device stack or the device scopes
+    # won't be properly nested.
+    ops.get_default_graph().switch_to_thread_local()
     with self.cached_session() as sess:
       q = data_flow_ops.SparseConditionalAccumulator(
           dtypes_lib.float32, name="Q", shape=tensor_shape.TensorShape([2, 2]))
@@ -289,6 +292,9 @@ class IndexedSlicesConditionalAccumulatorTest(test.TestCase):
           val, sess)
 
   def testParallelApplyGradSum(self):
+    # We need each thread to keep its own device stack or the device scopes
+    # won't be properly nested.
+    ops.get_default_graph().switch_to_thread_local()
     with self.cached_session() as sess:
       q = data_flow_ops.SparseConditionalAccumulator(
           dtypes_lib.float32,
@@ -323,6 +329,9 @@ class IndexedSlicesConditionalAccumulatorTest(test.TestCase):
           val, sess)
 
   def testParallelTakeGrad(self):
+    # We need each thread to keep its own device stack or the device scopes
+    # won't be properly nested.
+    ops.get_default_graph().switch_to_thread_local()
     with self.cached_session() as sess:
       q = data_flow_ops.SparseConditionalAccumulator(
           dtypes_lib.float32, name="Q", shape=tensor_shape.TensorShape([2, 2]))
@@ -362,6 +371,9 @@ class IndexedSlicesConditionalAccumulatorTest(test.TestCase):
             np.array([[0, 0], [elems[i], 0]]), results[i], sess)
 
   def testAccumulatorApplyAndBlockingTake(self):
+    # We need each thread to keep its own device stack or the device scopes
+    # won't be properly nested.
+    ops.get_default_graph().switch_to_thread_local()
     with self.cached_session() as sess:
       q = data_flow_ops.SparseConditionalAccumulator(
           dtypes_lib.float32, name="Q", shape=tensor_shape.TensorShape([2, 2]))
@@ -397,6 +409,9 @@ class IndexedSlicesConditionalAccumulatorTest(test.TestCase):
       sess.run(takeg_op)
 
   def testAccumulatorCancel(self):
+    # We need each thread to keep its own device stack or the device scopes
+    # won't be properly nested.
+    ops.get_default_graph().switch_to_thread_local()
     with self.cached_session() as sess:
       q = data_flow_ops.SparseConditionalAccumulator(
           dtypes_lib.float32,

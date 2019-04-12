@@ -29,6 +29,7 @@ limitations under the License.
 namespace tensorflow {
 
 class Node;
+struct NodeDebugInfo;
 
 // We forward declare protos so that kernels don't need to depend on them
 class NodeDef;
@@ -286,7 +287,7 @@ Status ValidateNodeDef(const NodeDef& node_def, const OpDef& op_def);
 // returned `NameRangeMap` objects.
 typedef gtl::FlatMap<StringPiece, std::pair<int, int>, hash<StringPiece>>
     NameRangeMap;
-Status NameRangesForNode(const NodeDef& node_def, const OpDef& op_def,
+Status NameRangesForNode(const AttrSlice& attrs, const OpDef& op_def,
                          NameRangeMap* inputs, NameRangeMap* outputs);
 Status NameRangesForNode(const Node& node, const OpDef& op_def,
                          NameRangeMap* inputs, NameRangeMap* outputs);
@@ -307,10 +308,14 @@ void AddDefaultsToNodeDef(const OpDef& op_def, NodeDef* node_def);
 // NodeName     = [A-Za-z0-9.], [A-Za-z0-9_./] *
 Status ValidateExternalNodeDefSyntax(const NodeDef& node_def);
 
-// Returns "status" with kernel's NodeDef attached as additional text
-// in the error message.
-Status AttachDef(const Status& status, const NodeDef& node_def);
-Status AttachDef(const Status& status, const Node& node);
+// Returns "status" with formatted NodeDef attached as additional text
+// in the error message. If 'allow_multiple_formatted_node' is false and there
+// is already a formatted NodeDef present in 'status', we simply attach the name
+// of the NodeDef instead of the formatted string.
+Status AttachDef(const Status& status, const NodeDef& node_def,
+                 bool allow_multiple_formatted_node = false);
+Status AttachDef(const Status& status, const Node& node,
+                 bool allow_multiple_formatted_node = false);
 
 // Appends the given prefix and suffix to the original node name in order to
 // make the name unique. If it's an "Enter" node, use the same way to reset

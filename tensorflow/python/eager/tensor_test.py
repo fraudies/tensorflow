@@ -35,6 +35,7 @@ from tensorflow.python.ops import array_ops
 
 
 def _create_tensor(value, device=None, dtype=None):
+  context.ensure_initialized()
   ctx = context.context()
   if device is None:
     device = ctx.device_name
@@ -59,24 +60,27 @@ class TFETensorTest(test_util.TensorFlowTestCase):
     self.assertIn("tf.Tensor", repr(t))
 
   def testBadConstructorArgs(self):
+    context.ensure_initialized()
     ctx = context.context()
     handle = ctx._handle
     device = ctx.device_name
     # Missing context.
     with self.assertRaisesRegexp(
-        TypeError, r"Required argument 'context' \(pos 2\) not found"):
+        TypeError, r".*argument 'context' \(pos 2\).*"):
       ops.EagerTensor(1, device=device)
     # Missing device.
     with self.assertRaisesRegexp(
-        TypeError, r"Required argument 'device' \(pos 3\) not found"):
+        TypeError, r".*argument 'device' \(pos 3\).*"):
       ops.EagerTensor(1, context=handle)
     # Bad dtype type.
     with self.assertRaisesRegexp(TypeError,
                                  "Expecting a DataType value for dtype. Got"):
       ops.EagerTensor(1, context=handle, device=device, dtype="1")
+
     # Following errors happen when trying to copy to GPU.
-    if not context.context().num_gpus():
+    if not test_util.is_gpu_available():
       self.skipTest("No GPUs found")
+
     with ops.device("/device:GPU:0"):
       device = ctx.device_name
       # Bad context.
@@ -234,13 +238,100 @@ class TFETensorTest(test_util.TensorFlowTestCase):
     for list_element, tensor_element in zip(l, t):
       self.assertAllEqual(list_element, tensor_element.numpy())
 
+  @test_util.run_gpu_only
   def testStringTensorOnGPU(self):
-    if not context.context().num_gpus():
-      self.skipTest("No GPUs found")
     with ops.device("/device:GPU:0"):
       with self.assertRaisesRegexp(
           RuntimeError, "Can't copy Tensor with type string to device"):
         _create_tensor("test string")
+
+  def testInvalidUTF8ProducesReasonableError(self):
+    if sys.version_info[0] < 3:
+      self.skipTest("Test is only valid in python3.")
+    with self.assertRaises(UnicodeDecodeError):
+      io_ops.read_file(b"\xff")
+
+  @test_util.run_in_graph_and_eager_modes
+  def testConvertToTensorPreferredDtypeIsRespected(self):
+    self.assertEqual(
+        ops.convert_to_tensor(0.5, preferred_dtype=dtypes.int32).dtype,
+        dtypes.float32)
+    self.assertEqual(
+        ops.convert_to_tensor(0.5, preferred_dtype=dtypes.float64).dtype,
+        dtypes.float64)
+
+  @test_util.run_in_graph_and_eager_modes
+  def testCompatibility(self):
+    integer_types = [dtypes.int8, dtypes.int16, dtypes.int32, dtypes.int64,
+                     dtypes.uint8, dtypes.uint16, dtypes.uint32, dtypes.uint64]
+
+    # Floats are not compatible with ints
+    for t in integer_types:
+      with self.assertRaises(TypeError):
+        constant_op.constant(0.5, dtype=t)
+
+    # Ints compatible with floats
+    self.assertEqual(
+        self.evaluate(constant_op.constant(5, dtype=dtypes.float16)), 5.0)
+    self.assertEqual(
+        self.evaluate(constant_op.constant(5, dtype=dtypes.float32)), 5.0)
+    self.assertEqual(
+        self.evaluate(constant_op.constant(5, dtype=dtypes.float64)), 5.0)
+    self.assertEqual(
+        self.evaluate(constant_op.constant(5, dtype=dtypes.bfloat16)), 5.0)
+
+    # Ints and floats are compatible with complex types
+    self.assertEqual(
+        constant_op.constant([[1.0]], dtype=dtypes.complex128).dtype,
+        dtypes.complex128)
+    self.assertEqual(
+        constant_op.constant([[1]], dtype=dtypes.complex128).dtype,
+        dtypes.complex128)
+
+    # Quantized types are not compatible with floats
+    quantized_types = [dtypes.qint16, dtypes.qint32, dtypes.qint8,
+                       dtypes.quint16, dtypes.quint8]
+
+    for t in quantized_types:
+      with self.assertRaises(TypeError):
+        constant_op.constant(0.5, dtype=t)
+
+    # TODO(b/118402529): quantized types are broken in eager.
+
+  @test_util.run_in_graph_and_eager_modes
+  def testCConvertToTensor(self):
+    with self.assertRaises(TypeError):
+      _ = constant_op.constant(0) < 0.5
+
+  @test_util.run_in_graph_and_eager_modes
+  def testConvertToTensorAllowsOverflow(self):
+    _ = ops.convert_to_tensor(123456789, dtype=dtypes.uint8)
+
+  @test_util.assert_no_new_pyobjects_executing_eagerly
+  @test_util.run_in_graph_and_eager_modes
+  def testConvertToTensorNumpyZeroDim(self):
+    for np_type, dtype in [(np.int32, dtypes.int32),
+                           (np.half, dtypes.half),
+                           (np.float32, dtypes.float32)]:
+      x = ops.convert_to_tensor([np.array(65, dtype=np_type),
+                                 np.array(16, dtype=np_type)])
+      self.assertEqual(x.dtype, dtype)
+      self.assertAllEqual(x, [65, 16])
+
+  @test_util.assert_no_new_pyobjects_executing_eagerly
+  @test_util.run_in_graph_and_eager_modes
+  def testConvertToTensorNumpyScalar(self):
+    x = ops.convert_to_tensor(
+        [np.array(321, dtype=np.int).item(),
+         np.array(16, dtype=np.int).item()])
+    self.assertAllEqual(x, [321, 16])
+
+  def testEagerTensorError(self):
+    with self.assertRaisesRegexp(
+        TypeError,
+        "Cannot convert provided value to EagerTensor. "
+        "Provided value.*Requested dtype.*"):
+      _ = ops.convert_to_tensor(1., dtype=dtypes.int32)
 
 
 class TFETensorUtilTest(test_util.TensorFlowTestCase):

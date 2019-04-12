@@ -94,6 +94,11 @@ class ExecutableBuildOptions {
   // debugging.
   string ToString() const;
 
+  // The number of replicas of this computation that are to be executed.
+  // Defaults to 1.
+  int num_replicas() const { return num_replicas_; }
+  ExecutableBuildOptions& set_num_replicas(int num_replicas);
+
  private:
   absl::optional<bool> hlo_profile_;
   int device_ordinal_ = -1;
@@ -104,7 +109,7 @@ class ExecutableBuildOptions {
   absl::optional<string> dump_unoptimized_hlo_proto_to_;
   absl::optional<string> dump_per_pass_hlo_proto_to_;
   DeviceMemoryAllocator* device_allocator_ = nullptr;
-  std::vector<std::string> disabled_hlo_passes_;
+  int num_replicas_ = 1;
 };
 
 }  // namespace xla

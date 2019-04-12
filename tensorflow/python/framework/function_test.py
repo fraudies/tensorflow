@@ -106,6 +106,7 @@ class FunctionTest(test.TestCase):
       with session.Session() as sess:
         self.assertAllEqual([18.0], sess.run(call))
 
+  @test_util.run_v1_only("b/120545219")
   def testIdentityImplicitDeref(self):
 
     @function.Defun(dtypes.float32, func_name="MyIdentity")
@@ -284,6 +285,7 @@ class FunctionTest(test.TestCase):
         out, = sess.run(dlogits, {logits: x, labels: y})
       self.assertAllClose(out, np.exp(prob - y))
 
+  @test_util.disable_xla("b/124286351")  # No error is raised
   def testCustomGradientError(self):
     dtype = dtypes.float32
 
@@ -1039,6 +1041,30 @@ class FunctionTest(test.TestCase):
         self.assertFalse(all(val3 == val1))
         self.assertFalse(all(val4 == val2))
 
+  @test_util.run_v1_only("currently failing on v2")
+  def testStatefulFunctionWithWhitelisting(self):
+    t = random_ops.random_uniform([100], maxval=10, dtype=dtypes.int32)
+
+    @function.Defun(capture_by_value=True)
+    def StatefulFn():
+      return t + constant_op.constant(3, dtype=dtypes.int32)
+
+    # First time we try to capture a stateful RandomUniform op.
+    with self.assertRaisesRegexp(ValueError, "Cannot capture a stateful node"):
+      res = StatefulFn()
+
+    # This time we whitelist this op, so that its recreated.
+    @function.Defun(capture_by_value=True, whitelisted_stateful_ops=set([t.op]))
+    def StatefulFn2():
+      return t + constant_op.constant(3, dtype=dtypes.int32)
+
+    res = StatefulFn2()
+    with session.Session() as sess:
+      r = sess.run(res)
+      for i in r:
+        self.assertGreaterEqual(i, 3)
+
+  @test_util.run_deprecated_v1
   def testSameFunctionOnTwoDevices(self):
 
     @function.Defun(dtypes.float32)

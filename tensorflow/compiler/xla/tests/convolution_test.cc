@@ -98,7 +98,7 @@ class ForwardPassConvolution_3x3x256_256_OutputZ_Iota : public ConvolutionTest {
     precision.add_operand_precision(PrecisionConfig::HIGHEST);
     precision.add_operand_precision(PrecisionConfig::DEFAULT);
     Conv(lhs, rhs, {1, 1}, Padding::kValid, /*feature_group_count=*/1,
-         &precision);
+         /*batch_group_count=*/1, &precision);
 
     ComputeAndCompare(&builder, {}, error_spec_);
   }
@@ -467,8 +467,8 @@ XLA_TEST_F(ConvolutionTest, Convolve3D_1x4x2x3x3_2x2x2x3x3_Valid) {
 // servers. The error message is missing the operator ++.
 template <typename T>
 void iota_int_init_value(std::vector<T>& values, int init_value) {
-  std::for_each(values.begin(), values.end(),
-                [&](T& value) { value = static_cast<T>(init_value++); });
+  absl::c_for_each(values,
+                   [&](T& value) { value = static_cast<T>(init_value++); });
 }
 
 template <typename T>
@@ -939,7 +939,7 @@ XLA_TEST_F(ConvolutionTest, ConvolveF32BackwardInputGroupedConvolution) {
 
 class ConvolutionHloTest : public HloTestBase {};
 
-XLA_TEST_F(ConvolutionHloTest, DISABLED_ON_CPU(ConvolveF64Forward)) {
+XLA_TEST_F(ConvolutionHloTest, ConvolveF64Forward) {
   constexpr char kHlo[] = R"(
 HloModule TestModule
 
@@ -951,7 +951,19 @@ ENTRY Test {
   EXPECT_TRUE(RunAndCompare(kHlo, ErrorSpec{0.001}));
 }
 
-XLA_TEST_F(ConvolutionHloTest, DISABLED_ON_CPU(ConvolveF64BackwardFilter)) {
+XLA_TEST_F(ConvolutionHloTest, ConvolveF32ForwardReversed) {
+  constexpr char kHlo[] = R"(
+HloModule TestModule
+
+ENTRY Test {
+  %arg0 = f32[3,56,56,16] parameter(0)
+  %arg1 = f32[3,3,3,32] parameter(1)
+  ROOT %conv = f32[54,54,16,32] convolution(%arg0, %arg1), window={size=3x3 rhs_reversal=1x1}, dim_labels=f01b_i01o->01bf
+})";
+  EXPECT_TRUE(RunAndCompare(kHlo, ErrorSpec{0.001}));
+}
+
+XLA_TEST_F(ConvolutionHloTest, ConvolveF64BackwardFilter) {
   constexpr char kHlo[] = R"(
 HloModule TestModule
 
@@ -963,7 +975,7 @@ ENTRY Test {
   EXPECT_TRUE(RunAndCompare(kHlo, ErrorSpec{0.001}));
 }
 
-XLA_TEST_F(ConvolutionHloTest, DISABLED_ON_CPU(ConvolveF64BackwardInput)) {
+XLA_TEST_F(ConvolutionHloTest, ConvolveF64BackwardInput) {
   constexpr char kHlo[] = R"(
 HloModule TestModule
 

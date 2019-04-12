@@ -17,7 +17,8 @@ limitations under the License.
 
 #include <numeric>
 
-#include "tensorflow/compiler/tf2xla/dump_graph.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_join.h"
 #include "tensorflow/compiler/tf2xla/shape_util.h"
 #include "tensorflow/compiler/tf2xla/type_util.h"
 #include "tensorflow/compiler/tf2xla/xla_context.h"
@@ -29,13 +30,15 @@ limitations under the License.
 #include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/graph/graph_constructor.h"
 #include "tensorflow/core/graph/node_builder.h"
-#include "tensorflow/core/kernels/variable_ops.h"
 #include "tensorflow/core/lib/hash/hash.h"
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/public/version.h"
+#include "tensorflow/core/util/dump_graph.h"
 
 namespace tensorflow {
+
+constexpr int64 XlaCompilationCache::kDefaultCompilationThreshold;
 
 XlaCompilationCache::XlaCompilationCache(xla::LocalClient* client,
                                          DeviceType device_type)
@@ -59,17 +62,17 @@ XlaCompilationCache::~XlaCompilationCache() {
   // about?
 }
 
-string XlaCompilationCache::DebugString() {
+string XlaCompilationCache::DebugString() const {
   return "XLA JIT compilation cache";
 }
 
 // Compute a string signature which encodes the shapes of the
 // arguments in the supplied list.
-string XlaCompilationCache::SignatureDebugString(const Signature& sig) {
-  string result = sig.name;
-  for (const auto& a : sig.arg_types) {
-    absl::StrAppend(&result, ",", DataTypeString(a.first),
-                    a.second.DebugString());
+string XlaCompilationCache::Signature::HumanString() const {
+  string result = name;
+  for (const auto& a : arg_shapes) {
+    absl::StrAppend(&result, ",", DataTypeString(a.first));
+    absl::StrAppend(&result, " [", absl::StrJoin(a.second, ","), "]");
   }
 
   for (const auto& v : sig.arg_values) {
@@ -80,7 +83,7 @@ string XlaCompilationCache::SignatureDebugString(const Signature& sig) {
 
 bool XlaCompilationCache::Signature::operator==(const Signature& other) const {
   if (name != other.name) return false;
-  if (arg_types != other.arg_types) return false;
+  if (arg_shapes != other.arg_shapes) return false;
 
   if (arg_values.size() != other.arg_values.size()) return false;
   for (int i = 0; i < arg_values.size(); ++i) {
@@ -94,10 +97,10 @@ bool XlaCompilationCache::Signature::operator==(const Signature& other) const {
 uint64 XlaCompilationCache::Signature::Hash::operator()(
     const XlaCompilationCache::Signature& signature) const {
   uint64 h = std::hash<string>()(signature.name);
-  for (const auto& arg : signature.arg_types) {
+  for (const auto& arg : signature.arg_shapes) {
     h = Hash64Combine(h, std::hash<int>()(static_cast<int>(arg.first)));
-    h = Hash64Combine(h, std::hash<int>()(arg.second.dims()));
-    for (int dim : arg.second.dim_sizes()) {
+    h = Hash64Combine(h, std::hash<int>()(arg.second.size()));
+    for (int dim : arg.second) {
       h = Hash64Combine(h, std::hash<int>()(dim));
     }
   }
@@ -108,88 +111,25 @@ uint64 XlaCompilationCache::Signature::Hash::operator()(
   return h;
 }
 
-Status XlaCompilationCache::BuildSignature(
-    const NameAttrList& function, const std::map<int, Tensor>& constant_args,
-    const std::map<int, OptionalTensor>& variable_args, OpKernelContext* ctx,
-    Signature* signature) {
-  signature->name = Canonicalize(function.name(), AttrSlice(&function.attr()));
-  signature->arg_values.reserve(constant_args.size());
-
-  signature->arg_types.reserve(ctx->num_inputs() - constant_args.size());
-
-  for (int i = 0; i < ctx->num_inputs(); ++i) {
-    if (constant_args.count(i) > 0) {
-      // Use the values of compile time constants in the signature.
-      signature->arg_values.push_back(constant_args.at(i));
-    } else if (variable_args.count(i) > 0) {
-      const OptionalTensor& variable = variable_args.at(i);
-      if (variable.present) {
-        signature->arg_types.emplace_back(variable.value.dtype(),
-                                          variable.value.shape());
-      } else {
-        signature->arg_types.emplace_back(DT_INVALID, TensorShape());
-      }
-    } else {
-      signature->arg_types.emplace_back(ctx->input_dtype(i),
-                                        ctx->input(i).shape());
-    }
-  }
-  return Status::OK();
-}
-
-namespace {
-
-// Builds a XlaCompiler::Argument vector from the arguments to the XlaLaunch op.
-Status BuildArguments(const std::map<int, Tensor>& constant_args,
-                      const std::map<int, OptionalTensor>& variable_args,
-                      OpKernelContext* ctx,
-                      std::vector<XlaCompiler::Argument>* args) {
-  args->resize(ctx->num_inputs());
-
-  for (int64 input_num = 0; input_num < ctx->num_inputs(); ++input_num) {
-    XlaCompiler::Argument& arg = (*args)[input_num];
-    if (constant_args.count(input_num) > 0) {
-      // Handles compile-time constants.
-      const Tensor& input = constant_args.at(input_num);
-      TF_RET_CHECK(input.dtype() != DT_RESOURCE);
-      arg.kind = XlaCompiler::Argument::kConstant;
-      arg.type = input.dtype();
-      arg.shape = input.shape();
-      arg.constant_value = input;
-    } else if (variable_args.count(input_num) == 0) {
-      // Handles the non-constant arguments.
-      const Tensor& input = ctx->input(input_num);
-      TF_RET_CHECK(input.dtype() != DT_RESOURCE);
-      if (input.NumElements() > 0) {
-        arg.kind = XlaCompiler::Argument::kParameter;
-      } else {
-        arg.kind = XlaCompiler::Argument::kConstant;
-        arg.constant_value = input;
-      }
-      arg.type = input.dtype();
-      arg.shape = input.shape();
-    } else {
-      // Handles resource variables.
-      const Tensor& input = ctx->input(input_num);
-      TF_RET_CHECK(input.dtype() == DT_RESOURCE);
-      const OptionalTensor& variable = variable_args.at(input_num);
-      arg.name = variable.name;
-      arg.kind = XlaCompiler::Argument::kResource;
-      arg.resource_kind = XlaResource::kVariable;
-      if (variable.present) {
-        const Tensor& value = variable.value;
-        arg.type = value.dtype();
-        arg.shape = value.shape();
-        arg.initialized = true;
-      } else {
-        // The values of uninitialized variables are not passed as inputs, since
-        // they are meaningless. However, it is legal to assign to a resource
-        // variable for the first time inside the XLA computation, so we do
-        // permit uninitialized variables.
-        arg.initialized = false;
-        arg.type = DT_INVALID;
-        arg.shape = TensorShape();
-      }
+xla::StatusOr<XlaCompilationCache::Signature>
+XlaCompilationCache::BuildSignature(
+    const NameAttrList& function,
+    absl::Span<const XlaCompiler::Argument> args) {
+  Signature signature;
+  signature.name = Canonicalize(function.name(), AttrSlice(&function.attr()));
+  for (const XlaCompiler::Argument& arg : args) {
+    switch (arg.kind) {
+      case XlaCompiler::Argument::kConstant:
+        signature.arg_values.push_back(arg.constant_value);
+        break;
+      case XlaCompiler::Argument::kParameter:
+      case XlaCompiler::Argument::kResource:
+        signature.arg_shapes.emplace_back(arg.type, arg.DimensionSizes());
+        break;
+      default:
+        return errors::InvalidArgument(
+            "Unhandled argument kind in XlaCompilationCache: ",
+            arg.HumanString());
     }
   }
 
@@ -253,9 +193,21 @@ Status XlaCompilationCache::CompileSingleOp(
   NameAttrList name;
   name.set_name(def.op());
   *name.mutable_attr() = def.attr();
-  return CompileImpl(options, name, constant_args, variable_args, ctx,
-                     compile_options,
-                     /*compile_single_op=*/true, /*compile_threshold=*/1,
+  // Remove the "_class" attribute from the attribute set used to create the
+  // compilation cache key. This attribute is information for the colocator
+  // and causes false uniqueness between nodes.
+  name.mutable_attr()->erase("_class");
+  auto compile_op = [&](XlaCompiler* compiler,
+                        XlaCompiler::CompilationResult* result) {
+    std::vector<DataType> result_dtypes(ctx->num_outputs());
+    for (int i = 0; i < result_dtypes.size(); ++i) {
+      result_dtypes[i] = ctx->expected_output_dtype(i);
+    }
+    return compiler->CompileSingleOp(compile_options, ctx->op_kernel().def(),
+                                     args, result_dtypes, result);
+  };
+  return CompileImpl(options, name, args, compile_op,
+                     /*compile_threshold=*/absl::nullopt,
                      out_compilation_result, out_executable);
 }
 

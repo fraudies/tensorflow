@@ -98,18 +98,21 @@ class HloMemoryScheduler : public HloModulePass {
   // specified, then DefaultMemoryScheduler is used.
   HloMemoryScheduler(const LogicalBuffer::SizeFunction& size_function,
                      const MemorySchedulerAlgorithm& algorithm = {});
+
   ~HloMemoryScheduler() override = default;
+
   absl::string_view name() const override { return "hlo-memory-scheduler"; }
 
   StatusOr<bool> Run(HloModule* module) override;
 
  private:
   LogicalBuffer::SizeFunction size_function_;
+
   MemorySchedulerAlgorithm algorithm_;
 };
 
 // A trivial pass which clears the schedule currently set on the
-// HloModule. After this pass runs HloModudle::has_schedule will return false.
+// HloModule. After this pass runs HloModule::has_schedule will return false.
 class HloDescheduler : public HloModulePass {
  public:
   HloDescheduler() = default;

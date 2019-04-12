@@ -35,7 +35,7 @@ class Var : public ResourceBase {
   mutex* mu() { return &mu_; }
   Tensor* tensor() { return &tensor_; }
 
-  string DebugString() override {
+  string DebugString() const override {
     return strings::StrCat(DataTypeString(tensor_.dtype()), "/",
                            tensor_.shape().DebugString());
   }
@@ -53,6 +53,31 @@ class Var : public ResourceBase {
   Tensor tensor_;
 
   ~Var() override {}
+};
+
+// Does unlock and unref automatically when going out of scope, and also
+// supports early manual release.
+class ScopedUnlockUnrefVar {
+ public:
+  explicit ScopedUnlockUnrefVar(Var* var) : var_(var) {
+    if (var_) {
+      var_->mu()->lock();
+    }
+  }
+  void Release() {
+    if (var_) {
+      var_->mu()->unlock();
+      var_->Unref();
+      var_ = nullptr;
+    }
+  }
+  ~ScopedUnlockUnrefVar() { Release(); }
+
+ private:
+  Var* var_;
+
+  ScopedUnlockUnrefVar(const ScopedUnlockUnrefVar&) = delete;
+  void operator=(const ScopedUnlockUnrefVar&) = delete;
 };
 
 }  //  end namespace tensorflow

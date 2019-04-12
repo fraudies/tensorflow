@@ -39,7 +39,7 @@ def _AddTest(test, op_name, testcase_name, fn):
   test_name = "_".join(["test", op_name, testcase_name])
   if hasattr(test, test_name):
     raise RuntimeError("Test %s defined more than once" % test_name)
-  setattr(test, test_name, fn)
+  setattr(test, test_name, test_util.deprecated_graph_mode_only(fn))
 
 
 def _GetTransposedMatrices(x, x_name, kwargs):
@@ -115,18 +115,18 @@ def _GetMatMulGradientTest(a_np_, b_np_, use_static_shape_, **kwargs_):
     epsilon = np.finfo(a_np_.dtype).eps
     delta = epsilon**(1.0 / 3.0)
     tol = 20 * delta
-    with self.test_session(use_gpu=True):
-      a = constant_op.constant(effective_a_np)
-      b = constant_op.constant(effective_b_np)
-      res = math_ops.matmul(a, b, **kwargs_)
-      for x, x_init in [a, effective_a_np], [b, effective_b_np]:
-        theoretical, numerical = gradient_checker.compute_gradient(
-            x,
-            x_init.shape,
-            res, [a_np_.shape[0], b_np_.shape[1]],
-            x_init_value=x_init,
-            delta=delta)
-        self.assertAllClose(theoretical, numerical, rtol=tol, atol=tol)
+    with self.session():
+      theoretical, numerical = gradient_checker_v2.compute_gradient(
+          lambda x: math_ops.matmul(x, effective_b_np, **kwargs_),
+          [effective_a_np],
+          delta=delta)
+      self.assertAllClose(theoretical, numerical, rtol=tol, atol=tol)
+
+      theoretical, numerical = gradient_checker_v2.compute_gradient(
+          lambda x: math_ops.matmul(effective_a_np, x, **kwargs_),
+          [effective_b_np],
+          delta=delta)
+      self.assertAllClose(theoretical, numerical, rtol=tol, atol=tol)
 
   return Test
 

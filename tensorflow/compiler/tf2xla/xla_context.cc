@@ -91,20 +91,7 @@ void XlaContext::AddRetval(int retval_index, DataType type,
   retvals_[retval_index] = Retval{type, shape, e};
 }
 
-Status XlaContext::AddConstRetval(int retval_index, DataType dtype,
-                                  const xla::LiteralSlice& literal) {
-  VLOG(1) << "Adding retval index " << retval_index
-          << " with non-data-dependent tensor to XLA computation";
-  if (retvals_.size() <= retval_index) {
-    retvals_.resize(retval_index + 1);
-  }
-  Tensor value;
-  TF_RETURN_IF_ERROR(LiteralToHostTensor(literal, dtype, &value));
-  XlaExpression e;
-  e.set_constant_value(value);
-  retvals_[retval_index] = Retval{dtype, value.shape(), e};
-  return Status::OK();
-}
+string XlaContext::DebugString() const { return "XLA JIT context"; }
 
 Status XlaContext::AddResourceRetval(int retval_index, XlaResource* resource) {
   VLOG(1) << "Adding retval index " << retval_index << " with resource "
@@ -150,7 +137,7 @@ xla::StatusOr<TensorShape> XlaContext::RepresentationShape(
 }
 
 const xla::XlaComputation* XlaContext::GetOrCreateMax(const DataType type) {
-  return LookupOrCreate(type, &max_func_, [this, type] {
+  return LookupOrCreate(type, &max_func_, [type] {
     const string type_string = DataTypeString(type);
     VLOG(1) << "Building Max() for " << type_string;
     xla::XlaBuilder b("max<" + type_string + ">");
@@ -166,7 +153,7 @@ const xla::XlaComputation* XlaContext::GetOrCreateMax(const DataType type) {
 }
 
 const xla::XlaComputation* XlaContext::GetOrCreateMin(const DataType type) {
-  return LookupOrCreate(type, &min_func_, [this, type] {
+  return LookupOrCreate(type, &min_func_, [type] {
     const string type_string = DataTypeString(type);
     VLOG(1) << "Building Min() for " << type_string;
     xla::XlaBuilder b("min<" + type_string + ">");
@@ -182,7 +169,7 @@ const xla::XlaComputation* XlaContext::GetOrCreateMin(const DataType type) {
 }
 
 const xla::XlaComputation* XlaContext::GetOrCreateAdd(const DataType type) {
-  return LookupOrCreate(type, &add_func_, [this, type] {
+  return LookupOrCreate(type, &add_func_, [type] {
     const string type_string = DataTypeString(type);
     VLOG(1) << "Building Add() for " << type_string;
     xla::XlaBuilder b("add<" + type_string + ">");
@@ -198,7 +185,7 @@ const xla::XlaComputation* XlaContext::GetOrCreateAdd(const DataType type) {
 }
 
 const xla::XlaComputation* XlaContext::GetOrCreateMul(const DataType type) {
-  return LookupOrCreate(type, &mul_func_, [this, type] {
+  return LookupOrCreate(type, &mul_func_, [type] {
     const string type_string = DataTypeString(type);
     VLOG(1) << "Building Mul() for " << type_string;
     xla::XlaBuilder b("mul<" + type_string + ">");

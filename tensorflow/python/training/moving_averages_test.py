@@ -35,11 +35,19 @@ from tensorflow.python.training import saver as saver_lib
 
 class MovingAveragesTest(test.TestCase):
 
+  @test_util.run_in_graph_and_eager_modes
   def testAssignMovingAverageWithoutZeroDebias(self):
-    with self.cached_session():
-      var = variables.Variable([10.0, 11.0])
-      val = constant_op.constant([1.0, 2.0], dtypes.float32)
-      decay = 0.25
+    var = variables.Variable([10.0, 11.0])
+    val = constant_op.constant([1.0, 2.0], dtypes.float32)
+    decay = 0.25
+    if context.executing_eagerly():
+      self.assertAllClose([10.0, 11.0], self.evaluate(var))
+      assign = moving_averages.assign_moving_average(
+          var, val, decay, zero_debias=False)
+      self.assertAllClose(
+          [10.0 * 0.25 + 1.0 * (1.0 - 0.25), 11.0 * 0.25 + 2.0 * (1.0 - 0.25)],
+          self.evaluate(var))
+    else:
       assign = moving_averages.assign_moving_average(
           var, val, decay, zero_debias=False)
       variables.global_variables_initializer().run()
@@ -49,18 +57,26 @@ class MovingAveragesTest(test.TestCase):
           [10.0 * 0.25 + 1.0 * (1.0 - 0.25), 11.0 * 0.25 + 2.0 * (1.0 - 0.25)],
           var.eval())
 
+  @test_util.run_in_graph_and_eager_modes
   def testAssignMovingAverage(self):
     with self.cached_session():
       var = variables.Variable([0.0, 0.0])
       val = constant_op.constant([1.0, 2.0], dtypes.float32)
       decay = 0.25
-      assign = moving_averages.assign_moving_average(var, val, decay)
-      variables.global_variables_initializer().run()
-      self.assertAllClose([0.0, 0.0], var.eval())
-      assign.op.run()
-      self.assertAllClose([
-          1.0 * (1.0 - 0.25) / (1 - 0.25), 2.0 * (1.0 - 0.25) / (1 - 0.25)
-      ], var.eval())
+      if context.executing_eagerly():
+        self.assertAllClose([0.0, 0.0], self.evaluate(var))
+        assign = moving_averages.assign_moving_average(var, val, decay)
+        self.assertAllClose(
+            [1.0 * (1.0 - 0.25) / (1 - 0.25), 2.0 * (1.0 - 0.25) / (1 - 0.25)],
+            self.evaluate(var))
+      else:
+        assign = moving_averages.assign_moving_average(var, val, decay)
+        self.evaluate(variables.global_variables_initializer())
+        self.assertAllClose([0.0, 0.0], self.evaluate(var))
+        assign.op.run()
+        self.assertAllClose(
+            [1.0 * (1.0 - 0.25) / (1 - 0.25), 2.0 * (1.0 - 0.25) / (1 - 0.25)],
+            self.evaluate(var))
 
   def testAssignMovingAverageNewNamingMultipleCalls(self):
     with variable_scope.variable_scope("scope1") as vs1:
@@ -136,7 +152,6 @@ class MovingAveragesTest(test.TestCase):
       numerator_2 = numerator_1 * decay + val_2 * weight_2 * (1.0 - decay)
       denominator_2 = denominator_1 * decay + weight_2 * (1.0 - decay)
       self.assertAllClose(bfloat16(numerator_2 / denominator_2), wma_array)
-
 
 def _Repeat(value, dim):
   if dim == 1:

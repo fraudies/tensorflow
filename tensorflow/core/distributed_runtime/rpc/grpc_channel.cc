@@ -65,7 +65,37 @@ Status NewHostPortGrpcChannel(const string& target,
   args.SetInt(GRPC_ARG_MAX_MESSAGE_LENGTH, std::numeric_limits<int32>::max());
   // NOTE(mrry): Some versions of gRPC use a 20-second minimum backoff
   // on connection failure, which makes our tests time out.
-  args.SetInt("grpc.testing.fixed_reconnect_backoff_ms", 1000);
+  args.SetInt(GRPC_ARG_MAX_RECONNECT_BACKOFF_MS, 1000);
+  if (rpc_options != nullptr) {
+    if (rpc_options->compression_algorithm() == "deflate") {
+      args.SetCompressionAlgorithm(GRPC_COMPRESS_DEFLATE);
+      args.SetInt(GRPC_COMPRESSION_CHANNEL_DEFAULT_LEVEL,
+                  rpc_options->compression_level());
+      VLOG(5) << "Setting GRPC compression : algo='"
+              << rpc_options->compression_algorithm()
+              << "' level=" << rpc_options->compression_level();
+    } else if (rpc_options->compression_algorithm() == "gzip") {
+      args.SetCompressionAlgorithm(GRPC_COMPRESS_GZIP);
+      args.SetInt(GRPC_COMPRESSION_CHANNEL_DEFAULT_LEVEL,
+                  rpc_options->compression_level());
+      VLOG(5) << "Setting GRPC compression : algo='"
+              << rpc_options->compression_algorithm()
+              << "' level=" << rpc_options->compression_level();
+    } else if (!rpc_options->compression_algorithm().empty()) {
+      LOG(ERROR) << "Invalid compression algorithm: "
+                 << rpc_options->compression_algorithm();
+    }
+  }
+  return args;
+}
+
+Status NewHostPortGrpcChannel(const string& target,
+                              const RPCOptions* rpc_options,
+                              SharedGrpcChannelPtr* channel_pointer) {
+  // Minimally ensure that the target is valid
+  TF_RETURN_IF_ERROR(ValidateHostPortPair(target));
+
+  ::grpc::ChannelArguments args = GetChannelArguments(rpc_options);
   *channel_pointer = ::grpc::CreateCustomChannel(
       "dns:///" + target, ::grpc::InsecureChannelCredentials(), args);
   return Status::OK();

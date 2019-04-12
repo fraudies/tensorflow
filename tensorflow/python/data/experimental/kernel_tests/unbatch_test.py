@@ -59,9 +59,9 @@ class UnbatchTest(test_base.DatasetTestBase, parameterized.TestCase):
     data = dataset_ops.Dataset.from_tensor_slices(data)
     expected_types = (dtypes.int32,) * 3
     data = data.batch(2)
-    self.assertEqual(expected_types, data.output_types)
+    self.assertEqual(expected_types, dataset_ops.get_legacy_output_types(data))
     data = data.apply(batching.unbatch())
-    self.assertEqual(expected_types, data.output_types)
+    self.assertEqual(expected_types, dataset_ops.get_legacy_output_types(data))
 
     iterator = data.make_one_shot_iterator()
     op = iterator.get_next()
@@ -79,9 +79,9 @@ class UnbatchTest(test_base.DatasetTestBase, parameterized.TestCase):
     data = data.map(lambda x, y, z: (x, string_ops.as_string(y), z))
     expected_types = (dtypes.int32, dtypes.string, dtypes.int32)
     data = data.batch(2)
-    self.assertEqual(expected_types, data.output_types)
+    self.assertEqual(expected_types, dataset_ops.get_legacy_output_types(data))
     data = data.apply(batching.unbatch())
-    self.assertEqual(expected_types, data.output_types)
+    self.assertEqual(expected_types, dataset_ops.get_legacy_output_types(data))
 
     iterator = data.make_one_shot_iterator()
     op = iterator.get_next()
@@ -102,17 +102,10 @@ class UnbatchTest(test_base.DatasetTestBase, parameterized.TestCase):
     data = data.apply(batching.unbatch())
     data = data.batch(5)
     data = data.apply(batching.unbatch())
-    iterator = data.make_one_shot_iterator()
-    next_element = iterator.get_next()
-
-    with self.cached_session() as sess:
-      for i in range(10):
-        st_row = sess.run(next_element)
-        self.assertEqual([i], st_row.indices)
-        self.assertEqual([i], st_row.values)
-        self.assertEqual([10], st_row.dense_shape)
-      with self.assertRaises(errors.OutOfRangeError):
-        sess.run(next_element)
+    expected_output = [
+        sparse_tensor.SparseTensorValue([[i]], [i], [10]) for i in range(10)
+    ]
+    self.assertDatasetProduces(data, expected_output=expected_output)
 
   def testUnbatchDatasetWithDenseAndSparseTensor(self):
     st = sparse_tensor.SparseTensorValue(
@@ -123,27 +116,18 @@ class UnbatchTest(test_base.DatasetTestBase, parameterized.TestCase):
     data = data.apply(batching.unbatch())
     data = data.batch(5)
     data = data.apply(batching.unbatch())
-    iterator = data.make_one_shot_iterator()
-    next_element = iterator.get_next()
-
-    with self.cached_session() as sess:
-      for i in range(10):
-        dense_elem, st_row = sess.run(next_element)
-        self.assertEqual(i, dense_elem)
-        self.assertEqual([i], st_row.indices)
-        self.assertEqual([i], st_row.values)
-        self.assertEqual([10], st_row.dense_shape)
-      with self.assertRaises(errors.OutOfRangeError):
-        sess.run(next_element)
+    expected_output = [(i, sparse_tensor.SparseTensorValue([[i]], [i], [10]))
+                       for i in range(10)]
+    self.assertDatasetProduces(data, expected_output=expected_output)
 
   def testUnbatchSingleElementTupleDataset(self):
     data = tuple([(math_ops.range(10),) for _ in range(3)])
     data = dataset_ops.Dataset.from_tensor_slices(data)
     expected_types = ((dtypes.int32,),) * 3
     data = data.batch(2)
-    self.assertEqual(expected_types, data.output_types)
+    self.assertEqual(expected_types, dataset_ops.get_legacy_output_types(data))
     data = data.apply(batching.unbatch())
-    self.assertEqual(expected_types, data.output_types)
+    self.assertEqual(expected_types, dataset_ops.get_legacy_output_types(data))
 
     iterator = data.make_one_shot_iterator()
     op = iterator.get_next()
@@ -161,9 +145,11 @@ class UnbatchTest(test_base.DatasetTestBase, parameterized.TestCase):
     data = dataset_ops.Dataset.from_tensor_slices(data)
     expected_types = ((dtypes.int32, dtypes.string),) * 3
     data = data.batch(2)
-    self.assertAllEqual(expected_types, data.output_types)
+    self.assertAllEqual(expected_types,
+                        dataset_ops.get_legacy_output_types(data))
     data = data.apply(batching.unbatch())
-    self.assertAllEqual(expected_types, data.output_types)
+    self.assertAllEqual(expected_types,
+                        dataset_ops.get_legacy_output_types(data))
 
     iterator = data.make_one_shot_iterator()
     op = iterator.get_next()
@@ -194,7 +180,9 @@ class UnbatchTest(test_base.DatasetTestBase, parameterized.TestCase):
     with self.assertRaises(ValueError):
       data.apply(batching.unbatch())
 
-  def testUnbatchDynamicShapeMismatch(self):
+  # Note: dynamic shape mismatch is graph specific test.
+  @test_util.run_deprecated_v1
+  def testSkipEagerUnbatchDynamicShapeMismatch(self):
     ph1 = array_ops.placeholder(dtypes.int32, shape=[None])
     ph2 = array_ops.placeholder(dtypes.int32, shape=None)
     data = dataset_ops.Dataset.from_tensors((ph1, ph2))

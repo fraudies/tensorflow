@@ -21,6 +21,7 @@ limitations under the License.
 #include "tensorflow/core/distributed_runtime/call_options.h"
 #include "tensorflow/core/distributed_runtime/local_master.h"
 #include "tensorflow/core/distributed_runtime/master_interface.h"
+#include "tensorflow/core/distributed_runtime/request_id.h"
 #include "tensorflow/core/distributed_runtime/rpc/grpc_channel.h"
 #include "tensorflow/core/distributed_runtime/rpc/grpc_remote_master.h"
 #include "tensorflow/core/framework/attr_value.pb.h"
@@ -307,6 +308,7 @@ Status GrpcSession::PRunSetup(const std::vector<string>& input_names,
   for (const string& target : target_nodes) {
     req.add_target(target);
   }
+  req.set_request_id(GetUniqueRequestId());
   call_options.SetTimeout(options_.config.operation_timeout_in_ms());
   TF_RETURN_IF_ERROR(master_->PartialRunSetup(&call_options, &req, &resp));
   *handle = resp.partial_run_handle();
@@ -402,6 +404,7 @@ Status GrpcSession::MakeCallable(const CallableOptions& callable_options,
   MakeCallableRequest req;
   TF_RETURN_IF_ERROR(Handle(req.mutable_session_handle()));
   *req.mutable_options() = callable_options;
+  req.set_request_id(GetUniqueRequestId());
   MakeCallableResponse resp;
   CallOptions call_options;
   call_options.SetTimeout(options_.config.operation_timeout_in_ms());
@@ -417,6 +420,7 @@ Status GrpcSession::RunCallable(CallableHandle handle,
   RunCallableRequest req;
   TF_RETURN_IF_ERROR(Handle(req.mutable_session_handle()));
   req.set_handle(handle);
+  req.set_request_id(GetUniqueRequestId());
   for (const Tensor& feed : feed_tensors) {
     feed.AsProtoTensorContent(req.mutable_feed()->Add());
   }
