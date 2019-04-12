@@ -16,7 +16,6 @@ limitations under the License.
 #include "tensorflow/core/platform/cuda_libdevice_path.h"
 
 #include <stdlib.h>
-#include <vector>
 
 #if !defined(PLATFORM_GOOGLE)
 #include "cuda/cuda_config.h"
@@ -25,9 +24,9 @@ limitations under the License.
 
 namespace tensorflow {
 
-std::vector<string> CandidateCudaRoots() {
+string CudaRoot() {
   VLOG(3) << "CUDA root = " << TF_CUDA_TOOLKIT_PATH;
-  return {TF_CUDA_TOOLKIT_PATH};
+  return TF_CUDA_TOOLKIT_PATH;
 }
 
 }  // namespace tensorflow

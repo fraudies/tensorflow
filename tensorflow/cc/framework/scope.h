@@ -22,7 +22,6 @@ limitations under the License.
 #include <unordered_set>
 #include <vector>
 
-#include "absl/strings/str_cat.h"
 #include "tensorflow/cc/framework/ops.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/lib/gtl/array_slice.h"
@@ -70,9 +69,8 @@ struct CompositeOpScopes;
 ///     // W will be named "linear/W"
 ///     auto W = Variable(linear.WithOpName("W"),
 ///                       {2, 2}, DT_FLOAT);
-///     // b will be named "linear/b_3"
-///     int idx = 3;
-///     auto b = Variable(linear.WithOpName("b_", idx),
+///     // b will be named "linear/b"
+///     auto b = Variable(linear.WithOpName("b"),
 ///                       {2}, DT_FLOAT);
 ///     auto x = Const(linear, {...});  // name: "linear/Const"
 ///     auto m = MatMul(linear, x, W);  // name: "linear/MatMul"
@@ -115,11 +113,8 @@ class Scope {
   Scope NewSubScope(const string& child_scope_name) const;
 
   /// Return a new scope. All ops created within the returned scope will have
-  /// names of the form `name/StrCat(fragments...)[_suffix]`
-  template <typename... Ty>
-  Scope WithOpName(Ty... fragments) const {
-    return WithOpNameImpl(absl::StrCat(fragments...));
-  }
+  /// names of the form `name/op_name[_suffix]`.
+  Scope WithOpName(const string& op_name) const;
 
   /// Return a new scope. All ops created within the returned scope will have as
   /// control dependencies the union of operations in the control_deps vector
@@ -141,10 +136,6 @@ class Scope {
   /// Returns a new scope.  All ops created within the returned scope will have
   /// their assigned device set to `assigned_device`.
   Scope WithAssignedDevice(const string& assigned_device) const;
-
-  /// Returns a new scope.  All ops created within the returned scope will have
-  /// their _XlaCluster attribute set to `xla_cluster`.
-  Scope WithXlaCluster(const string& xla_cluster) const;
 
   /// Return a new scope. All ops created within the returned scope will be
   /// co-located on the device where op is placed.
@@ -236,8 +227,6 @@ class Scope {
   // END_SKIP_DOXYGEN
 
  private:
-  Scope WithOpNameImpl(const string& op_name) const;
-
   friend class InternalScope;
   std::unique_ptr<Impl> impl_;
   explicit Scope(Impl*);

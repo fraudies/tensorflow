@@ -24,10 +24,11 @@ import numpy as np
 import scipy.signal as sps
 
 from tensorflow.compiler.tests import xla_test
+from tensorflow.contrib.signal.python.ops import spectral_ops as signal
 from tensorflow.python.framework import dtypes
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import gradients_impl
-from tensorflow.python.ops.signal import signal
+from tensorflow.python.ops import spectral_ops
 from tensorflow.python.platform import googletest
 
 BATCH_DIMS = (3, 5)
@@ -106,39 +107,39 @@ class FFTTest(xla_test.XLATestCase):
 
   def testFFT(self):
     self._VerifyFftMethod(INNER_DIMS_1D, lambda x: x, np.fft.fft,
-                          signal.fft)
+                          spectral_ops.fft)
 
   def testFFT2D(self):
     self._VerifyFftMethod(INNER_DIMS_2D, lambda x: x, np.fft.fft2,
-                          signal.fft2d)
+                          spectral_ops.fft2d)
 
   def testFFT3D(self):
     self._VerifyFftMethod(INNER_DIMS_3D, lambda x: x,
                           lambda x: np.fft.fftn(x, axes=(-3, -2, -1)),
-                          signal.fft3d)
+                          spectral_ops.fft3d)
 
   def testIFFT(self):
     self._VerifyFftMethod(INNER_DIMS_1D, lambda x: x, np.fft.ifft,
-                          signal.ifft)
+                          spectral_ops.ifft)
 
   def testIFFT2D(self):
     self._VerifyFftMethod(INNER_DIMS_2D, lambda x: x, np.fft.ifft2,
-                          signal.ifft2d)
+                          spectral_ops.ifft2d)
 
   def testIFFT3D(self):
     self._VerifyFftMethod(INNER_DIMS_3D, lambda x: x,
                           lambda x: np.fft.ifftn(x, axes=(-3, -2, -1)),
-                          signal.ifft3d)
+                          spectral_ops.ifft3d)
 
   def testRFFT(self):
     self._VerifyFftMethod(
         INNER_DIMS_1D, np.real, lambda x: np.fft.rfft(x, n=x.shape[-1]),
-        lambda x: signal.rfft(x, fft_length=[x.shape[-1].value]))
+        lambda x: spectral_ops.rfft(x, fft_length=[x.shape[-1].value]))
 
   def testRFFT2D(self):
 
     def _tf_fn(x):
-      return signal.rfft2d(
+      return spectral_ops.rfft2d(
           x, fft_length=[x.shape[-2].value, x.shape[-1].value])
 
     self._VerifyFftMethod(
@@ -152,33 +153,16 @@ class FFTTest(xla_test.XLATestCase):
           x, axes=(-3, -2, -1), s=[x.shape[-3], x.shape[-2], x.shape[-1]])
 
     def _tf_fn(x):
-      return signal.rfft3d(
+      return spectral_ops.rfft3d(
           x,
           fft_length=[x.shape[-3].value, x.shape[-2].value, x.shape[-1].value])
-
-    self._VerifyFftMethod(INNER_DIMS_3D, np.real, _to_expected, _tf_fn)
-
-  def testRFFT3DMismatchedSize(self):
-
-    def _to_expected(x):
-      return np.fft.rfftn(
-          x,
-          axes=(-3, -2, -1),
-          s=[x.shape[-3] // 2, x.shape[-2], x.shape[-1] * 2])
-
-    def _tf_fn(x):
-      return signal.rfft3d(
-          x,
-          fft_length=[
-              x.shape[-3].value // 2, x.shape[-2].value, x.shape[-1].value * 2
-          ])
 
     self._VerifyFftMethod(INNER_DIMS_3D, np.real, _to_expected, _tf_fn)
 
   def testIRFFT(self):
 
     def _tf_fn(x):
-      return signal.irfft(x, fft_length=[2 * (x.shape[-1].value - 1)])
+      return spectral_ops.irfft(x, fft_length=[2 * (x.shape[-1].value - 1)])
 
     self._VerifyFftMethod(
         INNER_DIMS_1D, lambda x: np.fft.rfft(np.real(x), n=x.shape[-1]),
@@ -187,7 +171,7 @@ class FFTTest(xla_test.XLATestCase):
   def testIRFFT2D(self):
 
     def _tf_fn(x):
-      return signal.irfft2d(
+      return spectral_ops.irfft2d(
           x, fft_length=[x.shape[-2].value, 2 * (x.shape[-1].value - 1)])
 
     self._VerifyFftMethod(
@@ -211,37 +195,13 @@ class FFTTest(xla_test.XLATestCase):
           s=[x.shape[-3], x.shape[-2], 2 * (x.shape[-1] - 1)])
 
     def _tf_fn(x):
-      return signal.irfft3d(
+      return spectral_ops.irfft3d(
           x,
           fft_length=[
               x.shape[-3].value, x.shape[-2].value, 2 * (x.shape[-1].value - 1)
           ])
 
     self._VerifyFftMethod(INNER_DIMS_3D, _to_input, _to_expected, _tf_fn)
-
-  def testIRFFT3DMismatchedSize(self):
-
-    def _to_input(x):
-      return np.fft.rfftn(
-          np.real(x),
-          axes=(-3, -2, -1),
-          s=[x.shape[-3] // 2, x.shape[-2], x.shape[-1] * 2])
-
-    def _to_expected(x):
-      return np.fft.irfftn(
-          x,
-          axes=(-3, -2, -1),
-          s=[x.shape[-3] // 2, x.shape[-2], x.shape[-1] * 2])
-
-    def _tf_fn(x):
-      return signal.irfft3d(
-          x,
-          fft_length=[
-              x.shape[-3].value // 2, x.shape[-2].value, x.shape[-1].value * 2
-          ])
-
-    self._VerifyFftMethod(INNER_DIMS_3D, _to_input, _to_expected, _tf_fn)
-
 
 
 if __name__ == "__main__":

@@ -24,7 +24,6 @@ limitations under the License.
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/op_def.pb.h"
 #include "tensorflow/core/framework/types.h"
-#include "tensorflow/core/graph/graph.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/lib/gtl/array_slice.h"
 #include "tensorflow/core/lib/strings/strcat.h"
@@ -64,10 +63,7 @@ class NodeDefBuilder {
   // specified by calling the methods below.
   // REQUIRES: The OpDef must satisfy ValidateOpDef().
   NodeDefBuilder(StringPiece name, StringPiece op_name,
-                 const OpRegistryInterface* op_registry = OpRegistry::Global(),
-                 const NodeDebugInfo* debug = nullptr);
-  NodeDefBuilder(StringPiece name, StringPiece op_name,
-                 const NodeDebugInfo& debug);
+                 const OpRegistryInterface* op_registry = OpRegistry::Global());
   // REQUIRES: in addition, *op_def must outlive *this.
   NodeDefBuilder(StringPiece name, const OpDef* op_def);
 

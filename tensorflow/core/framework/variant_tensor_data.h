@@ -38,8 +38,6 @@ class VariantTensorDataProto;
 class VariantTensorData {
  public:
   VariantTensorData();
-  // TODO(b/118823936): This silently returns if the proto is invalid.
-  // Consider calling FromProto explicitly instead.
   VariantTensorData(VariantTensorDataProto proto);
   ~VariantTensorData();
 

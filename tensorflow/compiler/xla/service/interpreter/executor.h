@@ -125,8 +125,7 @@ class XlaInterpreterExecutor : public internal::StreamExecutorInterface {
     return port::Status{port::error::UNIMPLEMENTED, ""};
   }
 
-  bool HostCallback(Stream *stream,
-                    std::function<port::Status()> callback) override;
+  bool HostCallback(Stream *stream, std::function<void()> callback) override;
 
   port::Status AllocateEvent(Event *event) override {
     return port::Status{port::error::UNIMPLEMENTED, ""};

@@ -35,8 +35,8 @@ from tensorflow.contrib.util import loader
 from tensorflow.python.data.experimental.ops import interleave_ops
 from tensorflow.python.data.ops import dataset_ops
 from tensorflow.python.data.util import nest
-from tensorflow.python.data.util import structure
 from tensorflow.python.framework import dtypes
+from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.platform import resource_loader
 
@@ -111,7 +111,8 @@ class BigtableClient(object):
 
 
 class BigtableTable(object):
-  """Entry point for reading and writing data in Cloud Bigtable.
+  """BigtableTable is the entrypoint for reading and writing data in Cloud
+  Bigtable.
 
   This BigtableTable class is the Python representation of the Cloud Bigtable
   table within TensorFlow. Methods on this class allow data to be read from and
@@ -221,7 +222,7 @@ class BigtableTable(object):
       A `tf.data.Dataset`. containing `tf.string` Tensors corresponding to all
       of the row keys matching that prefix.
     """
-    return dataset_ops.DatasetV1Adapter(_BigtablePrefixKeyDataset(self, prefix))
+    return _BigtablePrefixKeyDataset(self, prefix)
 
   def sample_keys(self):
     """Retrieves a sampling of row keys from the Bigtable table.
@@ -233,7 +234,7 @@ class BigtableTable(object):
     Returns:
       A `tf.data.Dataset` returning string row keys.
     """
-    return dataset_ops.DatasetV1Adapter(_BigtableSampleKeysDataset(self))
+    return _BigtableSampleKeysDataset(self)
 
   def scan_prefix(self, prefix, probability=None, columns=None, **kwargs):
     """Retrieves row (including values) from the Bigtable service.
@@ -278,8 +279,7 @@ class BigtableTable(object):
     """
     probability = _normalize_probability(probability)
     normalized = _normalize_columns(columns, kwargs)
-    return dataset_ops.DatasetV1Adapter(
-        _BigtableScanDataset(self, prefix, "", "", normalized, probability))
+    return _BigtableScanDataset(self, prefix, "", "", normalized, probability)
 
   def scan_range(self, start, end, probability=None, columns=None, **kwargs):
     """Retrieves rows (including values) from the Bigtable service.
@@ -324,8 +324,7 @@ class BigtableTable(object):
     """
     probability = _normalize_probability(probability)
     normalized = _normalize_columns(columns, kwargs)
-    return dataset_ops.DatasetV1Adapter(
-        _BigtableScanDataset(self, "", start, end, normalized, probability))
+    return _BigtableScanDataset(self, "", start, end, normalized, probability)
 
   def parallel_scan_prefix(self,
                            prefix,
@@ -381,8 +380,7 @@ class BigtableTable(object):
     """
     probability = _normalize_probability(probability)
     normalized = _normalize_columns(columns, kwargs)
-    ds = dataset_ops.DatasetV1Adapter(
-        _BigtableSampleKeyPairsDataset(self, prefix, "", ""))
+    ds = _BigtableSampleKeyPairsDataset(self, prefix, "", "")
     return self._make_parallel_scan_dataset(ds, num_parallel_scans, probability,
                                             normalized)
 
@@ -444,8 +442,7 @@ class BigtableTable(object):
     """
     probability = _normalize_probability(probability)
     normalized = _normalize_columns(columns, kwargs)
-    ds = dataset_ops.DatasetV1Adapter(
-        _BigtableSampleKeyPairsDataset(self, "", start, end))
+    ds = _BigtableSampleKeyPairsDataset(self, "", start, end)
     return self._make_parallel_scan_dataset(ds, num_parallel_scans, probability,
                                             normalized)
 
@@ -592,8 +589,16 @@ class _BigtableKeyDataset(dataset_ops.DatasetSource):
     self._table = table
 
   @property
-  def _element_structure(self):
-    return structure.TensorStructure(dtypes.string, [])
+  def output_classes(self):
+    return ops.Tensor
+
+  @property
+  def output_shapes(self):
+    return tensor_shape.TensorShape([])
+
+  @property
+  def output_types(self):
+    return dtypes.string
 
 
 class _BigtablePrefixKeyDataset(_BigtableKeyDataset):
@@ -653,9 +658,16 @@ class _BigtableLookupDataset(dataset_ops.DatasetSource):
     self._columns = [i[1] for i in normalized]
 
   @property
-  def _element_structure(self):
-    return structure.NestedStructure(tuple(
-        [structure.TensorStructure(dtypes.string, [])] * self._num_outputs))
+  def output_classes(self):
+    return tuple([ops.Tensor] * self._num_outputs)
+
+  @property
+  def output_shapes(self):
+    return tuple([tensor_shape.TensorShape([])] * self._num_outputs)
+
+  @property
+  def output_types(self):
+    return tuple([dtypes.string] * self._num_outputs)
 
   def _as_variant_tensor(self):
     # pylint: disable=protected-access
@@ -681,9 +693,16 @@ class _BigtableScanDataset(dataset_ops.DatasetSource):
     self._num_outputs = len(normalized) + 1  # 1 for row key
 
   @property
-  def _element_structure(self):
-    return structure.NestedStructure(tuple(
-        [structure.TensorStructure(dtypes.string, [])] * self._num_outputs))
+  def output_classes(self):
+    return tuple([ops.Tensor] * self._num_outputs)
+
+  @property
+  def output_shapes(self):
+    return tuple([tensor_shape.TensorShape([])] * self._num_outputs)
+
+  @property
+  def output_types(self):
+    return tuple([dtypes.string] * self._num_outputs)
 
   def _as_variant_tensor(self):
     return gen_bigtable_ops.bigtable_scan_dataset(
@@ -707,10 +726,16 @@ class _BigtableSampleKeyPairsDataset(dataset_ops.DatasetSource):
     self._end = end
 
   @property
-  def _element_structure(self):
-    return structure.NestedStructure(
-        (structure.TensorStructure(dtypes.string, []),
-         structure.TensorStructure(dtypes.string, [])))
+  def output_classes(self):
+    return (ops.Tensor, ops.Tensor)
+
+  @property
+  def output_shapes(self):
+    return (tensor_shape.TensorShape([]), tensor_shape.TensorShape([]))
+
+  @property
+  def output_types(self):
+    return (dtypes.string, dtypes.string)
 
   def _as_variant_tensor(self):
     # pylint: disable=protected-access

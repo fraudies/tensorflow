@@ -22,14 +22,11 @@ limitations under the License.
 namespace tensorflow {
 class EagerOperation {
  public:
+  // t is NULL iff the EagerOperation corresponds to a TensorFlow function
+  // instead of a primitive operation.
   EagerOperation(tensorflow::EagerContext* ctx, const char* op,
-                 bool is_function, const tensorflow::AttrTypeMap* t)
-      : ctx_(ctx),
-        name_(op),
-        attrs_(op),
-        attr_types_(t),
-        device_(nullptr),
-        is_function_(is_function) {}
+                 const tensorflow::AttrTypeMap* t)
+      : ctx_(ctx), name_(op), attrs_(op), attr_types_(t), device_(nullptr) {}
 
   ~EagerOperation() {
     for (tensorflow::TensorHandle* h : inputs_) {
@@ -37,7 +34,7 @@ class EagerOperation {
     }
   }
 
-  bool is_function() const { return is_function_; }
+  bool is_function() const { return attr_types_ == nullptr; }
 
   tensorflow::EagerContext* EagerContext() { return ctx_; }
 
@@ -71,7 +68,6 @@ class EagerOperation {
   tensorflow::gtl::InlinedVector<tensorflow::TensorHandle*, 4> inputs_;
   tensorflow::Device* device_;
   bool use_xla_ = false;
-  const bool is_function_;
 };
 }  // namespace tensorflow
 

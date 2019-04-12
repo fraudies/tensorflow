@@ -92,18 +92,16 @@ class LMDBDatasetOp : public DatasetOpKernel {
         mutex_lock l(mu_);
         do {
           if (mdb_cursor_) {
-            out_tensors->emplace_back(ctx->allocator({}), DT_STRING,
-                                      TensorShape({}));
-            Tensor& key_tensor = out_tensors->back();
+            Tensor key_tensor(ctx->allocator({}), DT_STRING, {});
             key_tensor.scalar<string>()() = string(
                 static_cast<const char*>(mdb_key_.mv_data), mdb_key_.mv_size);
+            out_tensors->emplace_back(std::move(key_tensor));
 
-            out_tensors->emplace_back(ctx->allocator({}), DT_STRING,
-                                      TensorShape({}));
-            Tensor& value_tensor = out_tensors->back();
+            Tensor value_tensor(ctx->allocator({}), DT_STRING, {});
             value_tensor.scalar<string>()() =
                 string(static_cast<const char*>(mdb_value_.mv_data),
                        mdb_value_.mv_size);
+            out_tensors->emplace_back(std::move(value_tensor));
 
             int val;
             val = mdb_cursor_get(mdb_cursor_, &mdb_key_, &mdb_value_, MDB_NEXT);
@@ -127,11 +125,6 @@ class LMDBDatasetOp : public DatasetOpKernel {
       }
 
      protected:
-      std::shared_ptr<model::Node> CreateNode(
-          IteratorContext* ctx, model::Node::Args args) const override {
-        return model::MakeSourceNode(std::move(args));
-      }
-
       Status SaveInternal(IteratorStateWriter* writer) override {
         return errors::Unimplemented(
             "Checkpointing is currently not supported for LMDBDataset.");

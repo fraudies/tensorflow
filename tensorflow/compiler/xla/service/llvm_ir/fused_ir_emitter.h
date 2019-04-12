@@ -19,7 +19,6 @@ limitations under the License.
 #include <map>
 #include <unordered_map>
 
-#include "absl/types/optional.h"
 #include "absl/types/span.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Value.h"
@@ -53,15 +52,11 @@ namespace xla {
 // same length.
 class FusedIrEmitter : public DfsHloVisitorWithDefault {
  public:
-  using IndexedGenerator = llvm_ir::ElementGenerator;
-  using NonIndexedGenerator = std::function<StatusOr<llvm::Value*>()>;
-  using GeneratorForOperandIrArrays =
-      std::function<std::vector<llvm_ir::IrArray>()>;
+  using Generator = llvm_ir::ElementGenerator;
 
-  FusedIrEmitter(GeneratorForOperandIrArrays operand_arrays_generator,
+  FusedIrEmitter(absl::Span<const llvm_ir::IrArray> parameter_arrays,
                  ElementalIrEmitter* elemental_emitter)
-      : operand_arrays_(),
-        operand_arrays_generator_(std::move(operand_arrays_generator)),
+      : parameter_arrays_(parameter_arrays),
         tiled_parameter_info_(nullptr),
         elemental_emitter_(elemental_emitter),
         b_(elemental_emitter->b()),
@@ -81,34 +76,25 @@ class FusedIrEmitter : public DfsHloVisitorWithDefault {
   Status FinishVisit(HloInstruction* root) override;
 
   // Returns the generator function for the root of the fused computation.
-  IndexedGenerator GetRootGenerator() const;
+  Generator GetRootGenerator() const;
 
   // Returns the generator function for the given instruction.
-  IndexedGenerator GetGenerator(const HloInstruction* instruction) const;
+  Generator GetGenerator(const HloInstruction* instruction) const;
+
+  // Returns the ir value for instruction 'hlo'.
+  llvm::Value* GetIrValueForGTE(const HloInstruction* hlo) const {
+    auto it = gte_values_.find(hlo);
+    CHECK(it != gte_values_.end());
+    return it->second;
+  }
 
   void SetTiledParameterInfo(const llvm_ir::TiledParameterInfo* info) {
     tiled_parameter_info_ = info;
   }
 
- protected:
-  // Returns the IrArrays for the fusion instruction operands.
-  llvm_ir::IrArray& GetIrArrayForFusedParameter(int64 parameter_number) {
-    if (!operand_arrays_.has_value()) {
-      operand_arrays_ = operand_arrays_generator_();
-    }
-    return operand_arrays_.value()[parameter_number];
-  }
-
-  llvm::Value* GetBasePointerForFusedParameter(int64 parameter_number) {
-    return GetIrArrayForFusedParameter(parameter_number).GetBasePointer();
-  }
-
  private:
-  // IrArrays for the fusion instruction operands, whose base addresses are the
-  // base address of the corresponding parameters in the fused computation.
-  absl::optional<std::vector<llvm_ir::IrArray>> operand_arrays_;
-  GeneratorForOperandIrArrays operand_arrays_generator_;
-
+  // Arrays of parameters of fusion instruction
+  absl::Span<const llvm_ir::IrArray> parameter_arrays_;
   const llvm_ir::TiledParameterInfo* tiled_parameter_info_;
 
   ElementalIrEmitter* elemental_emitter_;
@@ -120,23 +106,19 @@ class FusedIrEmitter : public DfsHloVisitorWithDefault {
   llvm::IRBuilder<>* b_;
   llvm::Module* module_;
 
-  // Map from instructions to functions that generate code for the output
-  // elements. If an instruction is a GetTupleElement instruction, the
-  // instruction produces non-tuple result.
-  std::unordered_map<const HloInstruction*, IndexedGenerator>
-      indexed_generators_;
-
-  // Map from tuple-result-producing GetTupleELement instructions to functions
-  // that generate the base pointers for the output elements. This is used to
-  // support the translation of nested GetTupleElement instructions.
-  std::unordered_map<const HloInstruction*, NonIndexedGenerator>
-      non_indexed_generators_;
+  // Map from instruction pointers to functions to generate elements of their
+  // outputs
+  std::unordered_map<const HloInstruction*, Generator> generators_;
 
   // Cache of generated values, lest we regenerate an element of a node with
   // multiple outgoing edges
   std::unordered_map<const HloInstruction*,
                      std::map<std::vector<llvm::Value*>, llvm::Value*>>
       generated_value_cache_;
+
+  // Stores ir values required to emit fused (and possibly nested)
+  // GetTupleElement instructions.
+  std::unordered_map<const HloInstruction*, llvm::Value*> gte_values_;
 };
 
 }  // namespace xla

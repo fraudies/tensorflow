@@ -1,13 +1,9 @@
 licenses(["notice"])  # Apache 2.0
 
-package_group(
-    name = "friends",
-    includes = ["//tensorflow:internal"],
-)
-
 package(
     default_visibility = [
-        ":friends",
+        "//learning/tfx:__subpackages__",
+        "//tensorflow:internal",
     ],
 )
 

@@ -57,9 +57,6 @@ class CollectiveParamResolverLocal : public ParamResolverInterface {
                              const StatusCallback& done) override;
 
  protected:
-  // For access to InstanceRec and CompleteDefaultRanking.
-  friend class CollectiveParamResolverLocalTest;
-
   // Used to complete/verify CollGroup.
   struct GroupRec {
     CollGroupParams group;

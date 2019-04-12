@@ -62,7 +62,6 @@ class OptimizerTest(test.TestCase):
       self.assertAllClose([-14., -13.], self.evaluate(var0))
       self.assertAllClose([-6., -5.], self.evaluate(var1))
 
-  @test_util.run_deprecated_v1
   def testAggregationMethod(self):
     for dtype in [dtypes.half, dtypes.float32, dtypes.float64]:
       with self.cached_session():
@@ -80,15 +79,14 @@ class OptimizerTest(test.TestCase):
 
         variables.global_variables_initializer().run()
         # Fetch params to validate initial values
-        self.assertAllClose([1.0, 2.0], self.evaluate(var0))
-        self.assertAllClose([3.0, 4.0], self.evaluate(var1))
+        self.assertAllClose([1.0, 2.0], var0.eval())
+        self.assertAllClose([3.0, 4.0], var1.eval())
         # Run 1 step of sgd through optimizer
         opt_op.run()
         # Validate updated params
-        self.assertAllClose([-14., -13.], self.evaluate(var0))
-        self.assertAllClose([-6., -5.], self.evaluate(var1))
+        self.assertAllClose([-14., -13.], var0.eval())
+        self.assertAllClose([-6., -5.], var1.eval())
 
-  @test_util.run_deprecated_v1
   def testPrecomputedGradient(self):
     for dtype in [dtypes.half, dtypes.float32, dtypes.float64]:
       with self.cached_session():
@@ -104,15 +102,15 @@ class OptimizerTest(test.TestCase):
 
         variables.global_variables_initializer().run()
         # Fetch params to validate initial values
-        self.assertAllClose([1.0, 2.0], self.evaluate(var0))
-        self.assertAllClose([3.0, 4.0], self.evaluate(var1))
+        self.assertAllClose([1.0, 2.0], var0.eval())
+        self.assertAllClose([3.0, 4.0], var1.eval())
         # Run 1 step of sgd through optimizer
         opt_op.run()
         # Validate updated params
         self.assertAllClose([1.0 - 3 * 5 * 42.0, 2.0 - 3 * 5 * (-42.0)],
-                            self.evaluate(var0))
+                            var0.eval())
         self.assertAllClose([3.0 - 3 * 3 * 42.0, 4.0 - 3 * 3 * (-42.0)],
-                            self.evaluate(var1))
+                            var1.eval())
 
   @test_util.run_in_graph_and_eager_modes
   def testNoVariables(self):
@@ -232,7 +230,6 @@ class OptimizerTest(test.TestCase):
     with self.assertRaises(NotImplementedError):
       sgd_op.apply_gradients(grads_and_vars)
 
-  @test_util.run_deprecated_v1
   def testTrainOp(self):
     with self.cached_session():
       var0 = variables.Variable([1.0, 2.0])
@@ -244,7 +241,6 @@ class OptimizerTest(test.TestCase):
       opt_op = sgd_op.minimize(cost, global_step, [var0, var1])
       self.assertTrue(opt_op in ops.get_collection(ops.GraphKeys.TRAIN_OP))
 
-  @test_util.run_deprecated_v1
   def testConstraint(self):
     constraint_01 = lambda x: clip_ops.clip_by_value(x, -0.1, 0.)
     constraint_0 = lambda x: clip_ops.clip_by_value(x, 0., 1.)
@@ -261,13 +257,13 @@ class OptimizerTest(test.TestCase):
 
       variables.global_variables_initializer().run()
       # Fetch params to validate initial values
-      self.assertAllClose([1.0, 2.0], self.evaluate(var0))
-      self.assertAllClose([3.0, 4.0], self.evaluate(var1))
+      self.assertAllClose([1.0, 2.0], var0.eval())
+      self.assertAllClose([3.0, 4.0], var1.eval())
       # Run 1 step of sgd through optimizer
       opt_op.run()
       # Validate updated params
-      self.assertAllClose([-0.1, -0.1], self.evaluate(var0))
-      self.assertAllClose([0., 0.], self.evaluate(var1))
+      self.assertAllClose([-0.1, -0.1], var0.eval())
+      self.assertAllClose([0., 0.], var1.eval())
 
 
 if __name__ == '__main__':

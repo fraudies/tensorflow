@@ -21,7 +21,6 @@ from __future__ import print_function
 import numpy as np
 
 from tensorflow.python.framework import ops
-from tensorflow.python.framework import tensor_shape
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import check_ops
 from tensorflow.python.ops import math_ops
@@ -105,8 +104,7 @@ class FillTriangular(bijector.Bijector):
     return array_ops.zeros_like(y[..., 0, 0])
 
   def _forward_event_shape(self, input_shape):
-    batch_shape, d = (input_shape[:-1],
-                      tensor_shape.dimension_value(input_shape[-1]))
+    batch_shape, d = input_shape[:-1], input_shape[-1].value
     if d is None:
       n = None
     else:
@@ -115,8 +113,8 @@ class FillTriangular(bijector.Bijector):
 
   def _inverse_event_shape(self, output_shape):
     batch_shape, n1, n2 = (output_shape[:-2],
-                           tensor_shape.dimension_value(output_shape[-2]),
-                           tensor_shape.dimension_value(output_shape[-1]))
+                           output_shape[-2].value,
+                           output_shape[-1].value)
     if n1 is None or n2 is None:
       m = None
     elif n1 != n2:

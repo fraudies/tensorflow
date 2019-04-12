@@ -127,6 +127,5 @@ def wrap_py_func(f, return_dtypes, args, kwargs=None, use_dummy_return=False):
     retval = f(*f_args, **f_kwargs)
     return 1 if use_dummy_return else retval
 
-  if use_dummy_return:
-    return_dtypes = dtypes.int32
-  return script_ops.eager_py_func(f_wrapper, tensor_args, return_dtypes)
+  return script_ops.py_func(f_wrapper, tensor_args, dtypes.int64
+                            if use_dummy_return else return_dtypes)

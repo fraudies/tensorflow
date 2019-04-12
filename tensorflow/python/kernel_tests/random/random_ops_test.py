@@ -25,7 +25,6 @@ from tensorflow.python.eager import context
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import random_seed
-from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import random_ops
 from tensorflow.python.ops import variables
@@ -50,9 +49,9 @@ class RandomOpTestCommon(test.TestCase):
         random_seed.set_random_seed(graph_seed)
       x = rng_func([num], min_or_mean, max_or_stddev, dtype=dtype, seed=op_seed)
 
-      y = self.evaluate(x)
-      z = self.evaluate(x)
-      w = self.evaluate(x)
+      y = sess.run(x)
+      z = sess.run(x)
+      w = sess.run(x)
 
       # We use exact equality here. If the random-number generator is producing
       # the same output, all three outputs will be bitwise identical.
@@ -70,7 +69,7 @@ class RandomNormalTest(RandomOpTestCommon):
             [num], mean=mu, stddev=sigma, dtype=dtype, seed=seed)
         ret = np.empty([10, num])
         for i in xrange(10):
-          ret[i, :] = self.evaluate(rng)
+          ret[i, :] = sess.run(rng)
       return ret
 
     return func
@@ -93,7 +92,6 @@ class RandomNormalTest(RandomOpTestCommon):
 
   # Checks that the CPU and GPU implementation returns the same results,
   # given the same random seed
-  @test_util.run_deprecated_v1
   def testCPUGPUMatch(self):
     for dt in dtypes.float16, dtypes.float32, dtypes.float64:
       results = {}
@@ -106,14 +104,12 @@ class RandomNormalTest(RandomOpTestCommon):
       else:
         self.assertAllClose(results[False], results[True], rtol=1e-6, atol=1e-6)
 
-  @test_util.run_deprecated_v1
   def testSeed(self):
     for dt in dtypes.float16, dtypes.float32, dtypes.float64:
       sx = self._Sampler(1000, 0.0, 1.0, dt, use_gpu=True, seed=345)
       sy = self._Sampler(1000, 0.0, 1.0, dt, use_gpu=True, seed=345)
       self.assertAllEqual(sx(), sy())
 
-  @test_util.run_deprecated_v1
   def testNoCSE(self):
     for use_gpu in [False, True]:
       with self.session(use_gpu=use_gpu):
@@ -123,14 +119,12 @@ class RandomNormalTest(RandomOpTestCommon):
         diff = rnd2 - rnd1
         self.assertTrue(np.linalg.norm(diff.eval()) > 0.1)
 
-  @test_util.run_deprecated_v1
   def testSingleSessionNotConstant(self):
     for use_gpu in [False, True]:
       for dt in dtypes.float16, dtypes.float32, dtypes.float64:
         self._testSingleSessionNotConstant(
             random_ops.random_normal, 100, dt, 0.0, 1.0, use_gpu=use_gpu)
 
-  @test_util.run_deprecated_v1
   def testSingleSessionOpSeedNotConstant(self):
     for use_gpu in [False, True]:
       for dt in dtypes.float16, dtypes.float32, dtypes.float64:
@@ -143,7 +137,6 @@ class RandomNormalTest(RandomOpTestCommon):
             use_gpu=use_gpu,
             op_seed=1345)
 
-  @test_util.run_deprecated_v1
   def testSingleSessionGraphSeedNotConstant(self):
     for use_gpu in [False, True]:
       for dt in dtypes.float16, dtypes.float32, dtypes.float64:
@@ -167,7 +160,7 @@ class TruncatedNormalTest(test.TestCase):
             [num], mean=mu, stddev=sigma, dtype=dtype, seed=seed)
         ret = np.empty([10, num])
         for i in xrange(10):
-          ret[i, :] = self.evaluate(rng)
+          ret[i, :] = sess.run(rng)
       return ret
 
     return func
@@ -192,7 +185,6 @@ class TruncatedNormalTest(test.TestCase):
 
   # Checks that the CPU and GPU implementation returns the same results,
   # given the same random seed
-  @test_util.run_deprecated_v1
   def testCPUGPUMatch(self):
     # Skip the test if there is no GPU.
     if not test.is_gpu_available():
@@ -211,7 +203,6 @@ class TruncatedNormalTest(test.TestCase):
       else:
         self.assertAllClose(results[False], results[True], rtol=1e-6, atol=1e-6)
 
-  @test_util.run_deprecated_v1
   def testSeed(self):
     for dt in dtypes.float16, dtypes.float32, dtypes.float64:
       sx = self._Sampler(1000, 0.0, 1.0, dt, use_gpu=True, seed=345)
@@ -228,7 +219,6 @@ class TruncatedNormalTest(test.TestCase):
       print("std(x)", np.std(x), abs(np.std(x) / stddev - 0.85))
       self.assertTrue(abs(np.std(x) / stddev - 0.85) < 0.04)
 
-  @test_util.run_deprecated_v1
   def testLargeShape(self):
     with self.session(use_gpu=True):
       v = variables.Variable(
@@ -236,7 +226,6 @@ class TruncatedNormalTest(test.TestCase):
       n = random_ops.truncated_normal(v.shape)
       self.assertEqual([8589934592, 1], n.shape.as_list())
 
-  @test_util.run_deprecated_v1
   def testNoCSE(self):
     with self.session(use_gpu=True):
       shape = [2, 3, 4]
@@ -267,7 +256,7 @@ class RandomUniformTest(RandomOpTestCommon):
             [num], minval=minv, maxval=maxv, dtype=dtype, seed=seed)
         ret = np.empty([10, num])
         for i in xrange(10):
-          ret[i, :] = self.evaluate(rng)
+          ret[i, :] = sess.run(rng)
       return ret
 
     return func
@@ -298,7 +287,6 @@ class RandomUniformTest(RandomOpTestCommon):
         print("count = ", count)
       self.assertTrue(count < count_limit)
 
-  @test_util.run_deprecated_v1
   def testUniformIntsWithInvalidShape(self):
     for dtype in dtypes.int32, dtypes.int64:
       with self.assertRaisesRegexp(
@@ -311,7 +299,6 @@ class RandomUniformTest(RandomOpTestCommon):
             [1000], minval=1, maxval=[2, 3], dtype=dtype)
 
   # Check that uniform ints actually follow a uniform distribution.
-  @test_util.run_deprecated_v1
   def testUniformInts(self):
     minv = -2
     maxv = 15
@@ -344,7 +331,6 @@ class RandomUniformTest(RandomOpTestCommon):
 
   # Checks that the CPU and GPU implementation returns the same results,
   # given the same random seed
-  @test_util.run_deprecated_v1
   def testCPUGPUMatch(self):
     for dt in (dtypes.float16, dtypes.float32, dtypes.float64, dtypes.int32,
                dtypes.int64):
@@ -356,7 +342,6 @@ class RandomUniformTest(RandomOpTestCommon):
         results[use_gpu] = sampler()
       self.assertAllEqual(results[False], results[True])
 
-  @test_util.run_deprecated_v1
   def testSeed(self):
     for dt in (dtypes.float16, dtypes.float32, dtypes.float64, dtypes.int32,
                dtypes.int64):
@@ -365,7 +350,6 @@ class RandomUniformTest(RandomOpTestCommon):
         sy = self._Sampler(1000, 0, 17, dtype=dt, use_gpu=True, seed=seed)
         self.assertAllEqual(sx(), sy())
 
-  @test_util.run_deprecated_v1
   def testNoCSE(self):
     shape = [2, 3, 4]
     for dtype in dtypes.float16, dtypes.float32, dtypes.int32:
@@ -375,7 +359,6 @@ class RandomUniformTest(RandomOpTestCommon):
         diff = (rnd2 - rnd1).eval()
         self.assertTrue(np.linalg.norm(diff) > 0.1)
 
-  @test_util.run_deprecated_v1
   def testSingleSessionNotConstant(self):
     for use_gpu in [False, True]:
       for dt in (dtypes.float16, dtypes.float32, dtypes.float64, dtypes.int32,
@@ -383,7 +366,6 @@ class RandomUniformTest(RandomOpTestCommon):
         self._testSingleSessionNotConstant(
             random_ops.random_uniform, 100, dt, 0, 17, use_gpu=use_gpu)
 
-  @test_util.run_deprecated_v1
   def testSingleSessionOpSeedNotConstant(self):
     for use_gpu in [False, True]:
       for dt in (dtypes.float16, dtypes.float32, dtypes.float64, dtypes.int32,
@@ -397,7 +379,6 @@ class RandomUniformTest(RandomOpTestCommon):
             use_gpu=use_gpu,
             op_seed=1345)
 
-  @test_util.run_deprecated_v1
   def testSingleSessionGraphSeedNotConstant(self):
     for use_gpu in [False, True]:
       for dt in (dtypes.float16, dtypes.float32, dtypes.float64, dtypes.int32,
@@ -414,7 +395,6 @@ class RandomUniformTest(RandomOpTestCommon):
 
 class RandomShapeTest(test.TestCase):
 
-  @test_util.run_deprecated_v1
   def testTruncatedNormal(self):
     # Fully known shape.
     rnd1 = random_ops.truncated_normal([1, 2, 3])
@@ -427,7 +407,6 @@ class RandomShapeTest(test.TestCase):
     rnd3 = random_ops.truncated_normal(array_ops.placeholder(dtypes.int32))
     self.assertIs(None, rnd3.get_shape().ndims)
 
-  @test_util.run_deprecated_v1
   def testRandomNormal(self):
     # Fully known shape.
     rnd1 = random_ops.random_normal([1, 2, 3])
@@ -440,7 +419,6 @@ class RandomShapeTest(test.TestCase):
     rnd3 = random_ops.random_normal(array_ops.placeholder(dtypes.int32))
     self.assertIs(None, rnd3.get_shape().ndims)
 
-  @test_util.run_deprecated_v1
   def testRandomUniform(self):
     # Fully known shape.
     rnd1 = random_ops.random_uniform([1, 2, 3])

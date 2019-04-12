@@ -177,6 +177,13 @@ std::unique_ptr<llvm::TargetMachine> GetTargetMachine(
   }
 
   TargetOptions target_options = InitTargetOptionsFromCodeGenFlags();
+  llvm_ir::SetTargetOptions(
+      /*fast_math_enabled=*/hlo_module_config.debug_options()
+          .xla_gpu_enable_fast_math(),
+      &target_options);
+
+  // Enable FMA synthesis.
+  target_options.AllowFPOpFusion = FPOpFusion::Fast;
 
   // Set the verbose assembly options.
   target_options.MCOptions.AsmVerbose = false;
@@ -199,7 +206,8 @@ std::unique_ptr<llvm::TargetMachine> GetTargetMachine(
   }
   return absl::WrapUnique(target->createTargetMachine(
       triple.str(), llvm_ir::AsStringRef(cpu_name), "+ptx60", target_options,
-      getRelocModel(), getCodeModel(), codegen_opt_level));
+      Optional<Reloc::Model>(RelocModel), Optional<CodeModel::Model>(CMModel),
+      codegen_opt_level));
 }
 
 // Adds the standard LLVM optimization passes, based on the speed optimization
@@ -393,16 +401,8 @@ StatusOr<string> CompileModuleToPtx(llvm::Module* module,
   int32 opt_level =
       hlo_module_config.debug_options().xla_backend_optimization_level();
 
-  if (opt_level < 2) {
-    LOG(ERROR) << std::string(80, '*');
-    LOG(ERROR) << "The XLA GPU backend doesn't support unoptimized code "
-                  "generation but ";
-    LOG(ERROR) << "--xla_backend_optimization_level is set to " << opt_level
-               << "!";
-    LOG(ERROR) << "(Supported configuration is "
-                  "--xla_backend_optimization_level >= 2.)";
-    LOG(ERROR) << std::string(80, '*');
-  }
+  CHECK_GE(opt_level, 2)
+      << "The XLA GPU backend doesn't support unoptimized code generation";
 
   AddOptimizationPasses(opt_level,
                         /*size_level=*/0, target_machine.get(), &module_passes,
@@ -453,20 +453,17 @@ void GPUBackendInit(const HloModuleConfig& hlo_module_config) {
   // * 3-6 gives similar results as 2;
   // * >6 start hurting the performance of at least dot product kernels.
   //
-  // TODO(jingyue): The current threshold only considers the number of IR
+  // TODO(jingyue): The current threshold only considers the numbr of IR
   // instructions which do not accurately reflect the true cost. We need a
   // better cost model.
   FeedLLVMWithFlags({"-bonus-inst-threshold=2"});
-  // Increase limit when scanning memory dependencies.  This helps to reduce
-  // more redundant load instructions.
+  // TODO(b/22073864): Increase limit when scan memory dependency.
+  // This helps to reduce more redundant load instructions.
   //
   // The specific value is currently large enough for s3d in shoc benchmark,
   // which contains a lot of load instructions and many arithmetic instructions
   // between those loads.
   FeedLLVMWithFlags({"-memdep-block-scan-limit=500"});
-
-  // Use div.approx -- it matters for some float-division heavy benchmarks.
-  FeedLLVMWithFlags({"-nvptx-prec-divf32=0"});
 
   llvm_ir::InitializeLLVMCommandLineOptions(hlo_module_config);
 

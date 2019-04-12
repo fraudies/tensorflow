@@ -23,7 +23,6 @@ import numpy as np
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import random_seed
-from tensorflow.python.framework import test_util
 from tensorflow.python.ops import random_ops
 from tensorflow.python.platform import test
 
@@ -40,7 +39,7 @@ class MultinomialTest(test.TestCase):
           num_samples=1000000,
           seed=15)
       for _ in range(100):
-        x = self.evaluate(samples)
+        x = sess.run(samples)
         indices, counts = np.unique(x, return_counts=True)
         for index, count in zip(indices, counts):
           if index in counts_by_indices.keys():
@@ -58,7 +57,7 @@ class MultinomialTest(test.TestCase):
           num_samples=1000000,
           seed=15)
       for _ in range(100):
-        x = self.evaluate(samples)
+        x = sess.run(samples)
         indices, counts = np.unique(x, return_counts=True)
         for index, count in zip(indices, counts):
           if index in counts_by_indices.keys():
@@ -67,7 +66,6 @@ class MultinomialTest(test.TestCase):
             counts_by_indices[index] = count
     self.assertEqual(counts_by_indices[0], 100000000)
 
-  @test_util.run_deprecated_v1
   def testLargeDynamicRange3(self):
     random_seed.set_random_seed(10)
     counts_by_indices = {}
@@ -81,7 +79,7 @@ class MultinomialTest(test.TestCase):
       # we'll run out of memory if we try to draw 1e9 samples directly
       # really should fit in 12GB of memory...
       for _ in range(100):
-        x = self.evaluate(samples)
+        x = sess.run(samples)
         indices, counts = np.unique(x, return_counts=True)
         for index, count in zip(indices, counts):
           if index in counts_by_indices.keys():

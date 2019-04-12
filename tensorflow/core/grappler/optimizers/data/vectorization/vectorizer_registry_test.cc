@@ -24,8 +24,8 @@ namespace grappler {
 class TestVectorizer : public Vectorizer {
  public:
   Status Vectorize(const Node& node, Graph* outer_scope,
-                   VectorizerInput&& inputs,
-                   VectorizerOutput* outputs) override {
+                   std::vector<WrappedTensor>&& inputs,
+                   std::vector<WrappedTensor>* outputs) override {
     return Status::OK();
   }
 };

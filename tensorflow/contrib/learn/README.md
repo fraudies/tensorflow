@@ -7,11 +7,12 @@ warnings. A high-level overview is below.
 
 ## Canned Estimators
 
-Many canned estimators (subclasses of `Estimator`) have equivalents in core
-exposed under `tf.estimator`:
+Many canned estimators (subclasses of `Estimator`) have equivalents in core:
 `DNNClassifier`, `DNNRegressor`, `DNNEstimator`, `LinearClassifier`,
-`LinearRegressor`, `LinearEstimator`, `DNNLinearCombinedClassifier`,
-`DNNLinearCombinedRegressor` and `DNNLinearCombinedEstimator`.
+`LinearRegressor`, `DNNLinearCombinedClassifier` and
+`DNNLinearCombinedRegressor`. They are exposed under `tf.estimator`.
+`DNNEstimator`, `LinearEstimator` and `DNNLinearCombinedEstimator`
+are exposed under `tf.contrib.estimator`.
 
 To migrate to the new api, users need to take the following steps:
 
@@ -44,7 +45,7 @@ To migrate to the new api, users need to take the following steps:
   `tf.contrib.learn` classifiers and regressors supported labels with shape
   `[batch_size]`.
 * If you pass custom metrics from the `evaluate()` method call, use
-  `tf.estimator.add_metrics`.
+  `tf.contrib.estimator.add_metrics`.
 * Replace your `serving_input_fn` with a `serving_input_receiver_fn`.
   Note this should be entirely distinct from your training `input_fn`, so if you
   previously had one `input_fn` with different "modes", you should now factor
@@ -62,10 +63,10 @@ Some remaining estimators/classes:
   with a custom `model_fn`, or with `DNNEstimator`.
 * `StateSavingRnnEstimator`: Consider a custom `model_fn`.
 * SVM: Consider a custom `model_fn`.
-* `LinearComposableModel` and `DNNComposableModel`: Not supported.
+* `LinearComposableModel` and `DNNComposableModel`: Not supported. 
   Consider `tf.contrib.estimator.DNNEstimator`, or write a custom model_fn.
 * `MetricSpec`: Deprecated. For adding custom metrics to canned Estimators, use
-  `tf.estimator.add_metrics`.
+  `tf.contrib.estimator.add_metrics`.
 
 ## Estimator
 `tf.contrib.learn.Estimator` is migrated to `tf.estimator.Estimator`.

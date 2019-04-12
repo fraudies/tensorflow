@@ -138,9 +138,9 @@ class ShuffleDatasetSerializationTest(
           saver = saver_lib.Saver(allow_empty=True)
           with self.session(graph=g) as sess:
             self._save(sess, saver)
-            expected = [self.evaluate(get_next_ops) for _ in range(num_outputs)]
+            expected = [sess.run(get_next_ops) for _ in range(num_outputs)]
             self._restore(saver, sess)
-            actual = [self.evaluate(get_next_ops) for _ in range(num_outputs)]
+            actual = [sess.run(get_next_ops) for _ in range(num_outputs)]
             self.match(expected, actual)
 
 

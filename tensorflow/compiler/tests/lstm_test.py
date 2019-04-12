@@ -88,8 +88,8 @@ class LSTMTest(test.TestCase):
                  (basename, m_prev_scalar, c_prev_scalar, pad_scalar))
 
       # Initialize variables and run the unrolled LSTM step.
-      self.evaluate(variables.global_variables_initializer())
-      return self.evaluate([m, c])
+      sess.run(variables.global_variables_initializer())
+      return sess.run([m, c])
 
   def testLSTMCell(self):
     # Run with all-0 weights, no padding.
@@ -173,8 +173,8 @@ class LSTMTest(test.TestCase):
                  (basename, m_init_scalar, c_init_scalar, pad_scalar))
 
       # Initialize variables and run the unrolled LSTM layer.
-      self.evaluate(variables.global_variables_initializer())
-      return self.evaluate(out_seq)
+      sess.run(variables.global_variables_initializer())
+      return sess.run(out_seq)
 
   def testLSTMLayer(self):
     # Run with all-0 weights, no padding.

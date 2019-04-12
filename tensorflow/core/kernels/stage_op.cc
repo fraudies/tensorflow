@@ -151,7 +151,7 @@ class Buffer : public ResourceBase {
   }
 
   // Are there a limit number of elements or a memory limit
-  // configured on this buffer?
+  // configued on this buffer?
   bool IsBounded() const { return capacity_ > 0 || memory_limit_ > 0; }
 
   bool IsCapacityFull() const { return buf_.size() >= capacity_; }

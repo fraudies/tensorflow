@@ -21,7 +21,6 @@ from __future__ import print_function
 import os
 
 from tensorflow.python.framework import ops
-from tensorflow.python.framework import test_util
 from tensorflow.python.ops import variables
 from tensorflow.python.platform import test
 from tensorflow.python.saved_model import loader
@@ -34,8 +33,8 @@ class SimpleSaveTest(test.TestCase):
 
   def _init_and_validate_variable(self, sess, variable_name, variable_value):
     v = variables.Variable(variable_value, name=variable_name)
-    self.evaluate(variables.global_variables_initializer())
-    self.assertEqual(variable_value, self.evaluate(v))
+    sess.run(variables.global_variables_initializer())
+    self.assertEqual(variable_value, v.eval())
     return v
 
   def _check_variable_info(self, actual_variable, expected_variable):
@@ -54,7 +53,6 @@ class SimpleSaveTest(test.TestCase):
       self.assertEqual(actual_tensor_info.tensor_shape.dim[i].size,
                        expected_tensor.shape[i])
 
-  @test_util.run_deprecated_v1
   def testSimpleSave(self):
     """Test simple_save that uses the default parameters."""
     export_dir = os.path.join(test.get_temp_dir(),

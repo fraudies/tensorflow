@@ -85,26 +85,11 @@ class SideEffectGuardTransformer(converter.Base):
         new_alias_map.update(alias_map)
         alias_map = new_alias_map
         current_dest = new_dest
-
-    if reindent_requested:
-      no_controls_to_gate = False
-      if not current_dest:
-        no_controls_to_gate = True
-      if len(current_dest) == 1:
-        if ast_util.matches(current_dest[0], 'return'):
-          no_controls_to_gate = True
-        if ast_util.matches(current_dest[0], 'return ()'):
-          no_controls_to_gate = True
-        if ast_util.matches(current_dest[0], 'return []'):
-          no_controls_to_gate = True
-        if ast_util.matches(current_dest[0], 'return {}'):
-          no_controls_to_gate = True
-      if no_controls_to_gate:
-        # TODO(mdan): There may still be something that could be done.
-        raise ValueError(
-            'Unable to insert statement into the computation flow: it is not'
-            ' followed by any computation which the statement could gate.')
-
+    if reindent_requested and not current_dest:
+      # TODO(mdan): There may still be something that could be done.
+      raise ValueError('Unable to insert statement into the computation flow: '
+                       'it is not followed by any computation which '
+                       'the statement could gate.')
     return new_nodes
 
   def visit_FunctionDef(self, node):
@@ -137,12 +122,11 @@ class SideEffectGuardTransformer(converter.Base):
       # possible, gate all remaining statements (and that may fail too, see
       # _visit_and_reindent.
       args_scope = anno.getanno(node.value, NodeAnno.ARGS_SCOPE)
-      live_out = anno.getanno(node, anno.Static.LIVE_VARS_OUT)
       # NOTE: We can't guard object attributes because they may not be writable.
       # In addition, avoid renaming well-known names.
       # TODO(mdan): Move these names into config.
-      unguarded_names = (qual_names.QN('self'), qual_names.QN('ag__'))
-      guarded_args = tuple(s for s in live_out
+      unguarded_names = (qual_names.QN('self'), qual_names.QN('tf'))
+      guarded_args = tuple(s for s in args_scope.read
                            if not s.is_composite() and s not in unguarded_names)
 
       # TODO(mdan): Include all arguments which depended on guarded_args too.

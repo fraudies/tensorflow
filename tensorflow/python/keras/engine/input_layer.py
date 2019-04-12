@@ -19,10 +19,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from tensorflow.python.eager import context
 from tensorflow.python.framework import tensor_shape
-from tensorflow.python.keras import backend
+from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.engine import base_layer
-from tensorflow.python.keras.utils import tf_utils
+from tensorflow.python.ops import array_ops
 from tensorflow.python.util.tf_export import tf_export
 
 
@@ -70,13 +71,13 @@ class InputLayer(base_layer.Layer):
 
     if not name:
       prefix = 'input'
-      name = prefix + '_' + str(backend.get_uid(prefix))
+      name = prefix + '_' + str(K.get_uid(prefix))
 
     if not dtype:
       if input_tensor is None:
-        dtype = backend.floatx()
+        dtype = K.floatx()
       else:
-        dtype = backend.dtype(input_tensor)
+        dtype = K.dtype(input_tensor)
     super(InputLayer, self).__init__(dtype=dtype, name=name)
     self.built = True
     self.sparse = sparse
@@ -91,31 +92,39 @@ class InputLayer(base_layer.Layer):
         batch_input_shape = (batch_size,) + tuple(input_shape)
       else:
         batch_input_shape = None
-      graph = backend.get_graph()
-      with graph.as_default():
+
+      if context.executing_eagerly():
+        # In eager mode, create a temporary placeholder to call the layer on.
+        input_tensor = base_layer.DeferredTensor(  # pylint: disable=protected-access
+            shape=batch_input_shape,
+            dtype=dtype,
+            name=self.name)
+      else:
         # In graph mode, create a graph placeholder to call the layer on.
         if sparse:
-          input_tensor = backend.placeholder(
+          input_tensor = array_ops.sparse_placeholder(
               shape=batch_input_shape,
               dtype=dtype,
-              name=self.name,
-              sparse=True)
+              name=self.name)
         else:
-          input_tensor = backend.placeholder(
+          input_tensor = array_ops.placeholder(
               shape=batch_input_shape,
               dtype=dtype,
               name=self.name)
 
+      # For compatibility with Keras API.
       self.is_placeholder = True
       self._batch_input_shape = batch_input_shape
     else:
-      if not tf_utils.is_symbolic_tensor(input_tensor):
-        raise ValueError('You should not pass an EagerTensor to `Input`. '
-                         'For example, instead of creating an '
-                         'InputLayer, you should instantiate your model and '
-                         'directly call it on your input.')
+      # For compatibility with Keras API.
       self.is_placeholder = False
       self._batch_input_shape = tuple(input_tensor.get_shape().as_list())
+
+      if context.executing_eagerly():
+        raise ValueError('You should not pass an input tensor when executing '
+                         'in eager mode. For example, instead of creating an '
+                         'InputLayer, you should instantiate your model and '
+                         'directly call it on your input.')
 
     # Create an input node to add to self.outbound_node
     # and set output_tensors' _keras_history.
@@ -191,16 +200,6 @@ def Input(  # pylint: disable=invalid-name
       model = Model(x, y)
       ```
 
-      Note that even if eager execution is enabled,
-      `Input` produces a symbolic tensor (i.e. a placeholder).
-      This symbolic tensor can be used with other
-      TensorFlow ops, as such:
-
-      ```python
-      x = Input(shape=(32,))
-      y = tf.square(x)
-      ```
-
   Raises:
     ValueError: in case of invalid arguments.
   """
@@ -216,7 +215,7 @@ def Input(  # pylint: disable=invalid-name
     raise ValueError('Unrecognized keyword arguments:', kwargs.keys())
 
   if dtype is None:
-    dtype = backend.floatx()
+    dtype = K.floatx()
   if shape is None and tensor is None:
     raise ValueError('Please provide to Input either a `shape`'
                      ' or a `tensor` argument. Note that '

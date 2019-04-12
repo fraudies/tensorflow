@@ -667,11 +667,12 @@ void ShapeTree<T>::CopySubtreeFrom(const ShapeTree<T>& other,
 template <typename T>
 bool ShapeTree<T>::operator==(const ShapeTree<T>& other) const {
   bool equal = true;
-  ForEachElement([&other, &equal](const ShapeIndex& index, const T& data) {
-    if (data != other.element(index)) {
-      equal = false;
-    }
-  });
+  ForEachElement(
+      [this, &other, &equal](const ShapeIndex& index, const T& data) {
+        if (data != other.element(index)) {
+          equal = false;
+        }
+      });
   return equal;
 }
 

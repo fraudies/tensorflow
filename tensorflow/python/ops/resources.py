@@ -21,7 +21,6 @@ from __future__ import division
 from __future__ import print_function
 
 import collections
-import os
 
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
@@ -87,9 +86,7 @@ def report_uninitialized_resources(resource_list=None,
     resource_list = shared_resources() + local_resources()
   with ops.name_scope(name):
     # Run all operations on CPU
-    local_device = os.environ.get(
-        "TF_DEVICE_FOR_UNINITIALIZED_VARIABLE_REPORTING", "/cpu:0")
-    with ops.device(local_device):
+    with ops.device("/cpu:0"):
       if not resource_list:
         # Return an empty tensor so we only need to check for returned tensor
         # size being 0 as an indication of model ready.

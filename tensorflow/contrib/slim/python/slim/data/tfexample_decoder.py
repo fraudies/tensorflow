@@ -25,8 +25,6 @@ from __future__ import print_function
 
 import abc
 
-import six
-
 from tensorflow.contrib.slim.python.slim.data import data_decoder
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import sparse_tensor
@@ -39,7 +37,6 @@ from tensorflow.python.ops import parsing_ops
 from tensorflow.python.ops import sparse_ops
 
 
-@six.add_metaclass(abc.ABCMeta)
 class ItemHandler(object):
   """Specifies the item-to-Features mapping for tf.parse_example.
 
@@ -47,6 +44,8 @@ class ItemHandler(object):
   proto as well as a function that post-processes the results of Example
   parsing.
   """
+
+  __metaclass__ = abc.ABCMeta
 
   def __init__(self, keys):
     """Constructs the handler with the name of the tf.Feature keys to use.

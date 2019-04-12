@@ -195,11 +195,8 @@ Status RewriteSubgraph(const std::vector<OutputTensor>& arg_source_tensors,
         e->dst()->attrs().Find(kXlaClusterAttr) == nullptr &&
         e->dst()->type_string() != kXlaClusterOutput) {
       return errors::InvalidArgument(
-          "Undeclared output of XLA computation. Some common causes of this "
-          "error are: 1) variable initializers that depend on the XLA "
-          "computation; 2) gradient computations that depend on the XLA "
-          "computation, which can be mitigated by moving gradient computations "
-          "inside XLA computation. Offending edge: ",
+          "Undeclared output of XLA computation. A common cause of this error "
+          "is variable initializers that depend on the XLA computation. Edge: ",
           e->src()->name(), ":", e->src_output(), " -> ", e->dst()->name(), ":",
           e->dst_input());
     }
@@ -297,7 +294,6 @@ Status RewriteSubgraph(const std::vector<OutputTensor>& arg_source_tensors,
 
     NodeDef def;
     def.set_name(launch->name());
-    MergeDebugInfo(NodeDebugInfo(launch->def()), &def);
 
     // Target the XLA CPU/GPU backends.
     VLOG(2) << "Replacing with XlaLaunch";

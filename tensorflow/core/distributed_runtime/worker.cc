@@ -23,7 +23,6 @@ limitations under the License.
 #include "tensorflow/core/distributed_runtime/rendezvous_mgr_interface.h"
 #include "tensorflow/core/distributed_runtime/tensor_coding.h"
 #include "tensorflow/core/distributed_runtime/worker_session.h"
-#include "tensorflow/core/platform/device_tracer.h"
 #include "tensorflow/core/platform/tracing.h"
 
 namespace tensorflow {
@@ -104,8 +103,7 @@ void Worker::AbortStep(int64 step_id) {
     // Delay a bit before aborting the step. This way, the root
     // cause may return first back to the client instead of this
     // cancellation generated abort error.
-    rendez->StartAbort(errors::Aborted("[CHILD] Step ", step_id,
-                                       " cancelled.  Cancelling rendezvous."));
+    rendez->StartAbort(errors::Aborted("Step ", step_id));
     rendez->Unref();
   });
 }
@@ -181,28 +179,7 @@ void Worker::DoRunGraph(CallOptions* opts, RunGraphRequestWrapper* request,
       request->exec_opts().record_timeline() ||
       request->exec_opts().record_costs()) {
     collector = new StepStatsCollector(response->mutable_step_stats());
-  }
-  DeviceTracer* tracer = nullptr;
-  if (collector && request->exec_opts().record_timeline()) {
-    // If timeline was requested, assume we want hardware level tracing.
-    std::unique_ptr<DeviceTracer> trptr = CreateDeviceTracer();
-    if (trptr) {
-      tracer = trptr.release();
-      Status s = tracer->Start();
-      if (!s.ok()) {
-        delete tracer;
-        if (errors::IsUnavailable(s)) {
-          LOG(WARNING)
-              << "Hardware tracing unavailable, continuing without it. " << s;
-          tracer = nullptr;
-        } else {
-          delete collector;
-          delete out;
-          done(s);
-          return;
-        }
-      }
-    }
+    // TODO(mrry,pbar): GPU tracing for distributed steps.
   }
   CancellationManager* cm = new CancellationManager;
   opts->SetCancelCallback([this, cm, step_id]() {
@@ -217,7 +194,6 @@ void Worker::DoRunGraph(CallOptions* opts, RunGraphRequestWrapper* request,
     opts->ClearCancelCallback();
     delete cm;
     delete collector;
-    delete tracer;
     delete out;
     done(errors::Aborted("Call was aborted"));
     return;
@@ -225,8 +201,8 @@ void Worker::DoRunGraph(CallOptions* opts, RunGraphRequestWrapper* request,
   session->graph_mgr->ExecuteAsync(
       request->graph_handle(), step_id, session.get(), request->exec_opts(),
       collector, response, cm, in,
-      [this, step_id, response, session, cm, out, token, collector, tracer,
-       opts, done](Status s) {
+      [this, step_id, response, session, cm, out, token, collector, opts,
+       done](Status s) {
         if (s.ok()) {
           s = session->graph_mgr->RecvOutputs(step_id, out);
         }
@@ -234,15 +210,6 @@ void Worker::DoRunGraph(CallOptions* opts, RunGraphRequestWrapper* request,
         cancellation_manager_.DeregisterCallback(token);
         delete cm;
 
-        if (tracer) {
-          Status tracer_status = tracer->Stop();
-          if (tracer_status.ok()) {
-            tracer_status = tracer->Collect(collector);
-          }
-          if (!tracer_status.ok()) {
-            LOG(ERROR) << "Bad status from tracer: " << tracer_status;
-          }
-        }
         if (s.ok()) {
           for (const auto& p : *out) {
             const string& key = p.first;
@@ -252,7 +219,6 @@ void Worker::DoRunGraph(CallOptions* opts, RunGraphRequestWrapper* request,
         }
         if (collector) collector->Finalize();
         delete collector;
-        delete tracer;
         delete out;
         done(s);
       });
@@ -439,9 +405,7 @@ Status Worker::PrepareRecvTensor(const Rendezvous::ParsedKey& parsed,
     return errors::Aborted(
         "RecvTensor expects a different device incarnation: ",
         parsed.src_incarnation, " vs. ", (*src_dev)->attributes().incarnation(),
-        ". Your worker job (\"",
-        env_->session_mgr->LegacySession()->worker_name,
-        "\") was probably restarted. Check your "
+        ". Your worker job was probably restarted. Check your "
         "worker job for the reason why it was restarted.");
   }
 

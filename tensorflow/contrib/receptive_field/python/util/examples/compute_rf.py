@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Computes Receptive Field (RF) information given a graph protobuf."""
+"""Computes Receptive Field (RF) information given a graph protobuf.
+
+For an example of usage, see accompanying file compute_rf.sh
+"""
 
 from __future__ import absolute_import
 from __future__ import division

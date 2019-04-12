@@ -46,7 +46,6 @@ class LBetaTest(test.TestCase):
           0.5, self.evaluate(math_ops.exp(special_math_ops.lbeta(x_one_half))))
       self.assertEqual([], special_math_ops.lbeta(x_one).get_shape())
 
-  @test_util.run_deprecated_v1
   def test_one_dimensional_arg_dynamic(self):
     # Should evaluate to 1 and 1/2.
     x_one = [1, 1.]
@@ -58,7 +57,6 @@ class LBetaTest(test.TestCase):
       self.assertAllClose(0.5,
                           beta_ph.eval(feed_dict={ph: x_one_half}))
 
-  @test_util.run_deprecated_v1
   def test_four_dimensional_arg_with_partial_shape_dynamic(self):
     x_ = np.ones((3, 2, 3, 4))
     # Gamma(1) = 0! = 1
@@ -83,7 +81,6 @@ class LBetaTest(test.TestCase):
           self.evaluate(math_ops.exp(special_math_ops.lbeta(x_one_half))))
       self.assertEqual((2,), special_math_ops.lbeta(x_one_half).get_shape())
 
-  @test_util.run_deprecated_v1
   def test_two_dimensional_arg_dynamic(self):
     # Should evaluate to 1/2.
     x_one_half = [[2, 1.], [2, 1.]]
@@ -291,7 +288,6 @@ class EinsumTest(test.TestCase):
     for case in self.long_cases:
       self.run_test(case)
 
-  @test_util.run_deprecated_v1
   def test_invalid(self):
     for axes in self.invalid_cases:
       inputs = [
@@ -301,7 +297,6 @@ class EinsumTest(test.TestCase):
       with self.assertRaises(ValueError):
         _ = special_math_ops.einsum(axes, *inputs)
 
-  @test_util.run_deprecated_v1
   def test_invalid_keyword_arguments(self):
     m0 = array_ops.placeholder(dtypes.int32, shape=(1, None))
     m1 = array_ops.placeholder(dtypes.int32, shape=(None, 1))
@@ -316,13 +311,6 @@ class EinsumTest(test.TestCase):
           invalid1='value1',
           invalid2='value2')
 
-  @test_util.run_deprecated_v1
-  def test_repeated_axis_single_input(self):
-    x = array_ops.placeholder(dtypes.float32, shape=[2, 2])
-    with self.assertRaises(ValueError):
-      _ = special_math_ops.einsum('ii->', x)
-
-  @test_util.run_deprecated_v1
   def test_dim_mismatch(self):
     for axes, input_shapes in self.dim_mismatch_cases:
       inputs = [

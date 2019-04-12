@@ -1,6 +1,5 @@
 op {
   graph_op_name: "TextLineDataset"
-  visibility: HIDDEN
   in_arg {
     name: "filenames"
     description: <<END

@@ -40,10 +40,10 @@ class AssignOpTest(test.TestCase):
           state_ops.assign_add(
               p, ones_t, use_locking=False) for _ in range(20)
       ]
-      self.evaluate(variables.global_variables_initializer())
+      variables.global_variables_initializer().run()
 
       def run_add(add_op):
-        self.evaluate(add_op)
+        sess.run(add_op)
 
       threads = [
           self.checkedThread(
@@ -54,7 +54,7 @@ class AssignOpTest(test.TestCase):
       for t in threads:
         t.join()
 
-      vals = self.evaluate(p)
+      vals = p.eval()
       ones = np.ones((1024, 1024)).astype(np.float32)
       self.assertTrue((vals >= ones).all())
       self.assertTrue((vals <= ones * 20).all())
@@ -67,10 +67,10 @@ class AssignOpTest(test.TestCase):
           state_ops.assign(p, math_ops.multiply(ones_t, float(i)), False)
           for i in range(1, 21)
       ]
-      self.evaluate(variables.global_variables_initializer())
+      variables.global_variables_initializer().run()
 
       def run_assign(assign_op):
-        self.evaluate(assign_op)
+        sess.run(assign_op)
 
       threads = [
           self.checkedThread(
@@ -81,7 +81,7 @@ class AssignOpTest(test.TestCase):
       for t in threads:
         t.join()
 
-      vals = self.evaluate(p)
+      vals = p.eval()
 
       # Assert every element is taken from one of the assignments.
       self.assertTrue((vals > 0).all())
@@ -100,10 +100,10 @@ class AssignOpTest(test.TestCase):
           state_ops.assign_add(
               p, ones_t, use_locking=True) for _ in range(20)
       ]
-      self.evaluate(p.initializer)
+      p.initializer.run()
 
       def run_add(add_op):
-        self.evaluate(add_op)
+        sess.run(add_op)
 
       threads = [
           self.checkedThread(
@@ -114,7 +114,7 @@ class AssignOpTest(test.TestCase):
       for t in threads:
         t.join()
 
-      vals = self.evaluate(p)
+      vals = p.eval()
       ones = np.ones((1024, 1024)).astype(np.float32)
       self.assertAllEqual(vals, ones * 20)
 
@@ -128,10 +128,10 @@ class AssignOpTest(test.TestCase):
               p, math_ops.multiply(ones_t, float(i)), use_locking=True)
           for i in range(1, 21)
       ]
-      self.evaluate(p.initializer)
+      p.initializer.run()
 
       def run_assign(assign_op):
-        self.evaluate(assign_op)
+        sess.run(assign_op)
 
       threads = [
           self.checkedThread(
@@ -142,7 +142,7 @@ class AssignOpTest(test.TestCase):
       for t in threads:
         t.join()
 
-      vals = self.evaluate(p)
+      vals = p.eval()
 
       # Assert every element is the same, and taken from one of the assignments.
       self.assertTrue(vals[0, 0] > 0)

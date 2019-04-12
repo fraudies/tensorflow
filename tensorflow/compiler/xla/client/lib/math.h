@@ -51,10 +51,6 @@ XlaOp Lgamma(XlaOp input);
 // Computes an approximation of the digamma function.
 XlaOp Digamma(XlaOp input);
 
-// Rounds the given number to even when the number is equidistant between two
-// integers.
-XlaOp RoundToEven(XlaOp x);
-
 // Trigonometric functions
 
 // Computes the arc cosine of 'x'.
@@ -85,10 +81,6 @@ XlaOp Cosh(XlaOp x);
 
 // Computes the hyperbolic sine of 'x'.
 XlaOp Sinh(XlaOp x);
-
-// Applies a complex conjugation operation if `a` is complex and `conjugate`
-// is true, otherwise returns its argument.
-xla::XlaOp MaybeConjugate(xla::XlaOp x, bool conjugate);
 
 }  // namespace xla
 

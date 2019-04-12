@@ -47,7 +47,6 @@ bool IsFusible(const HloInstruction& hlo) {
          hlo.opcode() == HloOpcode::kReduce ||
          hlo.opcode() == HloOpcode::kReduceWindow ||
          hlo.opcode() == HloOpcode::kReshape ||
-         hlo.opcode() == HloOpcode::kReverse ||
          hlo.opcode() == HloOpcode::kScatter ||
          hlo.opcode() == HloOpcode::kSlice ||
          hlo.opcode() == HloOpcode::kTranspose;
@@ -80,7 +79,7 @@ bool IsIEEEFloatingPointScalarConstant(const HloInstruction* constant) {
 // This function limits the maximum number of operands to a fusion.
 //
 // There's a cap on how many parameters we can pass to a CUDA kernel, but
-// exactly what that limit is hazy, as it depends on (among other things) how
+// exactly what that limit is is hazy, as it depends on (among other things) how
 // much GPU constant memory is in use for other purposes.
 //
 // Moreover, we don't even know at the point that we're running fusion how many
@@ -180,11 +179,6 @@ bool GpuInstructionFusion::ShouldFuse(HloInstruction* consumer,
           IsIEEEFloatingPointScalarConstant(alpha->operand(0))) {
         return true;
       }
-    } else if (consumer->operand_count() == 2 &&
-               consumer->opcode() == HloOpcode::kAdd &&
-               consumer->operand(other_operand_index) != producer) {
-      // Fuse a bias add into the output of the dot.
-      return true;
     }
   }
 
@@ -258,17 +252,12 @@ bool GpuInstructionFusion::ShouldFuse(HloInstruction* consumer,
     return false;
   }
 
-  // Fuse scalar constants into loop fusion nodes. This reduces the number of
+  // Fuse scalar constants into loop fusion nodes, this reduces the number of
   // parameters and makes matching scalar broadcasts easier.
-  //
-  // Don't fuse other constants: Unfused constants in GPU land can be
-  // represented as an external constant (i.e. not emitted in LLVM IR / PTX),
-  // but fused constants are handled by shrared CPU/GPU code and always emitted
-  // in the IR/PTX.  The external constant representation makes for faster
-  // compiles and significantly smaller assembly code.
-  if (producer->opcode() == HloOpcode::kConstant) {
-    return ShapeUtil::IsEffectiveScalar(producer->shape()) &&
-           consumer->opcode() == HloOpcode::kFusion;
+  if (ShapeUtil::IsEffectiveScalar(producer->shape()) &&
+      consumer->opcode() == HloOpcode::kFusion &&
+      producer->opcode() == HloOpcode::kConstant) {
+    return true;
   }
 
   if (!IsFusible(*producer) || !IsFusible(*consumer) ||

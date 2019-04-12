@@ -47,18 +47,11 @@ namespace xla {
   });
 }
 
-::grpc::Status GRPCService::Compile(::grpc::ServerContext* /*context*/,
-                                    const CompileRequest* arg,
-                                    CompileResponse* result) {
+::grpc::Status GRPCService::ExecuteGraph(::grpc::ServerContext* /*context*/,
+                                         const ExecuteGraphRequest* arg,
+                                         ExecuteResponse* result) {
   return DelegateRPC(
-      [this, arg, result]() { return service_->Compile(arg, result); });
-}
-
-::grpc::Status GRPCService::Execute(::grpc::ServerContext* /*context*/,
-                                    const ExecuteRequest* arg,
-                                    ExecuteResponse* result) {
-  return DelegateRPC(
-      [this, arg, result]() { return service_->Execute(arg, result); });
+      [this, arg, result]() { return service_->ExecuteGraph(arg, result); });
 }
 
 ::grpc::Status GRPCService::WaitForExecution(::grpc::ServerContext* context,

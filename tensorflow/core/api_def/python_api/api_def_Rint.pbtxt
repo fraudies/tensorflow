@@ -5,6 +5,6 @@ op {
   }
   endpoint {
     name: "rint"
-    deprecation_version: 2
+    deprecated: true
   }
 }

@@ -14,7 +14,6 @@ limitations under the License.
 ==============================================================================*/
 
 #include "tensorflow/core/grappler/optimizers/graph_optimizer_stage.h"
-#include "tensorflow/core/graph/tensor_id.h"
 
 namespace tensorflow {
 namespace grappler {
@@ -47,27 +46,25 @@ Status GetTensorProperties(const GraphOptimizerContext& ctx,
     return errors::InvalidArgument("Graph properties are unknown.");
   }
 
-  // TODO(ezhulenev): Make it TensorId when graph properties will support
-  // absl::string_view lookup.
-  SafeTensorId tensor_id = ParseTensorName(tensor);
-
-  if (tensor_id.index() < 0) {
+  int port;
+  string tensor_node_name = ParseNodeName(tensor, &port);
+  if (port < 0) {
     return errors::InvalidArgument(
         "Can't get tensor properties of control dependency ", tensor);
   }
 
   const auto& output_properties =
-      ctx.graph_properties->GetOutputProperties(tensor_id.node());
+      ctx.graph_properties->GetOutputProperties(tensor_node_name);
   auto num_outputs = output_properties.size();
 
-  if (num_outputs == 0 || tensor_id.index() > num_outputs - 1) {
+  if (num_outputs == 0 || port > num_outputs - 1) {
     return errors::InvalidArgument(
-        "Node ", tensor_id.node(),
-        " is missing output properties at position :", tensor_id.index(),
+        "Node ", tensor_node_name,
+        " is missing output properties at position :", port,
         " (num_outputs=", num_outputs, ")");
   }
 
-  properties->CopyFrom(output_properties[tensor_id.index()]);
+  properties->CopyFrom(output_properties[port]);
   return Status::OK();
 }
 

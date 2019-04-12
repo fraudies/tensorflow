@@ -52,7 +52,7 @@ fractional components, and such that
 with `self.probs` and `self.total_count`."""
 
 
-@tf_export(v1=["distributions.Multinomial"])
+@tf_export("distributions.Multinomial")
 class Multinomial(distribution.Distribution):
   """Multinomial distribution.
 

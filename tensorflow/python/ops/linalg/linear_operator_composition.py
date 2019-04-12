@@ -275,3 +275,6 @@ class LinearOperatorComposition(linear_operator.LinearOperator):
     for operator in solve_order_list[1:]:
       solution = operator.solve(solution, adjoint=adjoint)
     return solution
+
+  def _add_to_tensor(self, x):
+    return self.to_dense() + x

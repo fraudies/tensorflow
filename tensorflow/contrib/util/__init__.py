@@ -15,6 +15,8 @@
 
 """Utilities for dealing with Tensors.
 
+See [Contrib Util](https://tensorflow.org/api_guides/python/contrib.util) guide.
+
 @@constant_value
 @@make_tensor_proto
 @@make_ndarray

@@ -25,7 +25,6 @@ from tensorflow.python.client import session
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import importer
 from tensorflow.python.framework import ops
-from tensorflow.python.framework import test_util
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import variables
 from tensorflow.python.platform import test
@@ -53,7 +52,6 @@ class PywrapQuantizeTrainingTest(test.TestCase):
 
   # Test that save/restoring works for EMA variables generated in the
   # quantized training rewrite.
-  @test_util.run_v1_only('b/120545219')
   def testQuantizedSaveRestore(self):
     save_path = os.path.join(self.get_temp_dir(), 'quantized_save_restore')
 
@@ -75,11 +73,11 @@ class PywrapQuantizeTrainingTest(test.TestCase):
       _ = importer.import_graph_def(result, name='')
 
       # Initialize the variable.
-      self.evaluate(g.get_operation_by_name(init_op.name))
+      sess.run(g.get_operation_by_name(init_op.name))
 
       # Run the graph for one step to assign values to the quantization min/max
       # variables.
-      self.evaluate(g.get_tensor_by_name(c.name))
+      sess.run(g.get_tensor_by_name(c.name))
 
       saver.save(sess, save_path)
 

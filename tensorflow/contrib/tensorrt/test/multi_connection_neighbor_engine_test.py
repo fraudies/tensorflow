@@ -25,6 +25,8 @@ from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import gen_math_ops
+from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import nn
 from tensorflow.python.platform import test
 
@@ -58,14 +60,14 @@ class MultiConnectionNeighborEngineTest(trt_test.TfTrtIntegrationTestBase):
       b = constant_op.constant(
           np.random.normal(5.0, 1.0, [1, 4, 1, 1]), name="bias", dtype=dtype)
       q = conv - b
-      edge = self.trt_incompatible_op(q)
+      edge = math_ops.sigmoid(q)
 
       b = constant_op.constant(
           np.random.normal(5.0, 1.0, [1, 4, 1, 1]), name="bias", dtype=dtype)
       d = b + conv
-      edge3 = self.trt_incompatible_op(d)
+      edge3 = math_ops.sigmoid(d)
 
-      edge1 = self.trt_incompatible_op(conv)
+      edge1 = gen_math_ops.tan(conv)
       t = t - edge1
       q = q + edge
       t = t + q
@@ -81,7 +83,7 @@ class MultiConnectionNeighborEngineTest(trt_test.TfTrtIntegrationTestBase):
 
   def ExpectedEnginesToBuild(self, run_params):
     """Return the expected engines to build."""
-    return ["TRTEngineOp_0", "TRTEngineOp_1"]
+    return ["my_trt_op_0", "my_trt_op_1"]
 
 
 if __name__ == "__main__":

@@ -28,7 +28,6 @@ limitations under the License.
 #include "absl/types/span.h"
 #include "tensorflow/compiler/xla/layout_util.h"
 #include "tensorflow/compiler/xla/primitive_util.h"
-#include "tensorflow/compiler/xla/shape.h"
 #include "tensorflow/compiler/xla/status_macros.h"
 #include "tensorflow/compiler/xla/statusor.h"
 #include "tensorflow/compiler/xla/types.h"
@@ -38,7 +37,6 @@ limitations under the License.
 #include "tensorflow/core/platform/cpu_info.h"
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/core/platform/macros.h"
-#include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/types.h"
 
 namespace xla {
@@ -102,11 +100,6 @@ class ShapeIndex {
 
   string ToString() const;
 
-  template <typename H>
-  friend H AbslHashValue(H h, const ShapeIndex& index) {
-    return H::combine(std::move(h), index.indices_);
-  }
-
  private:
   container_type indices_;
 };
@@ -153,9 +146,6 @@ class ShapeIndexView {
   bool operator!=(const ShapeIndexView& other) const;
 
   string ToString() const;
-
-  // Returns true if this shape index starts with 'prefix'.
-  bool StartsWith(ShapeIndexView prefix) const;
 
  private:
   absl::Span<const int64> indices_;
@@ -375,12 +365,6 @@ class ShapeUtil {
   static Shape MakeShape(PrimitiveType element_type,
                          absl::Span<const int64> dimensions);
 
-  // Constructs a new shape with the given element type and sequence of
-  // dimensions. Method checks if the element type is valid and the shape's
-  // size fits in std::numeric_limits<int64>::max().
-  static StatusOr<Shape> MakeValidatedShape(PrimitiveType element_type,
-                                            absl::Span<const int64> dimensions);
-
   // Creates a Shape with element type corresponding to T and the given
   // dimensions
   template <typename T>
@@ -412,8 +396,8 @@ class ShapeUtil {
       const Shape& shape);
 
   // As MakeShape, but the object to write to is passed in.
-  static Status PopulateShape(PrimitiveType element_type,
-                              absl::Span<const int64> dimensions, Shape* shape);
+  static void PopulateShape(PrimitiveType element_type,
+                            absl::Span<const int64> dimensions, Shape* shape);
 
   // Validates that the provided shape satisfies invariants.
   static Status ValidateShape(const Shape& shape);
@@ -468,15 +452,15 @@ class ShapeUtil {
   // arrays.
   static bool IsArray(const Shape& shape);
 
-  // Returns whether the given primitive type corresponds to an array shape.
-  static bool IsArrayPrimitiveType(PrimitiveType primitive_type);
-
   // Returns whether the shape is a tuple with at least one element which is
   // also a tuple.
   static bool IsNestedTuple(const Shape& shape);
 
   // Returns true if shape is an empty tuple.
   static bool IsEmptyTuple(const Shape& shape);
+
+  // Returns true if shape is the nil shape (an empty tuple).
+  static bool IsNil(const Shape& shape);
 
   // Returns the number of elements in the given tuple shape.
   // Precondition: IsTuple(shape)
@@ -550,9 +534,6 @@ class ShapeUtil {
   // Returns true if `shape` (which must be an array) with degenerate dimensions
   // (dimensions with bound 1).
   static bool HasDegenerateDimensions(const Shape& shape);
-
-  // Drops any degenerate dimensions (i.e. dimensions of size 1)
-  static Shape DropDegenerateDimensions(const Shape& shape);
 
   // Permutes the dimensions by the given permutation, so
   // return_value.dimensions[permutation[i]] = argument.dimensions[i].
@@ -764,18 +745,10 @@ class ShapeUtil {
       pool.emplace(tensorflow::Env::Default(), "foreach", kNumThreads);
     }
 
-    tensorflow::mutex mu;
-    Status status;  // Guarded by mu
-
     while (n < rank) {
       if (pool != absl::nullopt) {
-        pool->Schedule([indexes, &visitor_function, &mu, &status] {
-          StatusOr<bool> result = visitor_function(indexes);
-          if (!result.ok()) {
-            tensorflow::mutex_lock lock(mu);
-            status = status.ok() ? result.status() : status;
-          }
-        });
+        pool->Schedule(
+            [indexes, &visitor_function] { visitor_function(indexes); });
       } else {
         TF_ASSIGN_OR_RETURN(bool should_continue, visitor_function(indexes));
         if (!should_continue) {
@@ -793,13 +766,13 @@ class ShapeUtil {
       }
     }
 
-    // Waits for the scheduled work to complete.
-    pool.reset();
-    return status;
+    return Status::OK();
   }
 
   TF_DISALLOW_COPY_AND_ASSIGN(ShapeUtil);
 };
+
+std::ostream& operator<<(std::ostream& out, const Shape& shape);
 
 }  // namespace xla
 

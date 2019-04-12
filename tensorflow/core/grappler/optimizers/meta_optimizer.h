@@ -20,7 +20,6 @@ limitations under the License.
 #include "tensorflow/core/grappler/grappler_item.h"
 #include "tensorflow/core/grappler/optimizers/graph_optimizer.h"
 #include "tensorflow/core/lib/core/status.h"
-#include "tensorflow/core/protobuf/config.pb.h"
 #include "tensorflow/core/protobuf/rewriter_config.pb.h"
 
 namespace tensorflow {
@@ -29,7 +28,7 @@ namespace grappler {
 // Run the other grappler optimizers based on the specified rewriter config.
 class MetaOptimizer : public GraphOptimizer {
  public:
-  MetaOptimizer(DeviceBase* cpu_device, const ConfigProto& cfg);
+  MetaOptimizer(DeviceBase* cpu_device, const RewriterConfig& cfg);
   ~MetaOptimizer() override = default;
 
   string name() const override { return "meta_optimizer"; };
@@ -66,8 +65,7 @@ class MetaOptimizer : public GraphOptimizer {
                        GraphDef* optimized_graph);
 
   DeviceBase* const cpu_device_;  // may be NULL
-  ConfigProto config_proto_;
-  RewriterConfig& cfg_;
+  RewriterConfig cfg_;
 
   struct OptimizerResult {
     string optimizer_name;
@@ -87,7 +85,7 @@ class MetaOptimizer : public GraphOptimizer {
   std::vector<GraphOptimizationResult> optimization_results_;
 };
 
-bool MetaOptimizerEnabled(const ConfigProto& cfg);
+bool MetaOptimizerEnabled(const RewriterConfig& cfg);
 
 // Run the meta optimizer.
 //
@@ -95,7 +93,7 @@ bool MetaOptimizerEnabled(const ConfigProto& cfg);
 // during constant folding; if NULL, a new device is created for doing constant
 // folding. For performance, it is recommended to pass in an existing cpu_device
 // when possible.
-Status RunMetaOptimizer(const GrapplerItem& item, const ConfigProto& cfg,
+Status RunMetaOptimizer(const GrapplerItem& item, const RewriterConfig& cfg,
                         DeviceBase* cpu_device, Cluster* cluster,
                         GraphDef* optimized_graph);
 

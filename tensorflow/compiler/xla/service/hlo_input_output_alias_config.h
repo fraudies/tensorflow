@@ -80,8 +80,7 @@ class HloInputOutputAliasConfig {
   // Verifies that the given config is valid for the given module.
   // Specifically, the config's input and output should be in-bound and size of
   // the aliased buffers should match.
-  Status Verify(const HloModule& module,
-                std::function<int64(const Shape&)> size_func_) const;
+  Status Verify(const HloModule& module) const;
 
   Status ForEachAliasWithStatus(AliasFnWithStatus fn) const;
 

@@ -204,19 +204,12 @@ Status ResourceMgr::Delete(const ResourceHandle& handle) {
 }
 
 Status ResourceMgr::Cleanup(const string& container) {
-  {
-    tf_shared_lock l(mu_);
-    if (!gtl::FindOrNull(containers_, container)) {
-      // Nothing to cleanup.
-      return Status::OK();
-    }
-  }
   Container* b = nullptr;
   {
     mutex_lock l(mu_);
     auto iter = containers_.find(container);
     if (iter == containers_.end()) {
-      // Nothing to cleanup, it's OK (concurrent cleanup).
+      // Nothing to cleanup, it's OK.
       return Status::OK();
     }
     b = iter->second;

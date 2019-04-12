@@ -27,8 +27,7 @@ namespace xla {
 // convolutions with feature_group_count = 1.
 class ConvolutionFeatureGroupConverter : public HloModulePass {
  public:
-  ConvolutionFeatureGroupConverter(bool canonicalize_depthwise_filter = false)
-      : filter_expansion_(canonicalize_depthwise_filter) {}
+  ConvolutionFeatureGroupConverter() {}
 
   absl::string_view name() const override {
     return "convolution-feature-group-converter";
@@ -37,9 +36,6 @@ class ConvolutionFeatureGroupConverter : public HloModulePass {
   // Run convolution rewriting on the given computation. Returns whether the
   // computation was changed.
   StatusOr<bool> Run(HloModule* module) override;
-
-  // Tells whether filter expansion is required.
-  bool filter_expansion_;
 };
 
 }  // namespace xla

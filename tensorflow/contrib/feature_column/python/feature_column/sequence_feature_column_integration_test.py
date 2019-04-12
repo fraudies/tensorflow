@@ -53,20 +53,19 @@ class SequenceFeatureColumnIntegrationTest(test.TestCase):
     return example
 
   def _build_feature_columns(self):
-    col = fc._categorical_column_with_identity('int_ctx', num_buckets=100)
+    col = fc.categorical_column_with_identity(
+        'int_ctx', num_buckets=100)
     ctx_cols = [
-        fc._embedding_column(col, dimension=10),
-        fc._numeric_column('float_ctx')
-    ]
+        fc.embedding_column(col, dimension=10),
+        fc.numeric_column('float_ctx')]
 
     identity_col = sfc.sequence_categorical_column_with_identity(
         'int_list', num_buckets=10)
     bucket_col = sfc.sequence_categorical_column_with_hash_bucket(
         'bytes_list', hash_bucket_size=100)
     seq_cols = [
-        fc._embedding_column(identity_col, dimension=10),
-        fc._embedding_column(bucket_col, dimension=20)
-    ]
+        fc.embedding_column(identity_col, dimension=10),
+        fc.embedding_column(bucket_col, dimension=20)]
 
     return ctx_cols, seq_cols
 
@@ -149,8 +148,8 @@ class SequenceExampleParsingTest(test.TestCase):
     """
     example = _make_sequence_example()
     columns = [
-        fc._categorical_column_with_identity('int_ctx', num_buckets=100),
-        fc._numeric_column('float_ctx'),
+        fc.categorical_column_with_identity('int_ctx', num_buckets=100),
+        fc.numeric_column('float_ctx'),
         col_fn(col_name, col_arg)
     ]
     context, seq_features = parsing_ops.parse_single_sequence_example(

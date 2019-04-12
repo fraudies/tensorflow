@@ -43,11 +43,8 @@ class GRPCStub : public ServiceInterface {
   Status ResetDevice(const ResetDeviceRequest* arg,
                      ResetDeviceResponse* result) override;
 
-  Status Compile(const CompileRequest* request,
-                 CompileResponse* response) override;
-
-  Status Execute(const ExecuteRequest* request,
-                 ExecuteResponse* response) override;
+  Status ExecuteGraph(const ExecuteGraphRequest* request,
+                      ExecuteResponse* response) override;
 
   Status ExecuteGraphParallel(const ExecuteGraphParallelRequest* request,
                               ExecuteParallelResponse* response) override;

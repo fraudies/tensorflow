@@ -19,16 +19,15 @@ limitations under the License.
 #include <cmath>
 
 #include "absl/algorithm/container.h"
-#include "absl/base/casts.h"
 #include "absl/container/inlined_vector.h"
 #include "absl/memory/memory.h"
 #include "absl/types/optional.h"
-#include "tensorflow/compiler/xla/array2d.h"
 #include "tensorflow/compiler/xla/literal_util.h"
 #include "tensorflow/compiler/xla/service/hlo_casting_utils.h"
 #include "tensorflow/compiler/xla/service/hlo_evaluator.h"
 #include "tensorflow/compiler/xla/service/hlo_instructions.h"
 #include "tensorflow/compiler/xla/service/shape_inference.h"
+#include "tensorflow/core/lib/core/casts.h"
 
 namespace xla {
 
@@ -106,12 +105,6 @@ bool SafeLess(const NativeT& a, const NativeT& b) {
 template <typename ReturnT, typename ElementwiseT = ReturnT>
 class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
  private:
-  Status UnsupportedTypeError(HloInstruction* instruction) {
-    return InvalidArgument(
-        "Unsupported type for %s: %s", HloOpcodeString(instruction->opcode()),
-        PrimitiveType_Name(instruction->shape().element_type()));
-  }
-
   // Get the value in the given literal static_cast as a double.
   template <
       typename NativeT,
@@ -167,6 +160,9 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
     return Unimplemented("unhandled HLO ops for HloEvaluator: %s.",
                          HloOpcodeString(hlo_instruction->opcode()));
   }
+
+  // TODO(b/35950897): many of the stl functions used in the handlers are not
+  // overloaded for every XLA primitive type.
 
   template <typename NativeT,
             typename std::enable_if<std::is_unsigned<NativeT>::value>::type* =
@@ -231,7 +227,7 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
       typename NativeT,
       typename std::enable_if<is_complex_t<NativeT>::value>::type* = nullptr>
   Status HandleRound(HloInstruction* round) {
-    return UnsupportedTypeError(round);
+    return InvalidArgument("Unsupported type for Round");
   }
 
   Status HandleRound(HloInstruction* round) override {
@@ -253,7 +249,7 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
       typename NativeT,
       typename std::enable_if<is_complex_t<NativeT>::value>::type* = nullptr>
   Status HandleCeil(HloInstruction* ceil) {
-    return UnsupportedTypeError(ceil);
+    return InvalidArgument("Unsupported type for Ceil");
   }
 
   Status HandleCeil(HloInstruction* ceil) override {
@@ -304,8 +300,8 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
   template <
       typename NativeT,
       typename std::enable_if<is_complex_t<NativeT>::value>::type* = nullptr>
-  Status HandleExpm1(HloInstruction* expm1) {
-    return UnsupportedTypeError(expm1);
+  Status HandleExpm1(HloInstruction* floor) {
+    return InvalidArgument("Unsupported type for Expm1");
   }
 
   Status HandleExpm1(HloInstruction* floor) override {
@@ -328,7 +324,7 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
       typename NativeT,
       typename std::enable_if<is_complex_t<NativeT>::value>::type* = nullptr>
   Status HandleFloor(HloInstruction* floor) {
-    return UnsupportedTypeError(floor);
+    return InvalidArgument("Unsupported type for Floor");
   }
 
   Status HandleFloor(HloInstruction* floor) override {
@@ -358,12 +354,12 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
   template <
       typename NativeT,
       typename std::enable_if<is_complex_t<NativeT>::value>::type* = nullptr>
-  Status HandleLog1p(HloInstruction* log1p) {
-    return UnsupportedTypeError(log1p);
+  Status HandleLog1p(HloInstruction* floor) {
+    return InvalidArgument("Unsupported type for Log1p");
   }
 
-  Status HandleLog1p(HloInstruction* log1p) override {
-    return HandleLog1p<ReturnT>(log1p);
+  Status HandleLog1p(HloInstruction* floor) override {
+    return HandleLog1p<ReturnT>(floor);
   }
 
   template <typename NativeT,
@@ -403,7 +399,7 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
       typename NativeT,
       typename std::enable_if<is_complex_t<NativeT>::value>::type* = nullptr>
   Status HandleNot(HloInstruction* not_) {
-    return UnsupportedTypeError(not_);
+    return InvalidArgument("Unsupported type for Not");
   }
 
   Status HandleNot(HloInstruction* not_) override {
@@ -483,7 +479,7 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
   template <typename NativeT, typename std::enable_if<!std::is_floating_point<
                                   NativeT>::value>::type* = nullptr>
   Status HandleAtan2(HloInstruction* atan2) {
-    return UnsupportedTypeError(atan2);
+    return InvalidArgument("Unsupported type for Atan2");
   }
 
   Status HandleAtan2(HloInstruction* atan2) override {
@@ -600,7 +596,7 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
     return Status::OK();
   }
 
-  Status HandleDivide(HloInstruction* divide) override {
+  Status HandleDivide(HloInstruction* divide) {
     return HandleDivide<ElementwiseT>(divide);
   }
 
@@ -631,7 +627,7 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
       typename NativeT,
       typename std::enable_if<is_complex_t<NativeT>::value>::type* = nullptr>
   Status HandleMaximum(HloInstruction* maximum) {
-    return UnsupportedTypeError(maximum);
+    return InvalidArgument("Unsupported type for Maximum");
   }
 
   Status HandleMaximum(HloInstruction* maximum) override {
@@ -666,7 +662,7 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
       typename NativeT,
       typename std::enable_if<is_complex_t<NativeT>::value>::type* = nullptr>
   Status HandleMinimum(HloInstruction* minimum) {
-    return UnsupportedTypeError(minimum);
+    return InvalidArgument("Unsupported type for Minimum");
   }
 
   Status HandleMinimum(HloInstruction* minimum) override {
@@ -731,7 +727,7 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
       typename NativeT,
       typename std::enable_if<is_complex_t<NativeT>::value>::type* = nullptr>
   Status HandleRemainder(HloInstruction* remainder) {
-    return UnsupportedTypeError(remainder);
+    return InvalidArgument("Unsupported type for Remainder");
   }
 
   Status HandleRemainder(HloInstruction* remainder) override {
@@ -753,14 +749,14 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
   template <typename NativeT, typename std::enable_if<std::is_floating_point<
                                   NativeT>::value>::type* = nullptr>
   Status HandleAnd(HloInstruction* and_) {
-    return UnsupportedTypeError(and_);
+    return InvalidArgument("Unsupported type for And");
   }
 
   template <
       typename NativeT,
       typename std::enable_if<is_complex_t<NativeT>::value>::type* = nullptr>
   Status HandleAnd(HloInstruction* and_) {
-    return UnsupportedTypeError(and_);
+    return InvalidArgument("Unsupported type for And");
   }
 
   Status HandleAnd(HloInstruction* and_) override {
@@ -782,7 +778,7 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
   template <typename NativeT, typename std::enable_if<std::is_floating_point<
                                   NativeT>::value>::type* = nullptr>
   Status HandleOr(HloInstruction* or_) {
-    return UnsupportedTypeError(or_);
+    return InvalidArgument("Unsupported type for Or");
   }
 
   template <
@@ -811,14 +807,14 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
   template <typename NativeT, typename std::enable_if<std::is_floating_point<
                                   NativeT>::value>::type* = nullptr>
   Status HandleXor(HloInstruction* xor_) {
-    return UnsupportedTypeError(xor_);
+    return InvalidArgument("Unsupported type for Xor");
   }
 
   template <
       typename NativeT,
       typename std::enable_if<is_complex_t<NativeT>::value>::type* = nullptr>
   Status HandleXor(HloInstruction* xor_) {
-    return UnsupportedTypeError(xor_);
+    return InvalidArgument("Unsupported type for Xor");
   }
 
   Status HandleXor(HloInstruction* xor_) override {
@@ -843,8 +839,8 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
             typename std::enable_if<!std::is_integral<NativeT>::value ||
                                     std::is_same<NativeT, bool>::value>::type* =
                 nullptr>
-  Status HandleShiftLeft(HloInstruction* shift) {
-    return UnsupportedTypeError(shift);
+  Status HandleShiftLeft(HloInstruction*) {
+    return InvalidArgument("Unsupported type for ShiftLeft");
   }
 
   Status HandleShiftLeft(HloInstruction* shl) override {
@@ -873,8 +869,8 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
             typename std::enable_if<!std::is_integral<NativeT>::value ||
                                     std::is_same<NativeT, bool>::value>::type* =
                 nullptr>
-  Status HandleShiftRightArithmetic(HloInstruction* shift) {
-    return UnsupportedTypeError(shift);
+  Status HandleShiftRightArithmetic(HloInstruction*) {
+    return InvalidArgument("Unsupported type for ShiftRightArithmetic");
   }
 
   Status HandleShiftRightArithmetic(HloInstruction* shra) override {
@@ -904,8 +900,8 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
             typename std::enable_if<!std::is_integral<NativeT>::value ||
                                     std::is_same<NativeT, bool>::value>::type* =
                 nullptr>
-  Status HandleShiftRightLogical(HloInstruction* shift) {
-    return UnsupportedTypeError(shift);
+  Status HandleShiftRightLogical(HloInstruction*) {
+    return InvalidArgument("Unsupported type for ShiftRightLogical");
   }
 
   Status HandleShiftRightLogical(HloInstruction* shrl) override {
@@ -930,8 +926,8 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
   template <
       typename NativeT,
       typename std::enable_if<is_complex_t<NativeT>::value>::type* = nullptr>
-  Status HandleClamp(HloInstruction* clamp) {
-    return UnsupportedTypeError(clamp);
+  Status HandleClamp(HloInstruction*) {
+    return InvalidArgument("Unsupported type for Clamp");
   }
 
   Status HandleClamp(HloInstruction* clamp) override {
@@ -1155,78 +1151,6 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
   }
 
   Status HandleDot(HloInstruction* dot) override {
-    if (parent_->use_fast_path_) {
-      return HandleDot<ReturnT>(dot);
-    }
-    return HandleDotSlowPath(dot);
-  }
-
-  template <typename NativeT, typename std::enable_if<std::is_same<
-                                  NativeT, float>::value>::type* = nullptr>
-  Status HandleDot(HloInstruction* dot) {
-    const HloInstruction* lhs = dot->operand(0);
-    const HloInstruction* rhs = dot->operand(1);
-    CHECK(ShapeUtil::IsArray(dot->shape()));
-    CHECK(ShapeUtil::IsArray(lhs->shape()));
-    CHECK(ShapeUtil::IsArray(rhs->shape()));
-
-    const auto& dnums = dot->dot_dimension_numbers();
-
-    const int64 lhs_rank = ShapeUtil::Rank(lhs->shape());
-    const int64 rhs_rank = ShapeUtil::Rank(rhs->shape());
-
-    CHECK(ShapeUtil::SameElementType(lhs->shape(), rhs->shape()));
-    CHECK(ShapeUtil::SameElementType(lhs->shape(), dot->shape()));
-
-    // There must be 1 and only 1 Contracting dimension for lhs and rhs.
-    CHECK_EQ(dnums.lhs_contracting_dimensions_size(), 1);
-    CHECK_EQ(dnums.rhs_contracting_dimensions_size(), 1);
-    const int64 lhs_contracting_dimension = dnums.lhs_contracting_dimensions(0);
-    const int64 rhs_contracting_dimension = dnums.rhs_contracting_dimensions(0);
-    // Contracted dimension sizes must be the same.
-    CHECK_EQ(lhs->shape().dimensions(lhs_contracting_dimension),
-             rhs->shape().dimensions(rhs_contracting_dimension))
-        << "lhs contracted dimension: "
-        << lhs->shape().dimensions(lhs_contracting_dimension)
-        << " rhs contracted dimension: "
-        << rhs->shape().dimensions(rhs_contracting_dimension);
-
-    // The fast path is for a simple rank 2 dot with default layout operands.
-    if (lhs_rank == 2 && rhs_rank == 2 && lhs_contracting_dimension == 1 &&
-        rhs_contracting_dimension == 0 &&
-        LayoutUtil::Equal(lhs->shape().layout(),
-                          LayoutUtil::GetDefaultLayoutForR2()) &&
-        LayoutUtil::Equal(rhs->shape().layout(),
-                          LayoutUtil::GetDefaultLayoutForR2()) &&
-        LayoutUtil::Equal(dot->shape().layout(),
-                          LayoutUtil::GetDefaultLayoutForR2())) {
-      const Literal& lhs_literal = parent_->GetEvaluatedLiteralFor(lhs);
-      const Literal& rhs_literal = parent_->GetEvaluatedLiteralFor(rhs);
-      const int64 contracted_dimension_size =
-          lhs->shape().dimensions(lhs_contracting_dimension);
-      Array2D<NativeT> lhs_array(lhs->shape().dimensions(0),
-                                 contracted_dimension_size);
-      lhs_array.SetValues(lhs_literal.data<NativeT>());
-      Array2D<NativeT> rhs_array(contracted_dimension_size,
-                                 rhs->shape().dimensions(1));
-      rhs_array.SetValues(rhs_literal.data<NativeT>());
-      std::unique_ptr<Array2D<NativeT>> result_array =
-          HloEvaluator::MatmulArray2D(lhs_array, rhs_array);
-      Literal result(dot->shape());
-      result.PopulateR2FromArray2D(*result_array);
-      parent_->evaluated_[dot] = std::move(result);
-      return Status::OK();
-    }
-    return HandleDotSlowPath(dot);
-  }
-
-  template <typename NativeT, typename std::enable_if<!std::is_same<
-                                  NativeT, float>::value>::type* = nullptr>
-  Status HandleDot(HloInstruction* dot) {
-    return HandleDotSlowPath(dot);
-  }
-
-  Status HandleDotSlowPath(HloInstruction* dot) {
     auto lhs = dot->operand(0);
     auto rhs = dot->operand(1);
     CHECK(ShapeUtil::IsArray(dot->shape()));
@@ -1632,10 +1556,10 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
           const auto& row_data = row_to_sort.data<NativeT>();
 
           std::vector<NativeT> result_data(row_data.begin(), row_data.end());
-          std::stable_sort(result_data.begin(), result_data.end(),
-                           [](const NativeT& a, const NativeT& b) {
-                             return SafeLess<NativeT>(a, b);
-                           });
+          std::sort(result_data.begin(), result_data.end(),
+                    [](const NativeT& a, const NativeT& b) {
+                      return SafeLess<NativeT>(a, b);
+                    });
           Literal sorted_row(ShapeUtil::MakeShape(keys->shape().element_type(),
                                                   {sort_dim_elements}));
           sorted_row.PopulateR1(absl::Span<const NativeT>(result_data));
@@ -1657,7 +1581,7 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
                                     std::is_same<NativeT, bool>::value>::type* =
                 nullptr>
   Status HandleSort(HloInstruction* sort) {
-    return UnsupportedTypeError(sort);
+    return InvalidArgument("Unsupported type for Sort");
   }
 
   Status HandleSort(HloInstruction* sort) override {
@@ -2436,7 +2360,7 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
             std::is_same<NativeT, int64>::value ||
             std::is_same<NativeT, uint64>::value)>::type* = nullptr>
   Status HandleClz(HloInstruction* clz) {
-    return UnsupportedTypeError(clz);
+    return InvalidArgument("Unsupported type for Clz");
   }
 
   template <typename NativeT,
@@ -2482,7 +2406,7 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
       typename std::enable_if<std::is_integral<NativeT>::value ||
                               is_complex_t<NativeT>::value>::type* = nullptr>
   Status HandleSin(HloInstruction* sin) {
-    return UnsupportedTypeError(sin);
+    return InvalidArgument("Unsupported type for Sin");
   }
 
   Status HandleSin(HloInstruction* sin) override {
@@ -2504,7 +2428,7 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
       typename std::enable_if<std::is_integral<NativeT>::value ||
                               is_complex_t<NativeT>::value>::type* = nullptr>
   Status HandleCos(HloInstruction* cos) {
-    return UnsupportedTypeError(cos);
+    return InvalidArgument("Unsupported type for Cos");
   }
 
   Status HandleCos(HloInstruction* cos) override {
@@ -2518,7 +2442,7 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
         parent_->evaluated_[reduce_precision],
         ElementWiseUnaryOp(reduce_precision, [reduce_precision](
                                                  ElementwiseT elem) {
-          uint32_t value_as_int = absl::bit_cast<uint32_t>(elem);
+          uint32_t value_as_int = tensorflow::bit_cast<uint32_t>(elem);
           const uint32_t mantissa_bits = reduce_precision->mantissa_bits();
           const uint32_t exponent_bits = reduce_precision->exponent_bits();
 
@@ -2591,7 +2515,7 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
             value_as_int = x_underflows ? x_signed_zero : value_as_int;
           }
 
-          float reduced_result = absl::bit_cast<float>(value_as_int);
+          float reduced_result = tensorflow::bit_cast<float>(value_as_int);
           if (std::isnan(elem)) {
             reduced_result = mantissa_bits > 0
                                  ? elem
@@ -2613,7 +2537,7 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
       typename std::enable_if<std::is_integral<NativeT>::value ||
                               is_complex_t<NativeT>::value>::type* = nullptr>
   Status HandleReducePrecision(HloInstruction* reduce_precision) {
-    return UnsupportedTypeError(reduce_precision);
+    return InvalidArgument("Unsupported type for reduce precision");
   }
 
   Status HandleReducePrecision(HloInstruction* reduce_precision) override {
@@ -2622,27 +2546,13 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
 
   template <typename NativeT,
             typename std::enable_if<
-                std::is_same<NativeT, bfloat16>::value ||
-                std::is_same<NativeT, Eigen::half>::value ||
-                std::is_integral<NativeT>::value ||
-                std::is_floating_point<NativeT>::value>::type* = nullptr>
+                std::is_same<NativeT, float>::value ||
+                std::is_same<NativeT, int32>::value ||
+                std::is_same<NativeT, uint32>::value>::type* = nullptr>
   Status HandleIota(HloInstruction* instruction) {
     auto* iota = Cast<HloIotaInstruction>(instruction);
-    const int64 iota_size = iota->shape().dimensions(iota->iota_dimension());
-    // Avoid using std::vector since std::vector<bool> does not convert to
-    // absl::Span<bool>.
-    absl::InlinedVector<NativeT, 1> data(iota_size);
-    // We don't use std::iota for two reasons:
-    //
-    // (1) std:iota does not support bfloat16 and float16.
-    //
-    // (2) std::iota saturates for floating point types when the value is not
-    //     representable, but the definition of HLO iota is the value as a
-    //     64-bit integer cast to the native type.
-    for (int64 i = 0; i < iota_size; ++i) {
-      // static_cast is required for Eigen::half (F16).
-      data[i] = static_cast<NativeT>(i);
-    }
+    std::vector<NativeT> data(iota->shape().dimensions(iota->iota_dimension()));
+    std::iota(data.begin(), data.end(), 0);
     auto result = LiteralUtil::CreateR1<NativeT>(data);
 
     if (ShapeUtil::Rank(iota->shape()) > 1) {
@@ -2658,12 +2568,11 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
   }
   template <typename NativeT,
             typename std::enable_if<
-                !(std::is_same<NativeT, bfloat16>::value ||
-                  std::is_same<NativeT, Eigen::half>::value ||
-                  std::is_integral<NativeT>::value ||
-                  std::is_floating_point<NativeT>::value)>::type* = nullptr>
+                !(std::is_same<NativeT, float>::value ||
+                  std::is_same<NativeT, int32>::value ||
+                  std::is_same<NativeT, uint32>::value)>::type* = nullptr>
   Status HandleIota(HloInstruction* iota) {
-    return UnsupportedTypeError(iota);
+    return InvalidArgument("Unsupported type for iota");
   }
   Status HandleIota(HloInstruction* iota) override {
     return HandleIota<ReturnT>(iota);
@@ -2813,8 +2722,17 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
     const auto shape = instruction->shape();
     const auto* lhs = instruction->operand(0);
     const auto* rhs = instruction->operand(1);
-    TF_RET_CHECK(ShapeUtil::SameDimensions(shape, rhs->shape()));
-    TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
+
+    // TODO(b/35950897, b/27796129): add DCHECK back once implicit broadcast
+    // is removed.
+    if (!(ShapeUtil::SameDimensions(shape, rhs->shape()) &&
+          ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()))) {
+      return Unimplemented(
+          "Implicit broadcasting is currently unsupported in HLO evaluator "
+          "Shape Mismatch: %s vs %s vs %s: ",
+          ShapeUtil::HumanString(shape), ShapeUtil::HumanString(lhs->shape()),
+          ShapeUtil::HumanString(rhs->shape()));
+    }
 
     const Literal& lhs_literal = parent_->GetEvaluatedLiteralFor(lhs);
     const Literal& rhs_literal = parent_->GetEvaluatedLiteralFor(rhs);
@@ -2838,9 +2756,19 @@ class HloEvaluatorTypedVisitor : public DfsHloVisitorWithDefault {
     const auto* lhs = instruction->operand(0);
     const auto* rhs = instruction->operand(1);
     const auto* ehs = instruction->operand(2);
-    TF_RET_CHECK(ShapeUtil::SameDimensions(shape, lhs->shape()));
-    TF_RET_CHECK(ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()));
-    TF_RET_CHECK(ShapeUtil::SameDimensions(rhs->shape(), ehs->shape()));
+
+    // TODO(b/35950897, b/27796129): add DCHECK back once implicit
+    // broadcast is removed.
+    if (!(ShapeUtil::SameDimensions(shape, lhs->shape()) &&
+          ShapeUtil::SameDimensions(lhs->shape(), rhs->shape()) &&
+          ShapeUtil::SameDimensions(rhs->shape(), ehs->shape()))) {
+      return Unimplemented(
+          "Implicit broadcasting is currently unsupported in HLO evaluator "
+          "Shape Mismatch: %s vs %s vs %s vs %s: ",
+          ShapeUtil::HumanString(shape), ShapeUtil::HumanString(lhs->shape()),
+          ShapeUtil::HumanString(rhs->shape()),
+          ShapeUtil::HumanString(ehs->shape()));
+    }
 
     const Literal& lhs_literal = parent_->GetEvaluatedLiteralFor(lhs);
     const Literal& rhs_literal = parent_->GetEvaluatedLiteralFor(rhs);

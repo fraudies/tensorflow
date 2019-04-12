@@ -21,7 +21,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-import java.nio.Buffer;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.DoubleBuffer;
@@ -101,7 +100,7 @@ public class TensorTest {
                     : ByteOrder.LITTLE_ENDIAN)
             .asDoubleBuffer()
             .put(doubles);
-    flipBuffer(buf);
+    buf.flip();
     try (Tensor<Double> t = Tensor.create(new long[] {doubles.length}, buf)) {
       double[] actual = new double[doubles.length];
       assertArrayEquals(doubles, t.copyTo(actual), EPSILON);
@@ -180,30 +179,30 @@ public class TensorTest {
       {
         ByteBuffer bbuf = ByteBuffer.allocate(1024).order(ByteOrder.nativeOrder());
 
-        clearBuffer(bbuf); // FLOAT
+        bbuf.clear(); // FLOAT
         tfloats.writeTo(bbuf);
         assertEquals(tfloats.numBytes(), bbuf.position());
-        flipBuffer(bbuf);
+        bbuf.flip();
         assertEquals(floats[0], bbuf.asFloatBuffer().get(0), EPSILON);
-        clearBuffer(bbuf); // DOUBLE
+        bbuf.clear(); // DOUBLE
         tdoubles.writeTo(bbuf);
         assertEquals(tdoubles.numBytes(), bbuf.position());
-        flipBuffer(bbuf);
+        bbuf.flip();
         assertEquals(doubles[0], bbuf.asDoubleBuffer().get(0), EPSILON);
-        clearBuffer(bbuf); // INT32
+        bbuf.clear(); // INT32
         tints.writeTo(bbuf);
         assertEquals(tints.numBytes(), bbuf.position());
-        flipBuffer(bbuf);
+        bbuf.flip();
         assertEquals(ints[0], bbuf.asIntBuffer().get(0));
-        clearBuffer(bbuf); // INT64
+        bbuf.clear(); // INT64
         tlongs.writeTo(bbuf);
         assertEquals(tlongs.numBytes(), bbuf.position());
-        flipBuffer(bbuf);
+        bbuf.flip();
         assertEquals(longs[0], bbuf.asLongBuffer().get(0));
-        clearBuffer(bbuf); // BOOL
+        bbuf.clear(); // BOOL
         tbools.writeTo(bbuf);
         assertEquals(tbools.numBytes(), bbuf.position());
-        flipBuffer(bbuf);
+        bbuf.flip();
         assertEquals(bools[0], bbuf.get(0) != 0);
       }
 
@@ -255,7 +254,7 @@ public class TensorTest {
                         : ByteOrder.LITTLE_ENDIAN)
                 .asDoubleBuffer();
         tdoubles.writeTo(foreignBuf);
-        flipBuffer(foreignBuf);
+        foreignBuf.flip();
         double[] actual = new double[foreignBuf.remaining()];
         foreignBuf.get(actual);
         assertArrayEquals(doubles, actual, EPSILON);
@@ -547,26 +546,5 @@ public class TensorTest {
     } catch (NullPointerException e) {
       // expected.
     }
-  }
-
-  // Workaround for cross compiliation
-  // (e.g., javac -source 1.9 -target 1.8).
-  //
-  // In Java 8 and prior, subclasses of java.nio.Buffer (e.g., java.nio.DoubleBuffer) inherited the
-  // "flip()" and "clear()" methods from java.nio.Buffer resulting in the signature:
-  //   Buffer flip();
-  // In Java 9 these subclasses had their own methods like:
-  //   DoubleBuffer flip();
-  // As a result, compiling for 1.9 source for a target of JDK 1.8 would result in errors at runtime
-  // like:
-  //
-  // java.lang.NoSuchMethodError: java.nio.DoubleBuffer.flip()Ljava/nio/DoubleBuffer
-  private static void flipBuffer(Buffer buf) {
-    buf.flip();
-  }
-
-  // See comment for flipBuffer()
-  private static void clearBuffer(Buffer buf) {
-    buf.clear();
   }
 }

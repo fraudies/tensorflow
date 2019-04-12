@@ -21,7 +21,6 @@ from __future__ import print_function
 import numpy as np
 
 from tensorflow.python.framework import constant_op
-from tensorflow.python.framework import test_util
 from tensorflow.python.ops import gradient_checker
 from tensorflow.python.ops import gradients_impl
 from tensorflow.python.ops import nn_ops
@@ -38,9 +37,9 @@ class SoftplusTest(test.TestCase):
 
   def _testSoftplus(self, np_features, use_gpu=False):
     np_softplus = self._npSoftplus(np_features)
-    with self.cached_session(use_gpu=use_gpu):
+    with self.test_session(use_gpu=use_gpu):
       softplus = nn_ops.softplus(np_features)
-      tf_softplus = self.evaluate(softplus)
+      tf_softplus = softplus.eval()
     self.assertAllCloseAccordingToType(np_softplus, tf_softplus)
     self.assertTrue(np.all(tf_softplus > 0))
     self.assertShapeEqual(np_softplus, softplus)
@@ -71,7 +70,6 @@ class SoftplusTest(test.TestCase):
           ],
           use_gpu=True)
 
-  @test_util.run_deprecated_v1
   def testGradient(self):
     with self.cached_session():
       x = constant_op.constant(
@@ -88,7 +86,6 @@ class SoftplusTest(test.TestCase):
     print("softplus (float) gradient err = ", err)
     self.assertLess(err, 1e-4)
 
-  @test_util.run_deprecated_v1
   def testGradGrad(self):
     with self.cached_session():
       x = constant_op.constant(
@@ -106,7 +103,6 @@ class SoftplusTest(test.TestCase):
     print("softplus (float) gradient of gradient err = ", err)
     self.assertLess(err, 5e-5)
 
-  @test_util.run_deprecated_v1
   def testGradGradGrad(self):
     with self.cached_session():
       x = constant_op.constant(
@@ -125,7 +121,6 @@ class SoftplusTest(test.TestCase):
     print("softplus (float) third-order gradient err = ", err)
     self.assertLess(err, 5e-5)
 
-  @test_util.run_deprecated_v1
   def testNoInts(self):
     with self.cached_session():
       with self.assertRaisesRegexp(

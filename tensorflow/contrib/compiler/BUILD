@@ -7,7 +7,6 @@ package_group(
     includes = ["//tensorflow/compiler/jit:friends"],
     packages = [
         "//tensorflow/...",
-        "//tensorflow_models/...",
         "//third_party/py/tensor2tensor/...",
     ],
 )
@@ -58,7 +57,7 @@ py_library(
     srcs_version = "PY2AND3",
     deps = [
         "//tensorflow/compiler/jit:xla_ops_py",
-        "//tensorflow/compiler/jit/ops:xla_ops_grad",
+        "//tensorflow/contrib/tpu:tpu_lib",
         "//tensorflow/python:array_ops",
         "//tensorflow/python:control_flow_ops",
         "//tensorflow/python:framework_ops",
@@ -81,7 +80,6 @@ tf_py_test(
         "//tensorflow/python:control_flow_util",
         "//tensorflow/python:math_ops",
         "//tensorflow/python:platform",
-        "//tensorflow/contrib/tpu:tpu_lib",
         "//tensorflow/python:state_ops",
         "//tensorflow/python:summary",
         "//tensorflow/python:training",

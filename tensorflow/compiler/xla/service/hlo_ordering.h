@@ -26,7 +26,6 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/hlo_dataflow_analysis.h"
 #include "tensorflow/compiler/xla/service/hlo_instruction.h"
 #include "tensorflow/compiler/xla/service/hlo_module.h"
-#include "tensorflow/compiler/xla/service/hlo_reachability.h"
 #include "tensorflow/compiler/xla/service/hlo_schedule.h"
 #include "tensorflow/compiler/xla/service/hlo_value.h"
 #include "tensorflow/compiler/xla/types.h"
@@ -65,7 +64,7 @@ class HloOrdering {
 
   // Returns the sequential instruction order for the given computation, or
   // nullptr if the computation does not have a sequential ordering.
-  virtual const HloInstructionSequence* SequentialOrder(
+  virtual const std::vector<const HloInstruction*>* SequentialOrder(
       const HloComputation& computation) const = 0;
 
   // Return the call graph of the module used to compute ordering.
@@ -97,7 +96,7 @@ class PredecessorHloOrdering : public HloOrdering {
 
   // Returns nullptr indicating the computation does not have a sequential
   // ordering.
-  const HloInstructionSequence* SequentialOrder(
+  const std::vector<const HloInstruction*>* SequentialOrder(
       const HloComputation& computation) const override {
     return nullptr;
   }
@@ -186,7 +185,7 @@ class SequentialHloOrdering : public HloOrdering {
   ~SequentialHloOrdering() override = default;
 
   // Returns the sequential instruction order for the given computation.
-  const HloInstructionSequence* SequentialOrder(
+  const std::vector<const HloInstruction*>* SequentialOrder(
       const HloComputation& computation) const override;
 
   string ToString() const override;

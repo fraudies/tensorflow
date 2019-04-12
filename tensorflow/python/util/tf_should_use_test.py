@@ -24,7 +24,6 @@ import gc
 import sys
 
 from tensorflow.python.framework import constant_op
-from tensorflow.python.framework import test_util
 from tensorflow.python.platform import test
 from tensorflow.python.platform import tf_logging
 from tensorflow.python.util import tf_should_use
@@ -40,7 +39,6 @@ def reroute_error():
 
 class TfShouldUseTest(test.TestCase):
 
-  @test_util.run_deprecated_v1
   def testAddShouldUseWarningWhenNotUsed(self):
     c = constant_op.constant(0, name='blah0')
     def in_this_function():
@@ -54,7 +52,6 @@ class TfShouldUseTest(test.TestCase):
     self.assertIn('in_this_function', msg)
     self.assertFalse(gc.garbage)
 
-  @test_util.run_deprecated_v1
   def testAddShouldUseFatalWhenNotUsed(self):
     c = constant_op.constant(0, name='blah0')
     def in_this_function():
@@ -77,7 +74,6 @@ class TfShouldUseTest(test.TestCase):
     error.assert_not_called()
     fatal.assert_not_called()
 
-  @test_util.run_deprecated_v1
   def testAddShouldUseWarningWhenUsedWithAdd(self):
     def add(h):
       _ = h + 1
@@ -85,7 +81,6 @@ class TfShouldUseTest(test.TestCase):
     gc.collect()
     self.assertFalse(gc.garbage)
 
-  @test_util.run_deprecated_v1
   def testAddShouldUseWarningWhenUsedWithGetName(self):
     def get_name(h):
       _ = h.name
@@ -93,7 +88,6 @@ class TfShouldUseTest(test.TestCase):
     gc.collect()
     self.assertFalse(gc.garbage)
 
-  @test_util.run_deprecated_v1
   def testShouldUseResult(self):
     @tf_should_use.should_use_result
     def return_const(value):
@@ -107,7 +101,6 @@ class TfShouldUseTest(test.TestCase):
     gc.collect()
     self.assertFalse(gc.garbage)
 
-  @test_util.run_deprecated_v1
   def testShouldUseResultWhenNotReallyUsed(self):
     @tf_should_use.should_use_result
     def return_const(value):
@@ -118,7 +111,7 @@ class TfShouldUseTest(test.TestCase):
         # Creating another op and executing it does not mark the
         # unused op as being "used".
         v = constant_op.constant(1.0, name='meh')
-        self.evaluate(v)
+        v.eval()
     msg = '\n'.join(error.call_args[0])
     self.assertIn('Object was never used', msg)
     self.assertIn('blah3:0', msg)

@@ -26,16 +26,7 @@ REGISTER_OP("XRTExecute")
     .Input("execution_config: string")
     .Input("input_handles: Ninputs * int64")
     .Output("output_handle: int64")
-    .SetShapeFn([](shape_inference::InferenceContext* c) {
-      std::vector<shape_inference::ShapeHandle> input_handle_shapes;
-      TF_RETURN_IF_ERROR(c->input("input_handles", &input_handle_shapes));
-      for (size_t i = 0; i < input_handle_shapes.size(); ++i) {
-        shape_inference::ShapeHandle unused;
-        TF_RETURN_IF_ERROR(
-            c->WithRankAtMost(input_handle_shapes[i], 1, &unused));
-      }
-      return tensorflow::shape_inference::ScalarShape(c);
-    })
+    .SetShapeFn(tensorflow::shape_inference::ScalarShape)
     .Doc(
         R"(
 Runs a previously-compiled computation on a core. If

@@ -78,7 +78,7 @@ XlaArgMaxOp::XlaArgMaxOp(OpKernelConstruction* ctx)
     : XlaArgMinMaxOp(ctx, /*is_min=*/false) {}
 REGISTER_XLA_OP(Name("ArgMax")
                     .Device(DEVICE_GPU_XLA_JIT)
-                    .CompileTimeConstantInput("dimension"),
+                    .CompileTimeConstInput("dimension"),
                 XlaArgMaxOp);
 
 namespace {
@@ -89,8 +89,7 @@ class XlaArgMinOp : public XlaArgMinMaxOp {
 };
 XlaArgMinOp::XlaArgMinOp(OpKernelConstruction* ctx)
     : XlaArgMinMaxOp(ctx, /*is_min=*/true) {}
-REGISTER_XLA_OP(Name("ArgMin").CompileTimeConstantInput("dimension"),
-                XlaArgMinOp);
+REGISTER_XLA_OP(Name("ArgMin").CompileTimeConstInput("dimension"), XlaArgMinOp);
 
 }  // namespace
 }  // namespace tensorflow

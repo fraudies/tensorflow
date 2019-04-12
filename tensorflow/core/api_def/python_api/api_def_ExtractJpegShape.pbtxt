@@ -1,4 +1,6 @@
 op {
   graph_op_name: "ExtractJpegShape"
-  visibility: HIDDEN
+  endpoint {
+    name: "image.extract_jpeg_shape"
+  }
 }

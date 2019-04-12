@@ -1,4 +1,6 @@
 op {
   graph_op_name: "FractionalMaxPool"
-  visibility: HIDDEN
+  endpoint {
+    name: "nn.fractional_max_pool"
+  }
 }

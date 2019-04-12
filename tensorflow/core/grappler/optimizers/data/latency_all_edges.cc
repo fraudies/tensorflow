@@ -31,13 +31,14 @@ namespace tensorflow {
 namespace grappler {
 namespace {
 
-constexpr char kInsertOpName[] = "ExperimentalLatencyStatsDataset";
+constexpr char kInsertOpName[] = "LatencyStatsDataset";
 
 NodeDef MakeLatencyNode(const NodeDef& node, MutableGraphView* graph) {
   NodeDef new_node;
   new_node.set_op(kInsertOpName);
   graph_utils::SetUniqueGraphNodeName(
-      strings::StrCat(kInsertOpName, "_generated"), graph->graph(), &new_node);
+      strings::StrCat(kInsertOpName, "_generated"), graph->GetGraph(),
+      &new_node);
   // Set the input of LatencyDataset node as `node`
   new_node.add_input(node.name());
 
@@ -80,8 +81,7 @@ Status LatencyAllEdges::Optimize(Cluster* cluster, const GrapplerItem& item,
       // node corresponds to a `Dataset` op.
       continue;
     }
-    MutableGraphView::OutputPort output_port =
-        graph.GetOutputPort(node.name(), 0);
+    GraphView::OutputPort output_port = graph.GetOutputPort(node.name(), 0);
     auto fanout = graph.GetFanout(output_port);
     if (fanout.size() > 1) {
       LOG(WARNING) << node.name() << " has fanout size " << fanout.size();
@@ -96,8 +96,7 @@ Status LatencyAllEdges::Optimize(Cluster* cluster, const GrapplerItem& item,
       }
     }
 
-    NodeDef* latency_node = graph.AddNode(MakeLatencyNode(node, &graph));
-    graph.UpdateFanouts(node.name(), latency_node->name());
+    graph.InsertNode(node, MakeLatencyNode(node, &graph));
   }
   return Status::OK();
 }

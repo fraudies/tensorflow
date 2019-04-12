@@ -21,7 +21,9 @@ namespace tensorflow {
 
 // Enumeration for unicode encodings.  Used by ops such as
 // tf.strings.unicode_encode and tf.strings.unicode_decode.
-enum class UnicodeEncoding { UTF8, UTF16BE, UTF32BE };
+// TODO(edloper): Add support for:
+// UTF16, UTF32, UTF16BE, UTF32BE, UTF16LE, UTF32LE
+enum class UnicodeEncoding { UTF8 };
 
 // Enumeration for character units.  Used by string such as
 // tf.strings.length and tf.substr.
@@ -39,7 +41,7 @@ Status ParseCharUnit(const string& str, CharUnit* unit);
 
 // Returns the number of Unicode characters in a UTF-8 string.
 // Result may be incorrect if the input string is not valid UTF-8.
-int32 UTF8StrLen(const string& str);
+int32 UTF8StrLen(const string& string);
 
 // Get the next UTF8 character position starting at the given position and
 // skipping the given number of characters. Position is a byte offset, and

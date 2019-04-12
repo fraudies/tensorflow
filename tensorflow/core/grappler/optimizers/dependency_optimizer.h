@@ -48,8 +48,7 @@ class DependencyOptimizer : public GraphOptimizer {
   bool BypassingNodeIsBeneficial(
       const NodeDef& node, const std::vector<NodeDef*>& input_nodes,
       const std::vector<NodeDef*>& output_nodes) const;
-  int NumEdgesIfBypassed(const NodeDef& node,
-                         const std::vector<NodeDef*>& output_nodes) const;
+
   // Returns true if node is not an Identity node or if it is an Identity
   // that is safe to remove.
   bool SafeToRemoveIdentity(const NodeDef& node) const;

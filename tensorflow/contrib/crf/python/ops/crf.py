@@ -38,12 +38,12 @@ tf_unary_scores, tf_sequence_lengths, tf_transition_params, _ = session.run(
     [unary_scores, sequence_lengths, transition_params, train_op])
 for tf_unary_scores_, tf_sequence_length_ in zip(tf_unary_scores,
                                                  tf_sequence_lengths):
-    # Remove padding.
-    tf_unary_scores_ = tf_unary_scores_[:tf_sequence_length_]
+# Remove padding.
+tf_unary_scores_ = tf_unary_scores_[:tf_sequence_length_]
 
-    # Compute the highest score and its tag sequence.
-    tf_viterbi_sequence, tf_viterbi_score = tf.contrib.crf.viterbi_decode(
-        tf_unary_scores_, tf_transition_params)
+# Compute the highest score and its tag sequence.
+tf_viterbi_sequence, tf_viterbi_score = tf.contrib.crf.viterbi_decode(
+    tf_unary_scores_, tf_transition_params)
 """
 
 from __future__ import absolute_import
@@ -54,7 +54,6 @@ import numpy as np
 
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
-from tensorflow.python.framework import tensor_shape
 from tensorflow.python.layers import utils
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import gen_array_ops
@@ -108,10 +107,8 @@ def crf_sequence_score(inputs, tag_indices, sequence_lengths,
     return sequence_scores
 
   return utils.smart_cond(
-      pred=math_ops.equal(
-          tensor_shape.dimension_value(
-              inputs.shape[1]) or array_ops.shape(inputs)[1],
-          1),
+      pred=math_ops.equal(inputs.shape[1].value or array_ops.shape(inputs)[1],
+                          1),
       true_fn=_single_seq_fn,
       false_fn=_multi_seq_fn)
 
@@ -160,10 +157,8 @@ def crf_multitag_sequence_score(inputs, tag_bitmap, sequence_lengths,
         transition_params=transition_params)
 
   return utils.smart_cond(
-      pred=math_ops.equal(
-          tensor_shape.dimension_value(
-              inputs.shape[1]) or array_ops.shape(inputs)[1],
-          1),
+      pred=math_ops.equal(inputs.shape[1].value or array_ops.shape(inputs)[1],
+                          1),
       true_fn=_single_seq_fn,
       false_fn=_multi_seq_fn)
 
@@ -219,10 +214,8 @@ def crf_log_norm(inputs, sequence_lengths, transition_params):
     return log_norm
 
   return utils.smart_cond(
-      pred=math_ops.equal(
-          tensor_shape.dimension_value(
-              inputs.shape[1]) or array_ops.shape(inputs)[1],
-          1),
+      pred=math_ops.equal(inputs.shape[1].value or
+                          array_ops.shape(inputs)[1], 1),
       true_fn=_single_seq_fn,
       false_fn=_multi_seq_fn)
 
@@ -247,7 +240,7 @@ def crf_log_likelihood(inputs,
         provided by the caller or created in this function.
   """
   # Get shape information.
-  num_tags = tensor_shape.dimension_value(inputs.shape[2])
+  num_tags = inputs.get_shape()[2].value
 
   # Get the transition matrix if not provided.
   if transition_params is None:
@@ -349,7 +342,7 @@ class CrfForwardRnnCell(rnn_cell.RNNCell):
           for the broadcast summation occurring within the cell.
     """
     self._transition_params = array_ops.expand_dims(transition_params, 0)
-    self._num_tags = tensor_shape.dimension_value(transition_params.shape[0])
+    self._num_tags = transition_params.get_shape()[0].value
 
   @property
   def state_size(self):
@@ -435,7 +428,7 @@ class CrfDecodeForwardRnnCell(rnn_cell.RNNCell):
         summation occurring within the cell.
     """
     self._transition_params = array_ops.expand_dims(transition_params, 0)
-    self._num_tags = tensor_shape.dimension_value(transition_params.shape[0])
+    self._num_tags = transition_params.get_shape()[0].value
 
   @property
   def state_size(self):
@@ -547,7 +540,7 @@ def crf_decode(potentials, transition_params, sequence_length):
 
     # For simplicity, in shape comments, denote:
     # 'batch_size' by 'B', 'max_seq_len' by 'T' , 'num_tags' by 'O' (output).
-    num_tags = tensor_shape.dimension_value(potentials.shape[2])
+    num_tags = potentials.get_shape()[2].value
 
     # Computes forward decoding. Get last score and backpointers.
     crf_fwd_cell = CrfDecodeForwardRnnCell(transition_params)
@@ -590,7 +583,7 @@ def crf_decode(potentials, transition_params, sequence_length):
     return decode_tags, best_score
 
   return utils.smart_cond(
-      pred=math_ops.equal(tensor_shape.dimension_value(potentials.shape[1]) or
+      pred=math_ops.equal(potentials.shape[1].value or
                           array_ops.shape(potentials)[1], 1),
       true_fn=_single_seq_fn,
       false_fn=_multi_seq_fn)

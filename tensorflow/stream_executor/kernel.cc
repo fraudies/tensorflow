@@ -21,7 +21,6 @@ limitations under the License.
 
 #include "tensorflow/stream_executor/platform/port.h"
 
-#include "absl/strings/string_view.h"
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/stream_executor/lib/demangle.h"
 #include "tensorflow/stream_executor/platform.h"
@@ -94,9 +93,9 @@ KernelCacheConfig KernelBase::GetPreferredCacheConfig() const {
 // Prefix stub functions emitted by the CUDA splitter.
 static const char *kStubPrefix = "__device_stub_";
 
-void KernelBase::set_name(absl::string_view name) {
+void KernelBase::set_name(port::StringPiece name) {
   name_ = string(name);
-  absl::string_view stubless_name = name;
+  port::StringPiece stubless_name = name;
   if (tensorflow::str_util::StartsWith(name, kStubPrefix)) {
     stubless_name.remove_prefix(strlen(kStubPrefix));
   }

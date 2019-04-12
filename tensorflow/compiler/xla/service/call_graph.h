@@ -236,10 +236,6 @@ class CallGraph {
   // FlattenCallGraph.
   bool IsFlattened() const;
 
-  // Returns a vector of instructions calling the passed computation.
-  // (Often a vector of size 1.)
-  std::vector<HloInstruction*> GetComputationCallers(HloComputation* c);
-
   string ToString() const;
 
  private:

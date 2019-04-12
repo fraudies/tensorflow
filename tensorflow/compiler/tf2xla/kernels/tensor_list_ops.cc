@@ -79,8 +79,8 @@ class TensorListReserveOp : public XlaOpKernel {
 };
 
 REGISTER_XLA_OP(Name("TensorListReserve")
-                    .CompileTimeConstantInput("element_shape")
-                    .CompileTimeConstantInput("num_elements"),
+                    .CompileTimeConstInput("element_shape")
+                    .CompileTimeConstInput("num_elements"),
                 TensorListReserveOp);
 
 class EmptyTensorListOp : public XlaOpKernel {

@@ -30,7 +30,6 @@ from tensorflow.contrib.tensorrt.python import trt_convert
 from tensorflow.contrib.tensorrt.python.ops import trt_engine_op
 # pylint: enable=unused-import
 from tensorflow.core.protobuf import config_pb2
-from tensorflow.core.protobuf import rewriter_config_pb2
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import graph_io
 from tensorflow.python.framework import importer
@@ -43,15 +42,14 @@ TfTrtIntegrationTestParams = namedtuple("TfTrtIntegrationTestParams", [
     "gdef", "input_names", "input_dims", "output_names", "expected_output_dims"
 ])
 
-RunParams = namedtuple("RunParams", [
-    "use_optimizer", "precision_mode", "dynamic_engine", "test_name",
-    "use_calibration"
-])
+RunParams = namedtuple(
+    "RunParams",
+    ["use_optimizer", "precision_mode", "dynamic_engine", "test_name"])
 
 ConversionParams = namedtuple("ConversionParams", [
     "max_batch_size", "max_workspace_size_bytes", "precision_mode",
     "minimum_segment_size", "is_dynamic_op", "maximum_cached_engines",
-    "cached_engine_batch_sizes", "rewriter_config", "use_calibration"
+    "cached_engine_batch_sizes"
 ])
 
 PRECISION_MODES = ["FP32", "FP16", "INT8"]
@@ -65,34 +63,6 @@ class GraphState(object):
   ORIGINAL = 0
   CALIBRATE = 1
   INFERENCE = 2
-
-
-def OptimizerDisabledRewriterConfig():
-  """Returns a RewriterConfig with all default Grappler optimizers disabled."""
-  rewriter_config = rewriter_config_pb2.RewriterConfig()
-
-  # Turn off all default Grappler optimizers.
-  off = rewriter_config_pb2.RewriterConfig.OFF
-  rewriter_config.layout_optimizer = off
-  rewriter_config.constant_folding = off
-  rewriter_config.shape_optimization = off
-  rewriter_config.remapping = off
-  rewriter_config.arithmetic_optimization = off
-  rewriter_config.dependency_optimization = off
-  rewriter_config.loop_optimization = off
-  rewriter_config.function_optimization = off
-  rewriter_config.debug_stripper = off
-  rewriter_config.disable_model_pruning = True
-  rewriter_config.scoped_allocator_optimization = off
-  rewriter_config.memory_optimization = (
-      rewriter_config_pb2.RewriterConfig.NO_MEM_OPT)
-  rewriter_config.pin_to_host_optimization = off
-  rewriter_config.auto_parallel.enable = False
-
-  # Run only once for each enabled optimizer.
-  rewriter_config.meta_optimizer_iterations = (
-      rewriter_config_pb2.RewriterConfig.ONE)
-  return rewriter_config
 
 
 class TfTrtIntegrationTestBase(test_util.TensorFlowTestCase):
@@ -168,16 +138,11 @@ class TfTrtIntegrationTestBase(test_util.TensorFlowTestCase):
         minimum_segment_size=2,
         is_dynamic_op=run_params.dynamic_engine,
         maximum_cached_engines=1,
-        cached_engine_batch_sizes=None,
-        rewriter_config=None,
-        use_calibration=run_params.use_calibration)
+        cached_engine_batch_sizes=None)
 
   def ShouldRunTest(self, run_params):
     """Whether to run the test."""
-    # This setting combination requires quantization nodes to be present in
-    # order to build the engine.
-    return not (IsQuantizationMode(run_params.precision_mode) and
-                not run_params.use_calibration)
+    return True
 
   def VerifyRunForEngine(self, engine_name, graph_state, expect_run=True):
     """Verify the state of a particular engine after sess.run()."""
@@ -228,35 +193,31 @@ class TfTrtIntegrationTestBase(test_util.TensorFlowTestCase):
   def _PrepareRun(self, graph_state):
     """Set up necessary testing environment before calling sess.run()."""
     # Clear test values added by TRTEngineOp.
-    trt_convert.clear_test_values("TRTEngineOp_.*:ExecuteTrtEngine")
-    trt_convert.clear_test_values("TRTEngineOp_.*:ExecuteCalibration")
-    trt_convert.clear_test_values("TRTEngineOp_.*:ExecuteNativeSegment")
-
-  def _GetGPUOptions(self):
-    gpu_options = config_pb2.GPUOptions()
-    gpu_options.allow_growth = True
-    return gpu_options
+    trt_convert.clear_test_values("my_trt_op_.*:ExecuteTrtEngine")
+    trt_convert.clear_test_values("my_trt_op_.*:ExecuteCalibration")
+    trt_convert.clear_test_values("my_trt_op_.*:ExecuteNativeSegment")
 
   def _GetConfigProto(self, run_params, graph_state):
     """Get config proto based on specific settings."""
     if graph_state != GraphState.ORIGINAL and run_params.use_optimizer:
-      conversion_params = self.GetConversionParams(run_params)
-      rewriter_cfg = trt_convert.get_tensorrt_rewriter_config(
-          conversion_params.rewriter_config, conversion_params.max_batch_size,
-          conversion_params.max_workspace_size_bytes,
-          conversion_params.precision_mode,
-          conversion_params.minimum_segment_size,
-          conversion_params.is_dynamic_op,
-          conversion_params.maximum_cached_engines,
-          conversion_params.cached_engine_batch_sizes,
-          conversion_params.use_calibration)
+      trt_params = self.GetConversionParams(run_params)
+      rewriter_cfg = trt_convert.tensorrt_rewriter_config(
+          trt_params.max_batch_size, trt_params.max_workspace_size_bytes,
+          trt_params.precision_mode, trt_params.minimum_segment_size,
+          trt_params.is_dynamic_op, trt_params.maximum_cached_engines,
+          trt_params.cached_engine_batch_sizes)
 
       graph_options = config_pb2.GraphOptions(rewrite_options=rewriter_cfg)
     else:
       graph_options = config_pb2.GraphOptions()
 
+    gpu_options = config_pb2.GPUOptions()
+    gpu_options.allow_growth = True
+    if trt_convert.get_linked_tensorrt_version()[0] == 3:
+      gpu_options.per_process_gpu_memory_fraction = 0.50
+
     config = config_pb2.ConfigProto(
-        gpu_options=self._GetGPUOptions(), graph_options=graph_options)
+        gpu_options=gpu_options, graph_options=graph_options)
     return config
 
   def _ExpectTestValue(self, engine_name, method, expected_value):
@@ -324,25 +285,18 @@ class TfTrtIntegrationTestBase(test_util.TensorFlowTestCase):
   def _GetTrtGraphDef(self, run_params, gdef):
     """Return trt converted graphdef."""
     params = self._GetParamsCached()
-    conversion_params = self.GetConversionParams(run_params)
-    logging.info(conversion_params)
-
-    config_for_trt = config_pb2.ConfigProto(gpu_options=self._GetGPUOptions())
-    if conversion_params.rewriter_config is not None:
-      config_for_trt.graph_options.rewrite_options.CopyFrom(
-          conversion_params.rewriter_config)
+    trt_params = self.GetConversionParams(run_params)
+    logging.info(trt_params)
     return trt_convert.create_inference_graph(
         input_graph_def=gdef,
         outputs=params.input_names + params.output_names,
-        max_batch_size=conversion_params.max_batch_size,
-        max_workspace_size_bytes=conversion_params.max_workspace_size_bytes,
-        precision_mode=conversion_params.precision_mode,
-        minimum_segment_size=conversion_params.minimum_segment_size,
-        is_dynamic_op=conversion_params.is_dynamic_op,
-        maximum_cached_engines=conversion_params.maximum_cached_engines,
-        cached_engine_batch_sizes=conversion_params.cached_engine_batch_sizes,
-        use_calibration=conversion_params.use_calibration,
-        session_config=config_for_trt)
+        max_batch_size=trt_params.max_batch_size,
+        max_workspace_size_bytes=trt_params.max_workspace_size_bytes,
+        precision_mode=trt_params.precision_mode,
+        minimum_segment_size=trt_params.minimum_segment_size,
+        is_dynamic_op=trt_params.is_dynamic_op,
+        maximum_cached_engines=trt_params.maximum_cached_engines,
+        cached_engine_batch_sizes=trt_params.cached_engine_batch_sizes)
 
   def _WriteGraph(self, run_params, gdef, graph_state):
     if graph_state == GraphState.ORIGINAL:
@@ -441,12 +395,10 @@ class TfTrtIntegrationTestBase(test_util.TensorFlowTestCase):
         is_dynamic_engine = not node.attr["static_engine"].b
         self.assertEqual(run_params.dynamic_engine, is_dynamic_engine,
                          node.name)
-        self.assertEqual(node.attr["use_calibration"].b,
-                         run_params.use_calibration, node.name)
 
         has_calibration_data = len(node.attr["calibration_data"].s)
         if (IsQuantizationMode(run_params.precision_mode) and
-            run_params.use_calibration and graph_state == GraphState.INFERENCE):
+            graph_state == GraphState.INFERENCE):
           self.assertTrue(has_calibration_data, node.name)
         else:
           self.assertFalse(has_calibration_data, node.name)
@@ -481,11 +433,6 @@ class TfTrtIntegrationTestBase(test_util.TensorFlowTestCase):
       # types.
       scale = 10.0 if np.issubdtype(dtype, np.integer) else 1.0
       dims = params.input_dims[i]
-      # TODO(laigd): add debug options. E.g. we can set the input data to be
-      # continuous natural numbers:
-      # seq = np.arange(np.prod(dims))
-      # seq.resize(dims)
-      # input_data.append(scale * seq.astype(dtype))
       input_data.append((scale * np.random.random_sample(dims)).astype(dtype))
     self._VerifyGraphDef(run_params, input_gdef, GraphState.ORIGINAL)
 
@@ -497,8 +444,7 @@ class TfTrtIntegrationTestBase(test_util.TensorFlowTestCase):
                                 config_no_trt, GraphState.ORIGINAL)
 
     # Run calibration if necessary.
-    if (IsQuantizationMode(run_params.precision_mode) and
-        run_params.use_calibration):
+    if IsQuantizationMode(run_params.precision_mode):
 
       calib_config = self._GetConfigProto(run_params, GraphState.CALIBRATE)
       logging.info("Running calibration graph, config:\n%s", str(calib_config))
@@ -568,38 +514,27 @@ def _AddTests(test_class):
 
   use_optimizer_options = [False, True]
   dynamic_engine_options = [False, True]
-  use_calibration_options = [False, True]
-  opts = itertools.product(use_optimizer_options, PRECISION_MODES,
-                           dynamic_engine_options, use_calibration_options)
-  for (use_optimizer, precision_mode, dynamic_engine, use_calibration) in opts:
+  for (use_optimizer, precision_mode, dynamic_engine) in itertools.product(
+      use_optimizer_options, PRECISION_MODES, dynamic_engine_options):
     if IsQuantizationMode(precision_mode):
       if use_optimizer:
         # TODO(aaroey): if use_optimizer is True we need to get the inference
         # graphdef using custom python wrapper class, which is not currently
         # supported yet.
         continue
-      if use_calibration and not dynamic_engine:
-        # Static engine with use_calibration=False will be static, so we want to
-        # test that. If use_calibration=True, only dynamic op is supported.
+      if not dynamic_engine:
         # TODO(aaroey): construction of static calibration engine is not
         # supported yet.
         continue
-    else:
-      if use_calibration:
-        # Don't calibrate in FP32 or FP16 mode
-        continue
 
     conversion = "OptimizerConversion" if use_optimizer else "ToolConversion"
-    engine_type = "DynamicEngine" if dynamic_engine else "StaticEngine"
-    calibration_type = "UseCalibration" if use_calibration else "NoCalibration"
-    test_name = "%s_%s_%s_%s" % (conversion, engine_type, precision_mode,
-                                 calibration_type)
+    engine_type = ("DynamicEngine" if dynamic_engine else "StaticEngine")
+    test_name = "%s_%s_%s" % (conversion, precision_mode, engine_type)
     run_params = RunParams(
         use_optimizer=use_optimizer,
         precision_mode=precision_mode,
         dynamic_engine=dynamic_engine,
-        test_name=test_name,
-        use_calibration=use_calibration)
+        test_name=test_name)
     setattr(test_class, "testTfTrt_" + test_name, _GetTest(run_params))
 
 

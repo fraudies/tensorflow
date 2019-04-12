@@ -19,7 +19,6 @@ limitations under the License.
 #include <functional>
 #include <map>
 
-#include "absl/container/flat_hash_map.h"
 #include "tensorflow/core/grappler/optimizers/data/vectorization/vectorizer.h"
 
 namespace tensorflow {
@@ -38,7 +37,7 @@ class VectorizerRegistry {
   void Register(const string& op_type, std::unique_ptr<Vectorizer> vectorizer);
 
  private:
-  absl::flat_hash_map<string, std::unique_ptr<Vectorizer>> vectorizers_;
+  std::map<string, std::unique_ptr<Vectorizer>> vectorizers_;
 };
 
 namespace vectorizer_registration {

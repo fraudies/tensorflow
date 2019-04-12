@@ -27,9 +27,6 @@ limitations under the License.
 namespace xla {
 namespace llvm_ir {
 
-using GeneratorForOperandIrArrays =
-    std::function<std::vector<llvm_ir::IrArray>()>;
-
 // Checks if we can emit code for the given DynamicUpdateSlice node that updates
 // its input in place.  Returns true if the dynamic-update-slice's
 // array-to-be-updated and output share the same BufferAllocation::Slice.
@@ -76,16 +73,14 @@ Status EmitDynamicUpdateSliceInPlace(absl::Span<const IrArray> operand_arrays,
 // (sequential) code for a fusion node that does the dynamic-update-slice in
 // place.
 Status EmitFusedDynamicUpdateSliceInPlace(
-    HloInstruction* fusion,
-    GeneratorForOperandIrArrays operand_arrays_generator,
+    HloInstruction* fusion, absl::Span<const IrArray> fusion_operand_arrays,
     const IrArray& fusion_output_array, ElementalIrEmitter* elemental_emitter,
     llvm::IRBuilder<>* b);
 
 // Same as EmitFusedDynamicUpdateSliceInPlace, except emits a parallel loop with
 // the given launch dimensions.
 Status EmitParallelFusedDynamicUpdateSliceInPlace(
-    HloInstruction* fusion,
-    GeneratorForOperandIrArrays operand_arrays_generator,
+    HloInstruction* fusion, absl::Span<const IrArray> fusion_operand_arrays,
     const IrArray& fusion_output_array, ElementalIrEmitter* elemental_emitter,
     const gpu::LaunchDimensions& launch_dimensions, llvm::IRBuilder<>* b);
 

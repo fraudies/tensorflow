@@ -113,20 +113,8 @@ class DynamicStitchOp : public XlaOpKernel {
       }
     }
     int number_of_indices = max_index + 1;
-    int64 result_rank = 1 + data0_shape.dims() - indices0_shape.dims();
-    if (number_of_indices == 0) {
-      std::vector<int64> result_shape(result_rank);
-      for (int d = indices0_shape.dims(); d < data0_shape.dims(); d++) {
-        result_shape[d - indices0_shape.dims() + 1] = data0_shape.dim_size(d);
-      }
-      xla::PrimitiveType element_type =
-          ctx->input_xla_type(ctx->num_inputs() - 1);
-      xla::Literal empty_literal = xla::Literal::CreateFromShape(
-          xla::ShapeUtil::MakeShape(element_type, result_shape));
-      ctx->SetOutput(0, xla::ConstantLiteral(ctx->builder(), empty_literal));
-      return;
-    }
-
+    OP_REQUIRES(ctx, number_of_indices > 0,
+                errors::InvalidArgument("no indices supplied"));
     // Construct the reverse mapping, for each index, of which slice of which
     // input it comes from.
     std::vector<int32> src_input_vector(number_of_indices);
@@ -169,9 +157,12 @@ class DynamicStitchOp : public XlaOpKernel {
 
     // Set up the vectors for slicing: the first dimension will vary
     // slice by slice, and the rest take the full common extra shape.
-    std::vector<int64> slice_start(result_rank);
-    std::vector<int64> slice_limit(result_rank);
-    std::vector<int64> stride(result_rank, 1);
+    std::vector<int64> slice_start(1 + data0_shape.dims() -
+                                   indices0_shape.dims());
+    std::vector<int64> slice_limit(1 + data0_shape.dims() -
+                                   indices0_shape.dims());
+    std::vector<int64> stride(1 + data0_shape.dims() - indices0_shape.dims(),
+                              1);
     for (int d = indices0_shape.dims(); d < data0_shape.dims(); d++) {
       slice_limit[1 + d - indices0_shape.dims()] = data0_shape.dim_size(d);
     }
@@ -209,11 +200,10 @@ class DynamicStitchOp : public XlaOpKernel {
   }
 };
 
-REGISTER_XLA_OP(Name("DynamicStitch").CompileTimeConstantInput("indices"),
+REGISTER_XLA_OP(Name("DynamicStitch").CompileTimeConstInput("indices"),
                 DynamicStitchOp);
-REGISTER_XLA_OP(
-    Name("ParallelDynamicStitch").CompileTimeConstantInput("indices"),
-    DynamicStitchOp);
+REGISTER_XLA_OP(Name("ParallelDynamicStitch").CompileTimeConstInput("indices"),
+                DynamicStitchOp);
 
 }  // namespace
 }  // namespace tensorflow

@@ -1,4 +1,6 @@
 op {
   graph_op_name: "ResizeBicubic"
-  visibility: HIDDEN
+  endpoint {
+    name: "image.resize_bicubic"
+  }
 }

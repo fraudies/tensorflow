@@ -36,15 +36,16 @@ StreamExecutorFactory* MakeOpenCLExecutorImplementation() {
 
 StreamExecutorFactory MakeHostExecutorImplementation;
 
-// The default implementation just calls the other HostCallback method.
-// It should make all existing code that uses a void() callback still work.
-bool StreamExecutorInterface::HostCallback(Stream* stream,
-                                           std::function<void()> callback) {
-  return HostCallback(
-      stream, std::function<port::Status()>([callback]() -> port::Status {
-        callback();
-        return port::Status::OK();
-      }));
+// TODO(b/112125301): Consolodate this down to one implementation of
+// HostCallback, taking a callback that returns a Status.
+bool StreamExecutorInterface::HostCallback(
+    Stream* stream, std::function<port::Status()> callback) {
+  return HostCallback(stream, [callback]() {
+    port::Status s = callback();
+    if (!s.ok()) {
+      LOG(WARNING) << "HostCallback failed: " << s;
+    }
+  });
 }
 
 }  // namespace internal

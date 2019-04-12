@@ -38,10 +38,8 @@ class XlaCompileOnDemandOp : public OpKernel {
 
  private:
   XlaCompiler::Argument CreateCompilerArgument(OpKernelContext* ctx, int64 i);
-  Status ShouldArgumentBeConstant(const OpKernel* op_kernel, int64 argument_idx,
-                                  bool* result);
-  Status MustArgumentBeConstant(const OpKernel* op_kernel, int64 argument_idx,
-                                bool* result);
+  bool ShouldArgumentBeConstant(const OpKernel* op_kernel, int64 argument_idx);
+  bool MustArgumentBeConstant(const OpKernel* op_kernel, int64 argument_idx);
   Status Compile(OpKernelContext* ctx, const XlaDevice::Metadata& metadata,
                  const XlaCompiler::CompilationResult** result,
                  xla::LocalExecutable** executable);

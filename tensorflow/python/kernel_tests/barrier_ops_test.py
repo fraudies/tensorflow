@@ -25,7 +25,6 @@ import numpy as np
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import errors_impl
 from tensorflow.python.framework import ops
-from tensorflow.python.framework import test_util
 from tensorflow.python.ops import data_flow_ops
 from tensorflow.python.platform import test
 
@@ -67,7 +66,6 @@ class BarrierTest(test.TestCase):
       attr { key: 'shared_name' value: { s: 'B' } }
       """, b.barrier_ref.op.node_def)
 
-  @test_util.run_deprecated_v1
   def testInsertMany(self):
     with self.cached_session():
       b = data_flow_ops.Barrier(
@@ -92,7 +90,6 @@ class BarrierTest(test.TestCase):
         data_flow_ops.Barrier(
             (dtypes.float32, dtypes.float32), shapes=((1,), (0,)), name="B")
 
-  @test_util.run_deprecated_v1
   def testInsertManyEmptyTensorUnknown(self):
     with self.cached_session():
       b = data_flow_ops.Barrier((dtypes.float32, dtypes.float32), name="B")
@@ -105,7 +102,6 @@ class BarrierTest(test.TestCase):
           ".*Tensors with no elements are not supported.*"):
         insert_0_op.run()
 
-  @test_util.run_deprecated_v1
   def testTakeMany(self):
     with self.cached_session() as sess:
       b = data_flow_ops.Barrier(
@@ -131,7 +127,6 @@ class BarrierTest(test.TestCase):
       self.assertEqual(values_0_val[idx], v0)
       self.assertEqual(values_1_val[idx], v1)
 
-  @test_util.run_deprecated_v1
   def testTakeManySmallBatch(self):
     with self.cached_session() as sess:
       b = data_flow_ops.Barrier(
@@ -196,7 +191,6 @@ class BarrierTest(test.TestCase):
       with self.assertRaisesOpError("is closed"):
         insert_1_3_op.run()
 
-  @test_util.run_deprecated_v1
   def testUseBarrierWithShape(self):
     with self.cached_session() as sess:
       b = data_flow_ops.Barrier(
@@ -226,7 +220,6 @@ class BarrierTest(test.TestCase):
       self.assertAllEqual(values_0_val[idx], v0)
       self.assertAllEqual(values_1_val[idx], v1)
 
-  @test_util.run_deprecated_v1
   def testParallelInsertMany(self):
     with self.cached_session() as sess:
       b = data_flow_ops.Barrier(dtypes.float32, shapes=())
@@ -236,7 +229,7 @@ class BarrierTest(test.TestCase):
       insert_ops = [b.insert_many(0, [k], [v]) for k, v in zip(keys, values)]
       take_t = b.take_many(10)
 
-      self.evaluate(insert_ops)
+      sess.run(insert_ops)
       self.assertEquals(size_t.eval(), [10])
 
       indices_val, keys_val, values_val = sess.run(
@@ -247,7 +240,6 @@ class BarrierTest(test.TestCase):
       idx = keys_val.tolist().index(k)
       self.assertEqual(values_val[idx], v)
 
-  @test_util.run_deprecated_v1
   def testParallelTakeMany(self):
     with self.cached_session() as sess:
       b = data_flow_ops.Barrier(dtypes.float32, shapes=())
@@ -282,7 +274,6 @@ class BarrierTest(test.TestCase):
     self.assertItemsEqual(
         zip(keys, values), [(k[0], v[0]) for k, v in zip(key_vals, value_vals)])
 
-  @test_util.run_deprecated_v1
   def testBlockingTakeMany(self):
     with self.cached_session() as sess:
       b = data_flow_ops.Barrier(dtypes.float32, shapes=())
@@ -305,7 +296,6 @@ class BarrierTest(test.TestCase):
         insert_op.run()
       t.join()
 
-  @test_util.run_deprecated_v1
   def testParallelInsertManyTakeMany(self):
     with self.cached_session() as sess:
       b = data_flow_ops.Barrier(
@@ -385,7 +375,6 @@ class BarrierTest(test.TestCase):
              2 + outer_indices_from_keys + inner_indices_from_keys)).T
         self.assertAllEqual(taken_i["values_1"], expected_values_1)
 
-  @test_util.run_deprecated_v1
   def testClose(self):
     with self.cached_session() as sess:
       b = data_flow_ops.Barrier(
@@ -444,7 +433,6 @@ class BarrierTest(test.TestCase):
       with self.assertRaisesOpError("is closed and has insufficient elements"):
         sess.run(take_t[0])
 
-  @test_util.run_deprecated_v1
   def testCancel(self):
     with self.cached_session() as sess:
       b = data_flow_ops.Barrier(
@@ -503,11 +491,10 @@ class BarrierTest(test.TestCase):
       b = data_flow_ops.Barrier(
           (dtypes.float32, dtypes.float32), shapes=((), ()), name="B")
       take_t = b.take_many(1, allow_small_batch=True)
-      self.evaluate(b.close(cancel))
+      sess.run(b.close(cancel))
       with self.assertRaisesOpError("is closed and has insufficient elements"):
-        self.evaluate(take_t)
+        sess.run(take_t)
 
-  @test_util.run_deprecated_v1
   def testClosedEmptyBarrierTakeManyAllowSmallBatchRaises(self):
     self._testClosedEmptyBarrierTakeManyAllowSmallBatchRaises(cancel=False)
     self._testClosedEmptyBarrierTakeManyAllowSmallBatchRaises(cancel=True)
@@ -582,11 +569,9 @@ class BarrierTest(test.TestCase):
           sorted(taken),
           [0] * (num_iterations // 2) + [10] * (num_iterations // 2))
 
-  @test_util.run_deprecated_v1
   def testParallelInsertManyTakeManyCloseHalfwayThrough(self):
     self._testParallelInsertManyTakeManyCloseHalfwayThrough(cancel=False)
 
-  @test_util.run_deprecated_v1
   def testParallelInsertManyTakeManyCancelHalfwayThrough(self):
     self._testParallelInsertManyTakeManyCloseHalfwayThrough(cancel=True)
 
@@ -684,15 +669,12 @@ class BarrierTest(test.TestCase):
       else:
         self.assertEqual(taken, [10] * num_iterations)
 
-  @test_util.run_deprecated_v1
   def testParallelPartialInsertManyTakeManyCloseHalfwayThrough(self):
     self._testParallelPartialInsertManyTakeManyCloseHalfwayThrough(cancel=False)
 
-  @test_util.run_deprecated_v1
   def testParallelPartialInsertManyTakeManyCancelHalfwayThrough(self):
     self._testParallelPartialInsertManyTakeManyCloseHalfwayThrough(cancel=True)
 
-  @test_util.run_deprecated_v1
   def testIncompatibleSharedBarrierErrors(self):
     with self.cached_session():
       # Do component types and shapes.

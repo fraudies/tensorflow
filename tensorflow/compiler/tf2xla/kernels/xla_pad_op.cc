@@ -96,9 +96,9 @@ class XlaPadOp : public XlaOpKernel {
 };
 
 REGISTER_XLA_OP(Name("XlaPad")
-                    .CompileTimeConstantInput("padding_low")
-                    .CompileTimeConstantInput("padding_high")
-                    .CompileTimeConstantInput("padding_interior"),
+                    .CompileTimeConstInput("padding_low")
+                    .CompileTimeConstInput("padding_high")
+                    .CompileTimeConstInput("padding_interior"),
                 XlaPadOp);
 
 }  // namespace

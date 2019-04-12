@@ -13,11 +13,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 #include "tensorflow/core/common_runtime/function.h"
-#include "tensorflow/core/framework/dataset.h"
 #include "tensorflow/core/framework/partial_tensor_shape.h"
 #include "tensorflow/core/framework/stats_aggregator.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/kernels/data/captured_function.h"
+#include "tensorflow/core/kernels/data/dataset.h"
 #include "tensorflow/core/kernels/data/dataset_utils.h"
 #include "tensorflow/core/lib/gtl/cleanup.h"
 #include "tensorflow/core/lib/random/random.h"
@@ -34,8 +34,7 @@ namespace {
 class FilterDatasetOp : public UnaryDatasetOpKernel {
  public:
   using FilterIteratorPredicate =
-      std::function<Status(IteratorContext*, InstantiatedCapturedFunction*,
-                           std::vector<Tensor>, bool*)>;
+      std::function<Status(IteratorContext*, std::vector<Tensor>, bool*)>;
 
   explicit FilterDatasetOp(OpKernelConstruction* ctx)
       : UnaryDatasetOpKernel(ctx) {
@@ -56,12 +55,13 @@ class FilterDatasetOp : public UnaryDatasetOpKernel {
 
     FilterIteratorPredicate filter_pred;
     if (indices.empty()) {
-      filter_pred = [](IteratorContext* ctx,
-                       InstantiatedCapturedFunction* inst_captured_func,
-                       const std::vector<Tensor>& args, bool* out_matched) {
+      CapturedFunction* raw_captured_func = captured_func.get();
+      filter_pred = [raw_captured_func](IteratorContext* ctx,
+                                        const std::vector<Tensor>& args,
+                                        bool* out_matched) {
         std::vector<Tensor> result;
         TF_RETURN_IF_ERROR(
-            inst_captured_func->RunWithBorrowedArgs(ctx, args, &result));
+            raw_captured_func->RunWithBorrowedArgs(ctx, args, &result));
 
         if (result.size() != 1 || result[0].dtype() != DT_BOOL ||
             result[0].NumElements() != 1) {
@@ -73,7 +73,6 @@ class FilterDatasetOp : public UnaryDatasetOpKernel {
       };
     } else {
       filter_pred = [indices](IteratorContext* ctx,
-                              InstantiatedCapturedFunction* inst_captured_func,
                               const std::vector<Tensor>& args,
                               bool* out_matched) {
         const Tensor& predicate = args[indices[0]];
@@ -170,8 +169,7 @@ class FilterDatasetOp : public UnaryDatasetOpKernel {
       Status Initialize(IteratorContext* ctx) override {
         TF_RETURN_IF_ERROR(
             dataset()->input_->MakeIterator(ctx, prefix(), &input_impl_));
-        return dataset()->captured_func_->Instantiate(
-            ctx, &instantiated_captured_func_);
+        return dataset()->captured_func_->Instantiate(ctx);
       }
 
       Status GetNextInternal(IteratorContext* ctx,
@@ -199,8 +197,7 @@ class FilterDatasetOp : public UnaryDatasetOpKernel {
             return Status::OK();
           }
 
-          TF_RETURN_IF_ERROR(filter_pred_(
-              ctx, instantiated_captured_func_.get(), *out_tensors, &matched));
+          TF_RETURN_IF_ERROR(filter_pred_(ctx, *out_tensors, &matched));
           if (!matched) {
             // Clear the output tensor list since it didn't match.
             out_tensors->clear();
@@ -237,11 +234,6 @@ class FilterDatasetOp : public UnaryDatasetOpKernel {
       }
 
      protected:
-      std::shared_ptr<model::Node> CreateNode(
-          IteratorContext* ctx, model::Node::Args args) const override {
-        return model::MakeUnknownRatioNode(std::move(args));
-      }
-
       Status SaveInternal(IteratorStateWriter* writer) override {
         mutex_lock l(mu_);
         if (input_impl_)
@@ -277,7 +269,6 @@ class FilterDatasetOp : public UnaryDatasetOpKernel {
       int64 dropped_elements_ GUARDED_BY(mu_);
       const FilterIteratorPredicate filter_pred_;
       string prefix_end_;
-      std::unique_ptr<InstantiatedCapturedFunction> instantiated_captured_func_;
     };
 
     const DatasetBase* const input_;

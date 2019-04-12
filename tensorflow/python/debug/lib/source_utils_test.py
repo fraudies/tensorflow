@@ -65,7 +65,6 @@ class GuessIsTensorFlowLibraryTest(test_util.TensorFlowTestCase):
     self.assertTrue(
         source_utils.guess_is_tensorflow_py_library(source_utils.__file__))
 
-  @test_util.run_deprecated_v1
   def testFileInPythonKernelsPathReturnsTrue(self):
     x = constant_op.constant(42.0, name="x")
     self.assertTrue(
@@ -110,8 +109,8 @@ class SourceHelperTest(test_util.TensorFlowTestCase):
       self.w = math_ops.matmul(self.u, self.v, name="w")
       self.w_line_number = line_number_above()
 
-      self.evaluate(self.u.initializer)
-      self.evaluate(self.v.initializer)
+      sess.run(self.u.initializer)
+      sess.run(self.v.initializer)
 
       run_options = config_pb2.RunOptions(output_partition_graphs=True)
       debug_utils.watch_graph(
@@ -216,7 +215,6 @@ class SourceHelperTest(test_util.TensorFlowTestCase):
     os.remove(unrelated_source_path)
 
 
-@test_util.run_v1_only("b/120545219")
 class ListSourceAgainstDumpTest(test_util.TensorFlowTestCase):
 
   def createAndRunGraphWithWhileLoop(self):

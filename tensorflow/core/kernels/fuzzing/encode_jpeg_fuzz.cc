@@ -52,7 +52,8 @@ class FuzzEncodeJpeg : public FuzzSession {
     for (size_t i = 0; i < actual_pixels; i++) {
       flat_tensor(i) = data[i];
     }
-    RunInputs({{"input", input_tensor}}).IgnoreError();
+    // TODO(b/32704451): Don't just ignore the ::tensorflow::Status object!
+    RunOneInput(input_tensor).IgnoreError();
   }
 };
 

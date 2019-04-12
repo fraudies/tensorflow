@@ -38,6 +38,7 @@ py_test(
     name = "activity_test",
     srcs = ["activity_test.py"],
     srcs_version = "PY2AND3",
+    tags = ["no_windows"],
     deps = [
         ":static_analysis",
         "//tensorflow/python:client_testlib",
@@ -50,6 +51,7 @@ py_test(
     name = "live_values_test",
     srcs = ["live_values_test.py"],
     srcs_version = "PY2AND3",
+    tags = ["no_windows"],
     deps = [
         ":static_analysis",
         "//tensorflow/python:client_testlib",

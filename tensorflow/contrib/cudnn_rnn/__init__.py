@@ -24,10 +24,6 @@
 @@CudnnGRUSaveable
 @@CudnnRNNReluSaveable
 @@CudnnRNNTanhSaveable
-@@CudnnParamsFormatConverterLSTM
-@@CudnnParamsFormatConverterGRU
-@@CudnnParamsFormatConverterTanh
-@@CudnnParamsFormatConverterRelu
 """
 
 from __future__ import absolute_import
@@ -52,10 +48,6 @@ _allowed_symbols = [
     "CudnnGRUSaveable",
     "CudnnRNNReluSaveable",
     "CudnnRNNTanhSaveable",
-    "CudnnParamsFormatConverterLSTM",
-    "CudnnParamsFormatConverterGRU",
-    "CudnnParamsFormatConverterTanh",
-    "CudnnParamsFormatConverterRelu",
 ]
 
 remove_undocumented(__name__, _allowed_symbols)

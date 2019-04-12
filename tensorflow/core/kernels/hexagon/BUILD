@@ -40,7 +40,6 @@ tf_cc_test(
         "//tensorflow/core/kernels:remote_fused_graph_ops",
         "//tensorflow/core/kernels:reshape_op",
         "//tensorflow/core/kernels:softmax_op",
-        "@com_google_absl//absl/base",
     ],
 )
 

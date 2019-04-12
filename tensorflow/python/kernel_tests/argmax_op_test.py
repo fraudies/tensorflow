@@ -20,7 +20,6 @@ from __future__ import print_function
 import numpy as np
 
 from tensorflow.python.framework import dtypes
-from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.platform import test
@@ -35,17 +34,17 @@ class ArgMaxTest(test.TestCase):
                expected_values,
                use_gpu=False,
                expected_err_re=None):
-    with self.session(use_gpu=use_gpu):
+    with self.test_session(use_gpu=use_gpu):
       ans = method(x, axis=axis)
       if expected_err_re is None:
-        tf_ans = self.evaluate(ans)
+        tf_ans = ans.eval()
         # Defaults to int64 output.
         self.assertEqual(np.int64, tf_ans.dtype)
         self.assertAllEqual(tf_ans, expected_values)
         self.assertShapeEqual(expected_values, ans)
       else:
         with self.assertRaisesOpError(expected_err_re):
-          self.evaluate(ans)
+          ans.eval()
 
   def _testBothArg(self,
                    method,
@@ -78,17 +77,17 @@ class ArgMaxTest(test.TestCase):
   def testFloatInt32Output(self):
     x = np.asarray(100 * np.random.randn(200), dtype=np.float32)
     expected_values = x.argmax()
-    with self.session(use_gpu=True):
+    with self.test_session(use_gpu=True):
       ans = math_ops.argmax(x, axis=0, output_type=dtypes.int32)
-      tf_ans = self.evaluate(ans)
+      tf_ans = ans.eval()
       self.assertEqual(np.int32, tf_ans.dtype)
       # The values are equal when comparing int32 to int64 because
       # the values don't have a range that exceeds 32-bit integers.
       self.assertAllEqual(tf_ans, expected_values)
     expected_values = x.argmin()
-    with self.session(use_gpu=True):
+    with self.test_session(use_gpu=True):
       ans = math_ops.argmin(x, axis=0, output_type=dtypes.int32)
-      tf_ans = self.evaluate(ans)
+      tf_ans = ans.eval()
       self.assertEqual(np.int32, tf_ans.dtype)
       self.assertAllEqual(tf_ans, expected_values)
 
@@ -111,14 +110,12 @@ class ArgMaxTest(test.TestCase):
             r"Reduction axis 0 is empty in shape \[0\]"):
           op([], 0).eval()
 
-  @test_util.run_deprecated_v1
   def testDefaultAxis(self):
     with self.cached_session():
       for op in math_ops.argmin, math_ops.argmax:
         ans = op([1]).eval()
         self.assertAllEqual(ans, 0)
 
-  @test_util.run_deprecated_v1
   def testOutputEmpty(self):
     with self.cached_session():
       for op in math_ops.argmin, math_ops.argmax:

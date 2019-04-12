@@ -45,7 +45,7 @@ dtype `self.dtype` and be in the `(self.event_shape() - 1)`-simplex, i.e.,
 `self.batch_shape() + self.event_shape()`."""
 
 
-@tf_export(v1=["distributions.Dirichlet"])
+@tf_export("distributions.Dirichlet")
 class Dirichlet(distribution.Distribution):
   """Dirichlet distribution.
 

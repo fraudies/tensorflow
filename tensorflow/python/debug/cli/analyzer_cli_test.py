@@ -573,7 +573,6 @@ def create_analyzer_cli(dump):
   return analyzer, registry
 
 
-@test_util.run_v1_only("b/120545219")
 class AnalyzerCLISimpleMulAddTest(test_util.TensorFlowTestCase):
 
   @classmethod
@@ -1584,7 +1583,7 @@ class AnalyzerCLISimpleMulAddTest(test_util.TensorFlowTestCase):
       x = variables.VariableV1([1, 3, 3, 7], name="x")
       _, idx = array_ops.unique(x, name="x_unique")
       idx_times_two = math_ops.multiply(idx, 2, name="idx_times_two")
-      self.evaluate(x.initializer)
+      sess.run(x.initializer)
 
       run_options = config_pb2.RunOptions(output_partition_graphs=True)
       debug_utils.watch_graph(
@@ -1669,7 +1668,6 @@ class AnalyzerCLIPrintLargeTensorTest(test_util.TensorFlowTestCase):
     self.assertNotIn("...,", out.lines[4])
 
 
-@test_util.run_v1_only("b/120545219")
 class AnalyzerCLIControlDepTest(test_util.TensorFlowTestCase):
 
   @classmethod
@@ -1997,7 +1995,6 @@ class AnalyzerCLIControlDepTest(test_util.TensorFlowTestCase):
                      out.font_attr_segs[0])
 
 
-@test_util.run_v1_only("b/120545219")
 class AnalyzerCLIWhileLoopTest(test_util.TensorFlowTestCase):
 
   @classmethod

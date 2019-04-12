@@ -23,7 +23,7 @@ import threading
 from tensorflow.python.util.tf_export import tf_export
 
 
-@tf_export(v1=["DeviceSpec"])
+@tf_export("DeviceSpec")
 class DeviceSpec(object):
   """Represents a (possibly partial) specification for a TensorFlow device.
 

@@ -5,6 +5,6 @@ op {
   }
   endpoint {
     name: "decode_raw"
-    deprecation_version: 2
+    deprecated: true
   }
 }

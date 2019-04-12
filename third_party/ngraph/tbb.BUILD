@@ -14,10 +14,6 @@ genrule(
     srcs = glob(["**"]) + [
         "@local_config_cc//:toolchain",
     ],
-    outs = [
-        "libtbb.a",
-        "libtbbmalloc.a",
-    ],
     cmd = """
 	    set -e
 	    WORK_DIR=$$PWD
@@ -49,15 +45,19 @@ genrule(
         cp build/build_{release,debug}/*.a $$DEST_DIR
 		cd $$WORK_DIR
 	""",
+    outs = [
+        "libtbb.a",
+        "libtbbmalloc.a",
+    ],
 )
 
 cc_library(
     name = "tbb",
-    srcs = ["libtbb.a"],
     hdrs = glob([
         "include/serial/**",
         "include/tbb/**/**",
     ]),
+    srcs = ["libtbb.a"],
     includes = ["include"],
     visibility = ["//visibility:public"],
 )

@@ -56,8 +56,6 @@ class PrefetchDatasetOp::Dataset : public DatasetBase {
 
   string DebugString() const override { return "PrefetchDatasetOp::Dataset"; }
 
-  int64 Cardinality() const override { return input_->Cardinality(); }
-
  protected:
   Status AsGraphDefInternal(SerializationContext* ctx,
                             DatasetGraphDefBuilder* b,
@@ -105,7 +103,7 @@ class PrefetchDatasetOp::Dataset : public DatasetBase {
     Status GetNextInternal(IteratorContext* ctx,
                            std::vector<Tensor>* out_tensors,
                            bool* end_of_sequence) override {
-      const auto& stats_aggregator = ctx->stats_aggregator();
+      auto stats_aggregator = ctx->stats_aggregator();
       {
         mutex_lock l(mu_);
         TF_RETURN_IF_ERROR(EnsurePrefetchThreadStarted(ctx));
@@ -125,7 +123,7 @@ class PrefetchDatasetOp::Dataset : public DatasetBase {
         }
 
         if (!buffer_.empty()) {
-          return Consume(ctx, out_tensors, end_of_sequence);
+          return Consume(out_tensors, end_of_sequence, stats_aggregator);
         }
 
         if (prefetch_thread_finished_) {
@@ -150,13 +148,6 @@ class PrefetchDatasetOp::Dataset : public DatasetBase {
     }
 
    protected:
-    std::shared_ptr<model::Node> CreateNode(
-        IteratorContext* ctx, model::Node::Args args) const override {
-      return model::MakeAsyncKnownRatioNode(std::move(args),
-                                            /*ratio=*/1,
-                                            /*parameters=*/{});
-    }
-
     Status SaveInternal(IteratorStateWriter* writer) override {
       // Acquire both locks to ensure that the prefetch thread and
       // all GetNext threads are blocked.
@@ -228,9 +219,9 @@ class PrefetchDatasetOp::Dataset : public DatasetBase {
       std::vector<Tensor> value;
     };
 
-    Status Consume(IteratorContext* ctx, std::vector<Tensor>* out_tensors,
-                   bool* end_of_sequence) EXCLUSIVE_LOCKS_REQUIRED(mu_) {
-      const auto& stats_aggregator = ctx->stats_aggregator();
+    Status Consume(std::vector<Tensor>* out_tensors, bool* end_of_sequence,
+                   const std::shared_ptr<StatsAggregator>& stats_aggregator)
+        EXCLUSIVE_LOCKS_REQUIRED(mu_) {
       if (stats_aggregator) {
         stats_aggregator->AddToHistogram(
             strings::StrCat(prefix_end_, "::buffer_utilization"),
@@ -248,7 +239,6 @@ class PrefetchDatasetOp::Dataset : public DatasetBase {
       Status s = buffer_.front().status;
       if (s.ok()) {
         *out_tensors = std::move(buffer_.front().value);
-        RecordBufferDequeue(ctx, *out_tensors);
       }
       auto_tuner_.RecordConsumption(buffer_.size());
       buffer_.pop_front();
@@ -268,7 +258,7 @@ class PrefetchDatasetOp::Dataset : public DatasetBase {
       if (!prefetch_thread_) {
         std::shared_ptr<IteratorContext> new_ctx(new IteratorContext(*ctx));
         prefetch_thread_.reset(ctx->env()->StartThread(
-            {}, "tf_data_prefetch",
+            {}, "prefetch_thread",
             [this, new_ctx]() { PrefetchThread(new_ctx); }));
       }
       return Status::OK();
@@ -319,7 +309,6 @@ class PrefetchDatasetOp::Dataset : public DatasetBase {
         // 3. Signal that the element has been produced.
         {
           mutex_lock l(mu_);
-          RecordBufferEnqueue(ctx.get(), buffer_element.value);
           buffer_.push_back(std::move(buffer_element));
           cond_var_.notify_all();
         }
@@ -395,14 +384,13 @@ void PrefetchDatasetOp::MakeDataset(OpKernelContext* ctx, DatasetBase* input,
 }
 
 namespace {
-REGISTER_KERNEL_BUILDER(Name("PrefetchDataset").Device(DEVICE_CPU).Priority(2),
+REGISTER_KERNEL_BUILDER(Name("PrefetchDataset").Device(DEVICE_CPU),
                         PrefetchDatasetOp);
 REGISTER_KERNEL_BUILDER(Name("PrefetchDataset")
                             .Device(DEVICE_GPU)
                             .HostMemory("buffer_size")
                             .HostMemory("input_dataset")
-                            .HostMemory("handle")
-                            .Priority(1),
+                            .HostMemory("handle"),
                         PrefetchDatasetOp);
 }  // namespace
 

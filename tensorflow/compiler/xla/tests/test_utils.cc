@@ -15,7 +15,6 @@ limitations under the License.
 
 #include <cmath>
 
-#include "absl/base/casts.h"
 #include "absl/memory/memory.h"
 #include "tensorflow/compiler/xla/literal_util.h"
 #include "tensorflow/compiler/xla/primitive_util.h"
@@ -29,113 +28,65 @@ namespace xla {
 namespace {
 
 template <typename FloatT, typename GeneratorT>
-void PopulateWithRandomFloatingPointData(Literal* literal,
-                                         std::minstd_rand0* engine) {
-  std::uniform_real_distribution<GeneratorT> generator(-0.1f, 0.2f);
-  for (FloatT& value : literal->data<FloatT>()) {
-    value = static_cast<FloatT>(generator(*engine));
-  }
-}
-
-template <typename FloatT>
-void PopulateWithIntNext(Literal* literal);
-
-template <>
-void PopulateWithIntNext<half>(Literal* literal) {
-  // Duplicates may be generated if we don't have enough bits.
-  uint16 next_value = 0;
-  for (half& value : literal->data<half>()) {
-    // Zero-out the MSB of the exponent to avoid Infs and NaNs, and put it into
-    // the sign bit. We could be less wasteful, but this is best-effort anyway.
-    uint16 exponent_msb = next_value & 0x4000;
-    value.x = (next_value & 0xBFFF) | (exponent_msb << 1);
-    next_value++;
-  }
-}
-
-template <>
-void PopulateWithIntNext<bfloat16>(Literal* literal) {
-  // Duplicates may be generated if we don't have enough bits.
-  // Start at 0x80 rather than 0 to avoid denormals.
-  uint16 next_value = 0x80;
-  for (bfloat16& value : literal->data<bfloat16>()) {
-    // Zero-out the MSB of the exponent to avoid Infs and NaNs, and put it into
-    // the sign bit. We could be less wasteful, but this is best-effort anyway.
-    uint16 exponent_msb = next_value & 0x4000;
-    value.value = (next_value & 0xBFFF) | (exponent_msb << 1);
-    next_value++;
-  }
-}
-
-template <typename FloatT>
-void PopulateWithNextAfter(Literal* literal) {
-  // Duplicates may be generated if the number of elements in the literal
-  // exceeds the number of positive values supported by the type.
-  float next_value = std::numeric_limits<float>::min();
-  for (float& value : literal->data<float>()) {
-    value = next_value;
-    next_value = std::nextafter(next_value, std::numeric_limits<float>::max());
-  }
-}
-
-template <typename FloatT,
-          typename std::enable_if<std::is_same<bfloat16, FloatT>::value ||
-                                      std::is_same<half, FloatT>::value,
-                                  int>::type = 0>
-void PopulateWithNoDuplicateData(Literal* literal, std::minstd_rand0* engine) {
-  PopulateWithIntNext<FloatT>(literal);
-  std::shuffle(literal->data<FloatT>().begin(), literal->data<FloatT>().end(),
-               *engine);
-}
-
-template <typename FloatT,
-          typename std::enable_if<!std::is_same<bfloat16, FloatT>::value &&
-                                      !std::is_same<half, FloatT>::value,
-                                  int>::type = 0>
-void PopulateWithNoDuplicateData(Literal* literal, std::minstd_rand0* engine) {
-  PopulateWithNextAfter<FloatT>(literal);
-  std::shuffle(literal->data<FloatT>().begin(), literal->data<FloatT>().end(),
-               *engine);
-}
-
-template <typename FloatT>
-void PopulateWithFloatingPointData(Literal* literal, std::minstd_rand0* engine,
-                                   bool no_duplicates) {
-  CHECK(engine != nullptr);
-  CHECK_EQ(literal->shape().element_type(),
-           primitive_util::NativeToPrimitiveType<FloatT>());
-  if (no_duplicates) {
-    PopulateWithNoDuplicateData<FloatT>(literal, engine);
-  } else {
-    PopulateWithRandomFloatingPointData<FloatT, FloatT>(literal, engine);
-  }
-}
-
-template <>
-void PopulateWithFloatingPointData<half>(Literal* literal,
-                                         std::minstd_rand0* engine,
-                                         bool no_duplicates) {
-  CHECK(engine != nullptr);
-  CHECK_EQ(literal->shape().element_type(),
-           primitive_util::NativeToPrimitiveType<half>());
-  if (no_duplicates) {
-    PopulateWithNoDuplicateData<half>(literal, engine);
-  } else {
-    PopulateWithRandomFloatingPointData<half, float>(literal, engine);
-  }
-}
-
-template <>
-void PopulateWithFloatingPointData<bfloat16>(Literal* literal,
+void PopulateWithRandomFloatingPointDataImpl(Literal* literal,
                                              std::minstd_rand0* engine,
                                              bool no_duplicates) {
   CHECK(engine != nullptr);
   CHECK_EQ(literal->shape().element_type(),
-           primitive_util::NativeToPrimitiveType<bfloat16>());
+           primitive_util::NativeToPrimitiveType<FloatT>());
   if (no_duplicates) {
-    PopulateWithNoDuplicateData<bfloat16>(literal, engine);
+    // Duplicates may be generated if the number of elements in the literal
+    // exceeds the number of positive values supported by the type.
+    FloatT next_value = std::numeric_limits<FloatT>::min();
+    for (FloatT& value : literal->data<FloatT>()) {
+      value = next_value;
+      next_value =
+          std::nextafter(next_value, std::numeric_limits<FloatT>::max());
+    }
+    std::shuffle(literal->data<FloatT>().begin(), literal->data<FloatT>().end(),
+                 *engine);
   } else {
-    PopulateWithRandomFloatingPointData<bfloat16, float>(literal, engine);
+    std::uniform_real_distribution<GeneratorT> generator(-0.1f, 0.2f);
+    for (FloatT& value : literal->data<FloatT>()) {
+      value = static_cast<FloatT>(generator(*engine));
+    }
+  }
+}
+
+template <typename FloatT>
+void PopulateWithRandomFloatingPointData(Literal* literal,
+                                         std::minstd_rand0* engine,
+                                         bool no_duplicates) {
+  CHECK(engine != nullptr);
+  PopulateWithRandomFloatingPointDataImpl<FloatT, FloatT>(literal, engine,
+                                                          no_duplicates);
+}
+
+template <>
+void PopulateWithRandomFloatingPointData<half>(Literal* literal,
+                                               std::minstd_rand0* engine,
+                                               bool no_duplicates) {
+  // no_duplicates is ignored for half types. Unique values can only be
+  // generated for arrays with fewer than ~2**16 elements and no_duplicates is
+  // best-effort anyway.
+  CHECK(engine != nullptr);
+  std::uniform_real_distribution<float> generator(-0.1f, 0.2f);
+  for (half& value : literal->data<half>()) {
+    value = static_cast<half>(generator(*engine));
+  }
+}
+
+template <>
+void PopulateWithRandomFloatingPointData<bfloat16>(Literal* literal,
+                                                   std::minstd_rand0* engine,
+                                                   bool no_duplicates) {
+  // no_duplicates is ignored for bfloat types. Unique values can only be
+  // generated for arrays with fewer than ~2**16 elements and no_duplicates is
+  // best-effort anyway.
+  CHECK(engine != nullptr);
+  std::uniform_real_distribution<float> generator(-0.1f, 0.2f);
+  for (bfloat16& value : literal->data<bfloat16>()) {
+    value = static_cast<bfloat16>(generator(*engine));
   }
 }
 
@@ -184,16 +135,20 @@ StatusOr<Literal> MakeFakeLiteralInternal(const Shape& shape,
   Literal literal(shape);
   switch (shape.element_type()) {
     case BF16:
-      PopulateWithFloatingPointData<bfloat16>(&literal, engine, no_duplicates);
+      PopulateWithRandomFloatingPointData<bfloat16>(&literal, engine,
+                                                    no_duplicates);
       break;
     case F16:
-      PopulateWithFloatingPointData<half>(&literal, engine, no_duplicates);
+      PopulateWithRandomFloatingPointData<half>(&literal, engine,
+                                                no_duplicates);
       break;
     case F32:
-      PopulateWithFloatingPointData<float>(&literal, engine, no_duplicates);
+      PopulateWithRandomFloatingPointData<float>(&literal, engine,
+                                                 no_duplicates);
       break;
     case F64:
-      PopulateWithFloatingPointData<double>(&literal, engine, no_duplicates);
+      PopulateWithRandomFloatingPointData<double>(&literal, engine,
+                                                  no_duplicates);
       break;
     case S8:
       PopulateWithRandomIntegralData<int8>(&literal, engine, no_duplicates);

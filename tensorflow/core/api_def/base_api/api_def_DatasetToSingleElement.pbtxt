@@ -1,6 +1,5 @@
 op {
   graph_op_name: "DatasetToSingleElement"
-  visibility: HIDDEN
   in_arg {
     name: "dataset"
     description: <<END

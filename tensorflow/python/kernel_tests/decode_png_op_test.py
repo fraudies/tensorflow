@@ -47,7 +47,7 @@ class DecodePngOpTest(test.TestCase):
             img_in, dtype=dtypes.uint16))
 
     with self.cached_session():
-      decoded = self.evaluate(decode)
+      decoded = decode.eval()
       self.assertAllEqual(decoded, img_bytes)
 
 

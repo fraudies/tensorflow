@@ -138,9 +138,9 @@ class XlaSelectAndScatterOp : public XlaOpKernel {
 };
 
 REGISTER_XLA_OP(Name("XlaSelectAndScatter")
-                    .CompileTimeConstantInput("window_dimensions")
-                    .CompileTimeConstantInput("window_strides")
-                    .CompileTimeConstantInput("padding"),
+                    .CompileTimeConstInput("window_dimensions")
+                    .CompileTimeConstInput("window_strides")
+                    .CompileTimeConstInput("padding"),
                 XlaSelectAndScatterOp);
 
 }  // namespace

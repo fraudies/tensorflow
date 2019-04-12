@@ -259,8 +259,6 @@ Status IsNodeHostCandidate(const GraphView& graph, GraphProperties* properties,
   return Status::OK();
 }
 
-// Tries to find a Host device from `devices`. Returns empty string if no
-// matching Host device is found.
 string TryFindHostDevice(const gtl::FlatSet<string>& devices,
                          bool has_device_cpu, const string& device) {
   // Force this node onto the CPU.
@@ -282,8 +280,8 @@ string TryFindHostDevice(const gtl::FlatSet<string>& devices,
     }
   }
 
-  // We couldn't find an appropriate Host device, return no device.
-  return "";
+  // We couldn't find an appropriate Host device, return original device.
+  return device;
 }
 
 bool IsTPUGraphDef(const GraphDef& def) {
@@ -335,15 +333,12 @@ Status PinToHostOptimizer::Optimize(Cluster* cluster, const GrapplerItem& item,
       continue;
     }
 
-    string device =
-        internal::TryFindHostDevice(devices, has_device_cpu, node.device());
-    if (!device.empty()) {
-      // Keep track of all Const nodes that we swapped.
-      if (IsConstant(node)) {
-        const_nodes.emplace_back(&node, node.device());
-      }
-      *node.mutable_device() = std::move(device);
+    if (IsConstant(node)) {
+      const_nodes.emplace_back(&node, node.device());
     }
+    // Try and swap the device to Host.
+    node.set_device(
+        internal::TryFindHostDevice(devices, has_device_cpu, node.device()));
   }
 
   // Traverse all `const_nodes`, and map them back to GPU greedily.

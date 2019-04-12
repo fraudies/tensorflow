@@ -46,9 +46,8 @@ static Status ReplaceUsesWhileKeepingLoopInvariance(
   return Status::OK();
 }
 
-StatusOr<bool> WhileLoopConstantSinking::TrySinkingConstantsIntoWhileLoop(
+StatusOr<bool> WhileLoopConstantSinking::TrySinkingConstantsIntoWhileBody(
     HloInstruction* while_instr) {
-  HloComputation* while_cond = while_instr->while_condition();
   HloComputation* while_body = while_instr->while_body();
 
   const HloInstruction& init_value = *while_instr->operand(0);
@@ -58,47 +57,23 @@ StatusOr<bool> WhileLoopConstantSinking::TrySinkingConstantsIntoWhileLoop(
 
   bool changed = false;
 
-  absl::flat_hash_map<int64, absl::InlinedVector<HloInstruction*, 1>>
-      conditional_gte_index_to_insts =
-          WhileUtil::GetGTEsMapForWhileConditional(*while_cond);
-  std::vector<HloInstruction*> invariant_body_gtes =
-      WhileUtil::GetInvariantGTEsForWhileBody(*while_body);
-
-  for (HloInstruction* invariant_body_gte : invariant_body_gtes) {
-    int64 index = invariant_body_gte->tuple_index();
+  for (HloInstruction* invariant_gte :
+       WhileUtil::GetInvariantGTEsForWhileBody(*while_body)) {
+    int64 index = invariant_gte->tuple_index();
     const HloInstruction& invariant_value = *init_value.operand(index);
 
-    // Original value should be a constant.
-    if (invariant_value.opcode() != HloOpcode::kConstant) {
+    // Should have at least one user that's not while_body_root.
+    if (invariant_gte->user_count() <= 1) {
       continue;
     }
 
-    // Sink into the while_body.
-    // Should have at least one user that's not while_body_root.
-    if (invariant_body_gte->user_count() > 1) {
-      HloInstruction* constant_instr =
+    if (invariant_value.opcode() == HloOpcode::kConstant) {
+      auto* constant_instr =
           while_body->AddInstruction(invariant_value.Clone(/*suffix=*/".sunk"));
       TF_RETURN_IF_ERROR(ReplaceUsesWhileKeepingLoopInvariance(
-          invariant_body_gte, constant_instr, while_body->root_instruction(),
+          invariant_gte, constant_instr, while_body->root_instruction(),
           index));
       changed = true;
-    }
-
-    // Check if there is a corresponding GTE in while_conditional.
-    auto it = conditional_gte_index_to_insts.find(index);
-    if (it == conditional_gte_index_to_insts.end()) {
-      continue;
-    }
-
-    for (HloInstruction* invariant_cond_gte : it->second) {
-      // Should have at least one user.
-      if (invariant_cond_gte->user_count() > 0) {
-        HloInstruction* constant_instr = while_cond->AddInstruction(
-            invariant_value.Clone(/*suffix=*/".sunk"));
-        TF_RETURN_IF_ERROR(
-            invariant_cond_gte->ReplaceAllUsesWith(constant_instr));
-        changed = true;
-      }
     }
   }
 
@@ -140,8 +115,10 @@ StatusOr<bool> WhileLoopConstantSinking::Run(HloModule* module) {
   }
 
   for (HloInstruction* while_instr : while_instrs) {
+    // We only sink into while loop bodies, but this can be extended to
+    // transform conditions as well.
     TF_ASSIGN_OR_RETURN(bool result,
-                        TrySinkingConstantsIntoWhileLoop(while_instr));
+                        TrySinkingConstantsIntoWhileBody(while_instr));
     changed |= result;
   }
 

@@ -24,7 +24,6 @@ from tensorflow.python.eager import function
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
-from tensorflow.python.framework import test_util
 from tensorflow.python.ops import embedding_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import resource_variable_ops
@@ -36,7 +35,6 @@ from tensorflow.python.training import gradient_descent
 
 class GradientDescentOptimizerTest(test.TestCase):
 
-  @test_util.run_deprecated_v1
   def testBasic(self):
     for dtype in [dtypes.half, dtypes.float32, dtypes.float64]:
       with self.cached_session():
@@ -49,18 +47,17 @@ class GradientDescentOptimizerTest(test.TestCase):
             zip([grads0, grads1], [var0, var1]))
         variables.global_variables_initializer().run()
         # Fetch params to validate initial values
-        self.assertAllCloseAccordingToType([1.0, 2.0], self.evaluate(var0))
-        self.assertAllCloseAccordingToType([3.0, 4.0], self.evaluate(var1))
+        self.assertAllCloseAccordingToType([1.0, 2.0], var0.eval())
+        self.assertAllCloseAccordingToType([3.0, 4.0], var1.eval())
         # Run 1 step of sgd
         sgd_op.run()
         # Validate updated params
         self.assertAllCloseAccordingToType([1.0 - 3.0 * 0.1, 2.0 - 3.0 * 0.1],
-                                           self.evaluate(var0))
+                                           var0.eval())
         self.assertAllCloseAccordingToType([3.0 - 3.0 * 0.01, 4.0 - 3.0 * 0.01],
-                                           self.evaluate(var1))
+                                           var1.eval())
         self.assertEqual(0, len(optimizer.variables()))
 
-  @test_util.run_deprecated_v1
   def testBasicResourceVariable(self):
     for dtype in [dtypes.half, dtypes.float32, dtypes.float64]:
       with self.cached_session():
@@ -76,17 +73,16 @@ class GradientDescentOptimizerTest(test.TestCase):
         # a long-term solution for this.
         resources.initialize_resources([var0, var1]).run()
         # Fetch params to validate initial values
-        self.assertAllCloseAccordingToType([1.0, 2.0], self.evaluate(var0))
-        self.assertAllCloseAccordingToType([3.0, 4.0], self.evaluate(var1))
+        self.assertAllCloseAccordingToType([1.0, 2.0], var0.eval())
+        self.assertAllCloseAccordingToType([3.0, 4.0], var1.eval())
         # Run 1 step of sgd
         sgd_op.run()
         # Validate updated params
         self.assertAllCloseAccordingToType([1.0 - 3.0 * 0.1, 2.0 - 3.0 * 0.1],
-                                           self.evaluate(var0))
+                                           var0.eval())
         self.assertAllCloseAccordingToType([3.0 - 3.0 * 0.01, 4.0 - 3.0 * 0.01],
-                                           self.evaluate(var1))
+                                           var1.eval())
 
-  @test_util.run_deprecated_v1
   def testBasicCallableParams(self):
     for dtype in [dtypes.half, dtypes.float32, dtypes.float64]:
       with self.cached_session():
@@ -103,17 +99,16 @@ class GradientDescentOptimizerTest(test.TestCase):
         # a long-term solution for this.
         resources.initialize_resources([var0, var1]).run()
         # Fetch params to validate initial values
-        self.assertAllCloseAccordingToType([1.0, 2.0], self.evaluate(var0))
-        self.assertAllCloseAccordingToType([3.0, 4.0], self.evaluate(var1))
+        self.assertAllCloseAccordingToType([1.0, 2.0], var0.eval())
+        self.assertAllCloseAccordingToType([3.0, 4.0], var1.eval())
         # Run 1 step of sgd
         sgd_op.run()
         # Validate updated params
         self.assertAllCloseAccordingToType([1.0 - 3.0 * 0.1, 2.0 - 3.0 * 0.1],
-                                           self.evaluate(var0))
+                                           var0.eval())
         self.assertAllCloseAccordingToType([3.0 - 3.0 * 0.01, 4.0 - 3.0 * 0.01],
-                                           self.evaluate(var1))
+                                           var1.eval())
 
-  @test_util.run_deprecated_v1
   def testMinimizeResourceVariable(self):
     for dtype in [dtypes.half, dtypes.float32, dtypes.float64]:
       with self.cached_session():
@@ -129,18 +124,17 @@ class GradientDescentOptimizerTest(test.TestCase):
         # a long-term solution for this.
         resources.initialize_resources([var0, var1]).run()
         # Fetch params to validate initial values
-        self.assertAllCloseAccordingToType([[1.0, 2.0]], self.evaluate(var0))
-        self.assertAllCloseAccordingToType([3.0], self.evaluate(var1))
+        self.assertAllCloseAccordingToType([[1.0, 2.0]], var0.eval())
+        self.assertAllCloseAccordingToType([3.0], var1.eval())
         # Run 1 step of sgd
         sgd_op.run()
         # Validate updated params
         np_pred = 1.0 * 4.0 + 2.0 * 5.0 + 3.0
         np_grad = 2 * np_pred
         self.assertAllCloseAccordingToType(
-            [[1.0 - np_grad * 4.0, 2.0 - np_grad * 5.0]], self.evaluate(var0))
-        self.assertAllCloseAccordingToType([3.0 - np_grad], self.evaluate(var1))
+            [[1.0 - np_grad * 4.0, 2.0 - np_grad * 5.0]], var0.eval())
+        self.assertAllCloseAccordingToType([3.0 - np_grad], var1.eval())
 
-  @test_util.run_deprecated_v1
   def testMinimizeSparseResourceVariable(self):
     for dtype in [dtypes.half, dtypes.float32, dtypes.float64]:
       with self.cached_session():
@@ -157,18 +151,17 @@ class GradientDescentOptimizerTest(test.TestCase):
         # a long-term solution for this.
         variables.global_variables_initializer().run()
         # Fetch params to validate initial values
-        self.assertAllCloseAccordingToType([[1.0, 2.0]], self.evaluate(var0))
-        self.assertAllCloseAccordingToType([3.0], self.evaluate(var1))
+        self.assertAllCloseAccordingToType([[1.0, 2.0]], var0.eval())
+        self.assertAllCloseAccordingToType([3.0], var1.eval())
         # Run 1 step of sgd
         sgd_op.run()
         # Validate updated params
         np_pred = 1.0 * 4.0 + 2.0 * 5.0 + 3.0
         np_grad = 2 * np_pred
         self.assertAllCloseAccordingToType(
-            [[1.0 - np_grad * 4.0, 2.0 - np_grad * 5.0]], self.evaluate(var0))
-        self.assertAllCloseAccordingToType([3.0 - np_grad], self.evaluate(var1))
+            [[1.0 - np_grad * 4.0, 2.0 - np_grad * 5.0]], var0.eval())
+        self.assertAllCloseAccordingToType([3.0 - np_grad], var1.eval())
 
-  @test_util.run_deprecated_v1
   def testTensorLearningRate(self):
     for dtype in [dtypes.half, dtypes.float32, dtypes.float64]:
       with self.cached_session():
@@ -181,17 +174,16 @@ class GradientDescentOptimizerTest(test.TestCase):
             lrate).apply_gradients(zip([grads0, grads1], [var0, var1]))
         variables.global_variables_initializer().run()
         # Fetch params to validate initial values
-        self.assertAllCloseAccordingToType([1.0, 2.0], self.evaluate(var0))
-        self.assertAllCloseAccordingToType([3.0, 4.0], self.evaluate(var1))
+        self.assertAllCloseAccordingToType([1.0, 2.0], var0.eval())
+        self.assertAllCloseAccordingToType([3.0, 4.0], var1.eval())
         # Run 1 step of sgd
         sgd_op.run()
         # Validate updated params
         self.assertAllCloseAccordingToType([1.0 - 3.0 * 0.1, 2.0 - 3.0 * 0.1],
-                                           self.evaluate(var0))
+                                           var0.eval())
         self.assertAllCloseAccordingToType([3.0 - 3.0 * 0.01, 4.0 - 3.0 * 0.01],
-                                           self.evaluate(var1))
+                                           var1.eval())
 
-  @test_util.run_deprecated_v1
   def testGradWrtRef(self):
     for dtype in [dtypes.half, dtypes.float32, dtypes.float64]:
       with self.cached_session():
@@ -201,9 +193,8 @@ class GradientDescentOptimizerTest(test.TestCase):
         grads_and_vars = opt.compute_gradients(vars_[0] + vars_[1], vars_)
         variables.global_variables_initializer().run()
         for grad, _ in grads_and_vars:
-          self.assertAllCloseAccordingToType([1.0], self.evaluate(grad))
+          self.assertAllCloseAccordingToType([1.0], grad.eval())
 
-  @test_util.run_deprecated_v1
   def testWithGlobalStep(self):
     for dtype in [dtypes.half, dtypes.float32, dtypes.float64]:
       with self.cached_session():
@@ -216,18 +207,17 @@ class GradientDescentOptimizerTest(test.TestCase):
             zip([grads0, grads1], [var0, var1]), global_step=global_step)
         variables.global_variables_initializer().run()
         # Fetch params to validate initial values
-        self.assertAllCloseAccordingToType([1.0, 2.0], self.evaluate(var0))
-        self.assertAllCloseAccordingToType([3.0, 4.0], self.evaluate(var1))
+        self.assertAllCloseAccordingToType([1.0, 2.0], var0.eval())
+        self.assertAllCloseAccordingToType([3.0, 4.0], var1.eval())
         # Run 1 step of sgd
         sgd_op.run()
         # Validate updated params and global_step
         self.assertAllCloseAccordingToType([1.0 - 3.0 * 0.1, 2.0 - 3.0 * 0.1],
-                                           self.evaluate(var0))
+                                           var0.eval())
         self.assertAllCloseAccordingToType([3.0 - 3.0 * 0.01, 4.0 - 3.0 * 0.01],
-                                           self.evaluate(var1))
-        self.assertAllCloseAccordingToType(1, self.evaluate(global_step))
+                                           var1.eval())
+        self.assertAllCloseAccordingToType(1, global_step.eval())
 
-  @test_util.run_deprecated_v1
   def testSparseBasic(self):
     for dtype in [dtypes.half, dtypes.float32, dtypes.float64]:
       with self.cached_session():
@@ -247,15 +237,15 @@ class GradientDescentOptimizerTest(test.TestCase):
             zip([grads0, grads1], [var0, var1]))
         variables.global_variables_initializer().run()
         # Fetch params to validate initial values
-        self.assertAllCloseAccordingToType([[1.0], [2.0]], self.evaluate(var0))
-        self.assertAllCloseAccordingToType([[3.0], [4.0]], self.evaluate(var1))
+        self.assertAllCloseAccordingToType([[1.0], [2.0]], var0.eval())
+        self.assertAllCloseAccordingToType([[3.0], [4.0]], var1.eval())
         # Run 1 step of sgd
         sgd_op.run()
         # Validate updated params
         self.assertAllCloseAccordingToType([[1.0 - 3.0 * 0.1], [2.0]],
-                                           self.evaluate(var0))
+                                           var0.eval())
         self.assertAllCloseAccordingToType([[3.0], [4.0 - 3.0 * 0.01]],
-                                           self.evaluate(var1))
+                                           var1.eval())
 
   def testCapturingInDefunWhileExecutingEagerly(self):
     with context.eager_mode():

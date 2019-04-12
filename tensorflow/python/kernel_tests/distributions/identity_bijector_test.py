@@ -18,7 +18,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from tensorflow.python.framework import test_util
 from tensorflow.python.ops.distributions import bijector_test_util
 from tensorflow.python.ops.distributions import identity_bijector
 from tensorflow.python.platform import test
@@ -42,7 +41,6 @@ class IdentityBijectorTest(test.TestCase):
         self.evaluate(
             bijector.forward_log_det_jacobian(x, event_ndims=3)))
 
-  @test_util.run_deprecated_v1
   def testScalarCongruency(self):
     with self.cached_session():
       bijector = identity_bijector.Identity()

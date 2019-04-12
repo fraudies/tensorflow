@@ -19,7 +19,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from tensorflow.python.framework import test_util
 from tensorflow.python.platform import test
 from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python.util import deprecation
@@ -154,8 +153,7 @@ class DeprecationTest(test.TestCase):
     self.assertEqual(
         "fn doc. (deprecated)"
         "\n"
-        "\nWarning: THIS FUNCTION IS DEPRECATED. "
-        "It will be removed in a future version."
+        "\nTHIS FUNCTION IS DEPRECATED. It will be removed in a future version."
         "\nInstructions for updating:\n%s"
         "\n"
         "\nArgs:"
@@ -175,7 +173,6 @@ class DeprecationTest(test.TestCase):
                         set(args[1:]))
 
   @test.mock.patch.object(logging, "warning", autospec=True)
-  @test_util.run_deprecated_v1
   def test_static_fn_with_doc(self, mock_warning):
     date = "2016-07-04"
     instructions = "This is how you update..."
@@ -198,7 +195,7 @@ class DeprecationTest(test.TestCase):
     self.assertEqual(
         "fn doc. (deprecated)"
         "\n"
-        "\nWarning: THIS FUNCTION IS DEPRECATED. It will be removed after %s."
+        "\nTHIS FUNCTION IS DEPRECATED. It will be removed after %s."
         "\nInstructions for updating:\n%s"
         "\n"
         "\nArgs:"
@@ -216,7 +213,6 @@ class DeprecationTest(test.TestCase):
     self._assert_subset(set(["after " + date, instructions]), set(args[1:]))
 
   @test.mock.patch.object(logging, "warning", autospec=True)
-  @test_util.run_deprecated_v1
   def test_static_fn_with_one_line_doc(self, mock_warning):
     date = "2016-07-04"
     instructions = "This is how you update..."
@@ -231,7 +227,7 @@ class DeprecationTest(test.TestCase):
     self.assertEqual(
         "fn doc. (deprecated)"
         "\n"
-        "\nWarning: THIS FUNCTION IS DEPRECATED. It will be removed after %s."
+        "\nTHIS FUNCTION IS DEPRECATED. It will be removed after %s."
         "\nInstructions for updating:\n%s" % (date, instructions), _fn.__doc__)
 
     # Assert calling new fn issues log warning.
@@ -242,7 +238,6 @@ class DeprecationTest(test.TestCase):
     self._assert_subset(set(["after " + date, instructions]), set(args[1:]))
 
   @test.mock.patch.object(logging, "warning", autospec=True)
-  @test_util.run_deprecated_v1
   def test_static_fn_no_doc(self, mock_warning):
     date = "2016-07-04"
     instructions = "This is how you update..."
@@ -256,7 +251,7 @@ class DeprecationTest(test.TestCase):
     self.assertEqual(
         "DEPRECATED FUNCTION"
         "\n"
-        "\nWarning: THIS FUNCTION IS DEPRECATED. It will be removed after %s."
+        "\nTHIS FUNCTION IS DEPRECATED. It will be removed after %s."
         "\nInstructions for updating:"
         "\n%s" % (date, instructions), _fn.__doc__)
 
@@ -294,7 +289,7 @@ class DeprecationTest(test.TestCase):
     self.assertEqual(
         "fn doc. (deprecated)"
         "\n"
-        "\nWarning: THIS FUNCTION IS DEPRECATED. It will be removed after %s."
+        "\nTHIS FUNCTION IS DEPRECATED. It will be removed after %s."
         "\nInstructions for updating:\n%s"
         "\n"
         "\nArgs:"
@@ -331,7 +326,7 @@ class DeprecationTest(test.TestCase):
     self.assertEqual(
         "fn doc. (deprecated)"
         "\n"
-        "\nWarning: THIS FUNCTION IS DEPRECATED. It will be removed after %s."
+        "\nTHIS FUNCTION IS DEPRECATED. It will be removed after %s."
         "\nInstructions for updating:\n%s" % (date, instructions),
         getattr(_Object, "_fn").__doc__)
 
@@ -360,10 +355,9 @@ class DeprecationTest(test.TestCase):
     self.assertEqual(
         "DEPRECATED FUNCTION"
         "\n"
-        "\nWarning: THIS FUNCTION IS DEPRECATED. It will be removed after %s."
+        "\nTHIS FUNCTION IS DEPRECATED. It will be removed after %s."
         "\nInstructions for updating:"
-        "\n%s" % (date, instructions),
-        getattr(_Object, "_fn").__doc__)
+        "\n%s" % (date, instructions), getattr(_Object, "_fn").__doc__)
 
     # Assert calling new fn issues log warning.
     self.assertEqual(3, _Object()._fn(1, 2))
@@ -412,13 +406,12 @@ class DeprecationTest(test.TestCase):
     self.assertEqual(
         "prop doc. (deprecated)"
         "\n"
-        "\nWarning: THIS FUNCTION IS DEPRECATED. It will be removed after %s."
+        "\nTHIS FUNCTION IS DEPRECATED. It will be removed after %s."
         "\nInstructions for updating:"
         "\n%s"
         "\n"
         "\nReturns:"
-        "\n  String." % (date, instructions),
-        getattr(_Object, "_prop").__doc__)
+        "\n  String." % (date, instructions), getattr(_Object, "_prop").__doc__)
 
     # Assert calling new fn issues log warning.
     self.assertEqual("prop_with_doc", _Object()._prop)
@@ -446,10 +439,9 @@ class DeprecationTest(test.TestCase):
     self.assertEqual(
         "DEPRECATED FUNCTION"
         "\n"
-        "\nWarning: THIS FUNCTION IS DEPRECATED. It will be removed after %s."
+        "\nTHIS FUNCTION IS DEPRECATED. It will be removed after %s."
         "\nInstructions for updating:"
-        "\n%s" % (date, instructions),
-        getattr(_Object, "_prop").__doc__)
+        "\n%s" % (date, instructions), getattr(_Object, "_prop").__doc__)
 
     # Assert calling new fn issues log warning.
     self.assertEqual("prop_no_doc", _Object()._prop)
@@ -492,7 +484,6 @@ class DeprecatedArgsTest(test.TestCase):
       deprecation.deprecated_args(date, instructions, "missing")(_fn)
 
   @test.mock.patch.object(logging, "warning", autospec=True)
-  @test_util.run_deprecated_v1
   def test_static_fn_with_doc(self, mock_warning):
     date = "2016-07-04"
     instructions = "This is how you update..."
@@ -516,8 +507,7 @@ class DeprecatedArgsTest(test.TestCase):
     self.assertEqual(
         "fn doc. (deprecated arguments)"
         "\n"
-        "\nWarning: SOME ARGUMENTS ARE DEPRECATED: `(deprecated)`. "
-        "They will be removed after %s."
+        "\nSOME ARGUMENTS ARE DEPRECATED. They will be removed after %s."
         "\nInstructions for updating:\n%s"
         "\n"
         "\nArgs:"
@@ -540,7 +530,6 @@ class DeprecatedArgsTest(test.TestCase):
     self._assert_subset(set(["after " + date, instructions]), set(args[1:]))
 
   @test.mock.patch.object(logging, "warning", autospec=True)
-  @test_util.run_deprecated_v1
   def test_static_fn_with_one_line_doc(self, mock_warning):
     date = "2016-07-04"
     instructions = "This is how you update..."
@@ -555,8 +544,7 @@ class DeprecatedArgsTest(test.TestCase):
     self.assertEqual(
         "fn doc. (deprecated arguments)"
         "\n"
-        "\nWarning: SOME ARGUMENTS ARE DEPRECATED: `(deprecated)`. "
-        "They will be removed after %s."
+        "\nSOME ARGUMENTS ARE DEPRECATED. They will be removed after %s."
         "\nInstructions for updating:\n%s" % (date, instructions), _fn.__doc__)
 
     # Assert calls without the deprecated argument log nothing.
@@ -571,7 +559,6 @@ class DeprecatedArgsTest(test.TestCase):
     self._assert_subset(set(["after " + date, instructions]), set(args[1:]))
 
   @test.mock.patch.object(logging, "warning", autospec=True)
-  @test_util.run_deprecated_v1
   def test_static_fn_no_doc(self, mock_warning):
     date = "2016-07-04"
     instructions = "This is how you update..."
@@ -585,8 +572,7 @@ class DeprecatedArgsTest(test.TestCase):
     self.assertEqual(
         "DEPRECATED FUNCTION ARGUMENTS"
         "\n"
-        "\nWarning: SOME ARGUMENTS ARE DEPRECATED: `(deprecated)`. "
-        "They will be removed after %s."
+        "\nSOME ARGUMENTS ARE DEPRECATED. They will be removed after %s."
         "\nInstructions for updating:"
         "\n%s" % (date, instructions), _fn.__doc__)
 
@@ -602,7 +588,6 @@ class DeprecatedArgsTest(test.TestCase):
     self._assert_subset(set(["after " + date, instructions]), set(args[1:]))
 
   @test.mock.patch.object(logging, "warning", autospec=True)
-  @test_util.run_deprecated_v1
   def test_varargs(self, mock_warning):
     date = "2016-07-04"
     instructions = "This is how you update..."
@@ -623,7 +608,6 @@ class DeprecatedArgsTest(test.TestCase):
     self._assert_subset(set(["after " + date, instructions]), set(args[1:]))
 
   @test.mock.patch.object(logging, "warning", autospec=True)
-  @test_util.run_deprecated_v1
   def test_kwargs(self, mock_warning):
     date = "2016-07-04"
     instructions = "This is how you update..."
@@ -644,7 +628,6 @@ class DeprecatedArgsTest(test.TestCase):
     self._assert_subset(set(["after " + date, instructions]), set(args[1:]))
 
   @test.mock.patch.object(logging, "warning", autospec=True)
-  @test_util.run_deprecated_v1
   def test_positional_and_named(self, mock_warning):
     date = "2016-07-04"
     instructions = "This is how you update..."
@@ -670,7 +653,6 @@ class DeprecatedArgsTest(test.TestCase):
                         set(args2[1:]))
 
   @test.mock.patch.object(logging, "warning", autospec=True)
-  @test_util.run_deprecated_v1
   def test_positional_and_named_with_ok_vals(self, mock_warning):
     date = "2016-07-04"
     instructions = "This is how you update..."
@@ -703,7 +685,6 @@ class DeprecatedArgsTest(test.TestCase):
     self.assertEqual(0, mock_warning.call_count)
 
   @test.mock.patch.object(logging, "warning", autospec=True)
-  @test_util.run_deprecated_v1
   def test_deprecated_args_once(self, mock_warning):
     date = "2016-07-04"
     instructions = "This is how you update..."
@@ -720,7 +701,6 @@ class DeprecatedArgsTest(test.TestCase):
     self.assertEqual(1, mock_warning.call_count)
 
   @test.mock.patch.object(logging, "warning", autospec=True)
-  @test_util.run_deprecated_v1
   def test_deprecated_multiple_args_once_each(self, mock_warning):
     date = "2016-07-04"
     instructions = "This is how you update..."
@@ -765,7 +745,6 @@ class DeprecatedArgValuesTest(test.TestCase):
       deprecation.deprecated_arg_values(date, instructions)
 
   @test.mock.patch.object(logging, "warning", autospec=True)
-  @test_util.run_deprecated_v1
   def test_static_fn_with_doc(self, mock_warning):
     date = "2016-07-04"
     instructions = "This is how you update..."
@@ -788,10 +767,9 @@ class DeprecatedArgValuesTest(test.TestCase):
     # Assert function docs are properly updated.
     self.assertEqual("_fn", _fn.__name__)
     self.assertEqual(
-        "fn doc. (deprecated argument values)"
+        "fn doc. (deprecated arguments)"
         "\n"
-        "\nWarning: SOME ARGUMENT VALUES ARE DEPRECATED: `(deprecated=True)`. "
-        "They will be removed after %s."
+        "\nSOME ARGUMENTS ARE DEPRECATED. They will be removed after %s."
         "\nInstructions for updating:\n%s"
         "\n"
         "\nArgs:"
@@ -818,7 +796,6 @@ class DeprecatedArgValuesTest(test.TestCase):
     self.assertEqual(2, mock_warning.call_count)
 
   @test.mock.patch.object(logging, "warning", autospec=True)
-  @test_util.run_deprecated_v1
   def test_static_fn_with_one_line_doc(self, mock_warning):
     date = "2016-07-04"
     instructions = "This is how you update..."
@@ -832,10 +809,9 @@ class DeprecatedArgValuesTest(test.TestCase):
     # Assert function docs are properly updated.
     self.assertEqual("_fn", _fn.__name__)
     self.assertEqual(
-        "fn doc. (deprecated argument values)"
+        "fn doc. (deprecated arguments)"
         "\n"
-        "\nWarning: SOME ARGUMENT VALUES ARE DEPRECATED: `(deprecated=True)`. "
-        "They will be removed after %s."
+        "\nSOME ARGUMENTS ARE DEPRECATED. They will be removed after %s."
         "\nInstructions for updating:\n%s" % (date, instructions), _fn.__doc__)
 
     # Assert calling new fn with non-deprecated value logs nothing.
@@ -854,7 +830,6 @@ class DeprecatedArgValuesTest(test.TestCase):
     self.assertEqual(2, mock_warning.call_count)
 
   @test.mock.patch.object(logging, "warning", autospec=True)
-  @test_util.run_deprecated_v1
   def test_static_fn_no_doc(self, mock_warning):
     date = "2016-07-04"
     instructions = "This is how you update..."
@@ -867,10 +842,9 @@ class DeprecatedArgValuesTest(test.TestCase):
     # Assert function docs are properly updated.
     self.assertEqual("_fn", _fn.__name__)
     self.assertEqual(
-        "DEPRECATED FUNCTION ARGUMENT VALUES"
+        "DEPRECATED FUNCTION ARGUMENTS"
         "\n"
-        "\nWarning: SOME ARGUMENT VALUES ARE DEPRECATED: `(deprecated=True)`. "
-        "They will be removed after %s."
+        "\nSOME ARGUMENTS ARE DEPRECATED. They will be removed after %s."
         "\nInstructions for updating:"
         "\n%s" % (date, instructions), _fn.__doc__)
 

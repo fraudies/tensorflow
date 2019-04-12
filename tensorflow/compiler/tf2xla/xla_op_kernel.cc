@@ -20,7 +20,6 @@ limitations under the License.
 #include "tensorflow/compiler/tf2xla/literal_util.h"
 #include "tensorflow/compiler/tf2xla/shape_util.h"
 #include "tensorflow/compiler/tf2xla/type_util.h"
-#include "tensorflow/compiler/tf2xla/xla_compilation_device.h"
 #include "tensorflow/compiler/tf2xla/xla_context.h"
 #include "tensorflow/compiler/xla/client/xla_builder.h"
 #include "tensorflow/compiler/xla/client/xla_computation.h"
@@ -36,52 +35,40 @@ bool XlaOpKernelContext::ValidateInputsAreSameShape(OpKernel* op) {
   return context_->ValidateInputsAreSameShape(op);
 }
 
-XlaContext* XlaOpKernelContext::xla_context() const {
-  return &XlaContext::Get(context_);
-}
-
 xla::XlaBuilder* XlaOpKernelContext::builder() const {
-  return xla_context()->builder();
-}
-
-XlaCompiler* XlaOpKernelContext::compiler() const {
-  return xla_context()->compiler();
+  return XlaContext::Get(this).builder();
 }
 
 // Retrieves an XlaExpression that was allocated by a previous Op.
 static const XlaExpression* CastExpressionFromTensor(const Tensor& tensor) {
   const XlaExpression* expression =
       reinterpret_cast<const XlaExpression*>(tensor.tensor_data().data());
-  CHECK(expression->kind() != XlaExpression::Kind::kInvalid)
-      << expression->HumanString();
+  CHECK(expression->handle().valid() || expression->resource() != nullptr);
+  VLOG(1) << "Fetched T" << expression->handle();
   return expression;
 }
 
-// Assigns an XlaExpression to a tensor on an XLA compilation device.
-static void AssignExpressionToTensor(Tensor* tensor,
-                                     const XlaExpression& value) {
+// Retrieves an uninitialized XlaExpression from a newly-allocated tensor.
+static XlaExpression* CastExpressionFromUninitializedTensor(Tensor* tensor) {
   const XlaExpression* expression =
       reinterpret_cast<const XlaExpression*>(tensor->tensor_data().data());
-  CHECK(expression->kind() == XlaExpression::Kind::kInvalid)
-      << expression->HumanString();
-  *const_cast<XlaExpression*>(expression) = value;
+  CHECK(!expression->handle().valid());
+  return const_cast<XlaExpression*>(expression);
 }
 
-const XlaExpression& XlaOpKernelContext::InputExpression(int index) {
-  return *CastExpressionFromTensor(context_->input(index));
+// Retrieves the XlaOp from an input Tensor to an Op. This computation was
+// constructed by an Op that executed previously and created the output Tensor
+// using CreateOutputTensorFromComputation or CreateConstantOutputTensor.
+static const xla::XlaOp& GetComputationFromTensor(const Tensor& tensor) {
+  return CastExpressionFromTensor(tensor)->handle();
 }
 
-const XlaExpression& XlaOpKernelContext::InputExpression(
-    absl::string_view name) {
-  return *CastExpressionFromTensor(GetInputTensorByName(name));
+const xla::XlaOp& XlaOpKernelContext::Input(int index) {
+  return GetComputationFromTensor(context_->input(index));
 }
 
-xla::XlaOp XlaOpKernelContext::Input(int index) {
-  return InputExpression(index).AsXlaOp(builder());
-}
-
-xla::XlaOp XlaOpKernelContext::Input(absl::string_view name) {
-  return InputExpression(name).AsXlaOp(builder());
+const xla::XlaOp& XlaOpKernelContext::Input(absl::string_view name) {
+  return GetComputationFromTensor(GetInputTensorByName(name));
 }
 
 TensorShape XlaOpKernelContext::InputShape(int index) {
@@ -138,18 +125,77 @@ Status XlaOpKernelContext::ConstantInput(absl::string_view name,
 Status XlaOpKernelContext::ConstantInputReshaped(
     int index, absl::Span<const int64> new_dims,
     xla::Literal* constant_literal) {
-  XlaExpression e = InputExpression(index);
-  xla::StatusOr<absl::optional<Tensor>> constant_or_status =
-      e.ResolveConstant(compiler()->client());
-  if (!constant_or_status.ok()) {
-    Status status = constant_or_status.status();
+  const Tensor& tensor = context_->input(index);
+  TensorShape new_shape(new_dims);
+  if (tensor.NumElements() != new_shape.num_elements()) {
+    return errors::InvalidArgument(
+        context_->op_kernel().name(), " input ", index, " has shape ",
+        tensor.shape().DebugString(),
+        " but was asked to be reshaped to incompatible shape ",
+        new_shape.DebugString());
+  }
+  const XlaExpression* expression = CastExpressionFromTensor(tensor);
+
+  auto copy_tensor_to_literal = [](const Tensor& tensor,
+                                   xla::Literal* literal) {
+    xla::Shape literal_shape;
+    TF_RETURN_IF_ERROR(
+        TensorShapeToXLAShape(tensor.dtype(), tensor.shape(), &literal_shape));
+
+    *literal = xla::Literal(literal_shape);
+
+    // memcpy over the payload ...
+    // TODO(phawkins): handle string types.
+    size_t total_bytes = tensor.TotalBytes();
+    if (total_bytes > 0) {
+      void* dst_ptr = literal->untyped_data();
+      const void* src_ptr = DMAHelper::base(&tensor);
+      memcpy(dst_ptr, src_ptr, total_bytes);
+    }
+    return Status::OK();
+  };
+
+  // If the tensor has a known constant value, there is no need to invoke XLA.
+  if (expression->has_constant_value()) {
+    Tensor temp(tensor.dtype());
+    if (!temp.CopyFrom(expression->constant_value(), new_shape)) {
+      // This should never happen. The constant should have a shape compatible
+      // with the enclosing Tensor.
+      return errors::Internal("Incompatible shapes in ConstantInputReshaped.");
+    }
+
+    return copy_tensor_to_literal(temp, constant_literal);
+  }
+
+  // Make sure we treat zero-element tensors as constant.
+  if (new_shape.num_elements() == 0) {
+    Tensor temp(tensor.dtype(), new_shape);
+
+    return copy_tensor_to_literal(temp, constant_literal);
+  }
+
+  xla::XlaOp handle = expression->handle();
+  if (new_shape != tensor.shape()) {
+    // Reshape the handle to the desired shape.
+    handle = xla::Reshape(handle, new_shape.dim_sizes());
+  }
+
+  // The XLA layout is specified minor to major, and TensorFlow's minor
+  // dimension is the last one.
+  std::vector<int64> layout_indices(new_shape.dims());
+  std::iota(layout_indices.rbegin(), layout_indices.rend(), 0);
+  xla::Layout layout = xla::LayoutUtil::MakeLayout(layout_indices);
+
+  xla::StatusOr<bool> is_constant = builder()->IsConstant(handle);
+  if (!is_constant.ok()) {
+    Status status = is_constant.status();
     errors::AppendToMessage(&status, "while evaluating input ", index, " of ",
                             context_->op_kernel().type_string(),
                             " operator as a compile-time constant.");
     return status;
   }
-  absl::optional<Tensor> constant = constant_or_status.ValueOrDie();
-  if (!constant.has_value()) {
+
+  if (!is_constant.ValueOrDie()) {
     return errors::InvalidArgument(
         "Input ", index, " to ", context_->op_kernel().type_string(),
         " operator must be a compile-time constant.\n"
@@ -162,16 +208,25 @@ Status XlaOpKernelContext::ConstantInputReshaped(
         "stateful operation such as a random number generator.");
   }
 
-  Tensor temp(constant->dtype());
-  if (!temp.CopyFrom(*constant, TensorShape(new_dims))) {
-    return errors::InvalidArgument(
-        context_->op_kernel().name(), " input ", index, " has shape ",
-        constant->shape().DebugString(),
-        " but was asked to be reshaped to incompatible shape ",
-        TensorShape(new_dims).DebugString());
+  // Ask the XLA compiler to evaluate the data handle to a literal.
+  xla::StatusOr<xla::XlaComputation> constant_graph =
+      builder()->BuildConstantSubGraph(handle);
+  if (!constant_graph.ok()) {
+    return errors::Internal(
+        "Error getting a compile-time constant graph for ",
+        context_->op_kernel().name(), " input ", index,
+        ".\nError: ", constant_graph.status().error_message());
   }
+  xla::StatusOr<xla::Literal> computed = compiler()->client()->ComputeConstant(
+      constant_graph.ValueOrDie(), &layout);
+  if (!computed.ok()) {
+    return errors::Internal("Error evaluating ", context_->op_kernel().name(),
+                            " input ", index,
+                            " as a compile-time constant.\nError: ",
+                            computed.status().error_message());
+  }
+  *constant_literal = std::move(computed).ValueOrDie();
 
-  TF_ASSIGN_OR_RETURN(*constant_literal, HostTensorToLiteral(temp));
   return Status::OK();
 }
 
@@ -267,15 +322,6 @@ Status XlaOpKernelContext::ConstantInputReshapedToIntVector(
   return LiteralToInt64Vector(literal, out);
 }
 
-Status XlaOpKernelContext::ConstantInputReshapedToIntVector(
-    absl::string_view name, std::vector<int64>* out) {
-  TF_ASSIGN_OR_RETURN(int index, InputIndex(this, name));
-  xla::Literal literal;
-  TF_RETURN_IF_ERROR(ConstantInputReshaped(
-      index, {InputShape(index).num_elements()}, &literal));
-  return LiteralToInt64Vector(literal, out);
-}
-
 Status XlaOpKernelContext::ConstantInputAsInt64Literal(int index,
                                                        xla::Literal* out) {
   xla::Literal literal;
@@ -326,7 +372,7 @@ Status XlaOpKernelContext::InputList(absl::string_view name,
   handles->clear();
   shapes->clear();
   for (const Tensor& input : inputs) {
-    handles->push_back(CastExpressionFromTensor(input)->AsXlaOp(builder()));
+    handles->push_back(GetComputationFromTensor(input));
     shapes->push_back(input.shape());
   }
   return Status::OK();
@@ -346,8 +392,8 @@ Status XlaOpKernelContext::ConstantInputList(
 namespace {
 
 Status ReadVariableInputTensor(const Tensor& tensor, DataType type,
-                               const XlaOpKernelContext* ctx,
-                               TensorShape* shape, xla::XlaOp* value) {
+                               const OpKernelContext* ctx, TensorShape* shape,
+                               xla::XlaOp* value) {
   const XlaExpression* expression = CastExpressionFromTensor(tensor);
   XlaResource* variable = expression->resource();
   TF_RET_CHECK(variable != nullptr);
@@ -365,13 +411,11 @@ Status ReadVariableInputTensor(const Tensor& tensor, DataType type,
     *shape = variable->shape();
   }
 
-  TF_ASSIGN_OR_RETURN(xla::Shape representation_shape,
-                      ctx->compiler()->options().shape_representation_fn(
-                          variable->shape(), variable->type()));
-  xla::Shape xla_shape;
-  TF_RETURN_IF_ERROR(
-      TensorShapeToXLAShape(variable->type(), variable->shape(), &xla_shape));
-  if (xla::ShapeUtil::Compatible(xla_shape, representation_shape)) {
+  XlaContext& xla_context = XlaContext::Get(ctx);
+  TF_ASSIGN_OR_RETURN(
+      TensorShape representation_shape,
+      xla_context.RepresentationShape(variable->shape(), variable->type()));
+  if (representation_shape == variable->shape()) {
     *value = variable->value();
   } else {
     *value = xla::Reshape(variable->value(), variable->shape().dim_sizes());
@@ -384,15 +428,15 @@ Status ReadVariableInputTensor(const Tensor& tensor, DataType type,
 Status XlaOpKernelContext::ReadVariableInput(int index, DataType type,
                                              TensorShape* shape,
                                              xla::XlaOp* value) {
-  return ReadVariableInputTensor(context_->input(index), type, this, shape,
+  return ReadVariableInputTensor(context_->input(index), type, context_, shape,
                                  value);
 }
 
 Status XlaOpKernelContext::ReadVariableInput(absl::string_view name,
                                              DataType type, TensorShape* shape,
                                              xla::XlaOp* value) {
-  return ReadVariableInputTensor(GetInputTensorByName(name), type, this, shape,
-                                 value);
+  return ReadVariableInputTensor(GetInputTensorByName(name), type, context_,
+                                 shape, value);
 }
 
 Status XlaOpKernelContext::GetVariableTypeAndShape(int index, DataType* type,
@@ -411,53 +455,90 @@ Status XlaOpKernelContext::GetVariableTypeAndShape(int index, DataType* type,
   return Status::OK();
 }
 
-void XlaOpKernelContext::SetOutputExpression(int index,
-                                             const XlaExpression& expression) {
-  Status status = [&] {
-    // The step's default allocator is the dummy XlaCompilationAllocator which
-    // simply allocates a metadata buffer to hold the expression to which it
-    // corresponds.
-    Tensor* output = nullptr;
-    // Provides a special behavior for DT_VARIANT: a variant is treated as
-    // DT_UINT8 scalar as the type to allow mapping for variant to more generic
-    // types.
-    if (expression.dtype() == DT_VARIANT) {
-      // tensor_data() is not supported for variant Tensor (i.e.,
-      // DataTypeCanUseMemcpy is false for DT_VARIANT), and so storing the
-      // XlaExpression inside the Tensor's tensor_data() does not work for
-      // variant. Instead construct a uint8 tensor and store the expression in
-      // its value.
-      // TODO(jpienaar): This should be refactored to stop masquerading
-      // XlaExpressions as Tensors.
-      output = new Tensor();
-      TensorShape tensor_shape;
-      TF_RETURN_IF_ERROR(
-          context_->allocate_temp(DT_UINT8, tensor_shape, output));
-      context_->set_output(index, *output);
-    } else {
-      TF_ASSIGN_OR_RETURN(TensorShape shape, expression.GetShape());
-      TF_RETURN_IF_ERROR(context_->allocate_output(index, shape, &output));
-    }
-    AssignExpressionToTensor(output, expression);
-    return Status::OK();
-  }();
-  if (!status.ok()) {
-    SetStatus(status);
+Status XlaOpKernelContext::allocate_output(int index, const xla::Shape& shape,
+                                           Tensor** output) {
+  // The step's default allocator is the dummy XlaCompilationAllocator which
+  // simply allocates a metadata buffer to hold the expression to which it
+  // corresponds.
+  if (expected_output_dtype(index) == DT_VARIANT) {
+    // tensor_data() is not supported for variant Tensor (i.e.,
+    // DataTypeCanUseMemcpy is false for DT_VARIANT), and so storing the
+    // XlaExpression inside the Tensor's tensor_data() does not work for
+    // variant. Instead construct a uint8 tensor and store the expression in its
+    // value.
+    // TODO(jpienaar): This should be refactored to stop masquerading
+    // XlaExpressions as Tensors.
+    *output = new Tensor();
+    TensorShape tensor_shape;
+    TF_RETURN_IF_ERROR(
+        context_->allocate_temp(DT_UINT8, tensor_shape, *output));
+    context_->set_output(index, **output);
+  } else {
+    TensorShape tensor_shape;
+    TF_RETURN_IF_ERROR(XLAShapeToTensorShape(shape, &tensor_shape));
+    TF_RETURN_IF_ERROR(context_->allocate_output(index, tensor_shape, output));
   }
+  return Status::OK();
 }
 
 void XlaOpKernelContext::SetOutput(int index, const xla::XlaOp& handle) {
-  SetOutputExpression(
-      index,
-      XlaExpression::XlaOp(handle, context_->expected_output_dtype(index)));
+  // Makes the host Tensor that will refer to the expression.
+  Tensor* output = nullptr;
+  auto shape_or = builder()->GetShape(handle);
+  if (!shape_or.ok()) {
+    SetStatus(shape_or.status());
+    return;
+  }
+
+  OP_REQUIRES_OK(context_,
+                 allocate_output(index, shape_or.ValueOrDie(), &output));
+
+  // The expression is stored in the tensor's data buffer. Fill in the
+  // fields now.
+  XlaExpression* expression = CastExpressionFromUninitializedTensor(output);
+  expression->set_handle(handle);
 }
 
 void XlaOpKernelContext::SetConstantOutput(int index, const Tensor& constant) {
-  SetOutputExpression(index, XlaExpression::Constant(constant));
+  const TensorShape& shape = constant.shape();
+
+  xla::BorrowingLiteral literal;
+  OP_REQUIRES_OK(context_, HostTensorToBorrowingLiteral(constant, &literal));
+
+  xla::XlaOp handle = xla::ConstantLiteral(builder(), literal);
+  CHECK(handle.valid());
+
+  // Make the Tensor that will refer to the expression.
+  Tensor* output = nullptr;
+  // The step's default allocator is the dummy XlaCompilationAllocator which
+  // simply allocates a metadata buffer to hold the expression to which it
+  // corresponds.
+  OP_REQUIRES_OK(context_, context_->allocate_output(index, shape, &output));
+
+  // The expression is stored in the tensor's data buffer. Fill in the
+  // fields now.
+  XlaExpression* expression = CastExpressionFromUninitializedTensor(output);
+  expression->set_handle(handle);
+  expression->set_constant_value(constant);
+}
+
+void XlaOpKernelContext::SetInvalidOutput(int index) {
+  Tensor* output = nullptr;
+  OP_REQUIRES_OK(context_,
+                 context_->allocate_output(index, TensorShape({}), &output));
+  XlaExpression* expression = CastExpressionFromUninitializedTensor(output);
+  xla::XlaOp handle;
+  expression->set_handle(handle);
 }
 
 void XlaOpKernelContext::SetResourceOutput(int index, XlaResource* resource) {
-  SetOutputExpression(index, XlaExpression::Resource(resource));
+  Tensor* output = nullptr;
+  // The shape of the output tensor is the shape of the resource itself
+  // (i.e., a scalar), not the shape of the resource's value.
+  OP_REQUIRES_OK(context_,
+                 context_->allocate_output(index, TensorShape(), &output));
+  XlaExpression* expression = CastExpressionFromUninitializedTensor(output);
+  expression->set_resource(resource);
 }
 
 Status XlaOpKernelContext::GetResourceInput(int index, XlaResource** resource) {
@@ -471,7 +552,7 @@ Status XlaOpKernelContext::GetResourceInput(int index, XlaResource** resource) {
 namespace {
 
 Status AssignVariableTensor(const Tensor& tensor, DataType type,
-                            const XlaOpKernelContext* ctx, xla::XlaOp handle,
+                            const OpKernelContext* ctx, xla::XlaOp handle,
                             xla::XlaBuilder* builder) {
   const XlaExpression* expression = CastExpressionFromTensor(tensor);
   XlaResource* variable = expression->resource();
@@ -488,14 +569,11 @@ Status AssignVariableTensor(const Tensor& tensor, DataType type,
 
   TF_RETURN_IF_ERROR(variable->SetTypeAndShape(type, shape));
 
-  TF_ASSIGN_OR_RETURN(
-      xla::Shape representation_shape,
-      ctx->compiler()->options().shape_representation_fn(shape, type));
-  xla::Shape xla_shape;
-  TF_RETURN_IF_ERROR(TensorShapeToXLAShape(type, shape, &xla_shape));
-  if (!xla::ShapeUtil::Compatible(xla_shape, representation_shape)) {
-    handle = xla::Reshape(handle,
-                          xla::AsInt64Slice(representation_shape.dimensions()));
+  XlaContext& xla_context = XlaContext::Get(ctx);
+  TF_ASSIGN_OR_RETURN(TensorShape representation_shape,
+                      xla_context.RepresentationShape(shape, type));
+  if (shape != representation_shape) {
+    handle = xla::Reshape(handle, representation_shape.dim_sizes());
   }
   return variable->SetValue(handle);
 }
@@ -505,15 +583,19 @@ Status AssignVariableTensor(const Tensor& tensor, DataType type,
 Status XlaOpKernelContext::AssignVariable(int input_index, DataType type,
                                           xla::XlaOp handle) {
   TF_RET_CHECK(handle.valid());
-  return AssignVariableTensor(context_->input(input_index), type, this, handle,
-                              builder());
+  return AssignVariableTensor(context_->input(input_index), type, context_,
+                              handle, builder());
 }
 
 Status XlaOpKernelContext::AssignVariable(absl::string_view name, DataType type,
                                           xla::XlaOp handle) {
   TF_RET_CHECK(handle.valid());
-  return AssignVariableTensor(GetInputTensorByName(name), type, this, handle,
-                              builder());
+  return AssignVariableTensor(GetInputTensorByName(name), type, context_,
+                              handle, builder());
+}
+
+XlaCompiler* XlaOpKernelContext::compiler() const {
+  return XlaContext::Get(context_).compiler();
 }
 
 void XlaOpKernelContext::CtxFailure(const Status& s) {
@@ -533,22 +615,22 @@ void XlaOpKernelContext::CtxFailureWithWarning(const char* file, int line,
 
 const xla::XlaComputation* XlaOpKernelContext::GetOrCreateMax(
     const DataType type) {
-  return xla_context()->GetOrCreateMax(type);
+  return XlaContext::Get(context_).GetOrCreateMax(type);
 }
 
 const xla::XlaComputation* XlaOpKernelContext::GetOrCreateMin(
     const DataType type) {
-  return xla_context()->GetOrCreateMin(type);
+  return XlaContext::Get(context_).GetOrCreateMin(type);
 }
 
 const xla::XlaComputation* XlaOpKernelContext::GetOrCreateAdd(
     const DataType type) {
-  return xla_context()->GetOrCreateAdd(type);
+  return XlaContext::Get(context_).GetOrCreateAdd(type);
 }
 
 const xla::XlaComputation* XlaOpKernelContext::GetOrCreateMul(
     const DataType type) {
-  return xla_context()->GetOrCreateMul(type);
+  return XlaContext::Get(context_).GetOrCreateMul(type);
 }
 
 const Tensor& XlaOpKernelContext::GetInputTensorByName(absl::string_view name) {

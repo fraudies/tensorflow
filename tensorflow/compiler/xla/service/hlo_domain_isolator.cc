@@ -23,14 +23,23 @@ limitations under the License.
 
 namespace xla {
 
-namespace {
+class HloDomainIsolator::RunContext {
+ public:
+  RunContext(HloModule* module, HloDomainIsolator* isolator)
+      : module_(module), isolator_(isolator) {}
 
-StatusOr<bool> RunInternal(HloModule* module,
-                           HloDomainIsolator::DomainCreator* creator) {
-  hlo_graph_dumper::MaybeDumpHloModule(*module, "Before Domain Isolator");
+  StatusOr<bool> Run();
+
+ private:
+  HloModule* module_;
+  HloDomainIsolator* isolator_;
+};
+
+StatusOr<bool> HloDomainIsolator::RunContext::Run() {
+  hlo_graph_dumper::MaybeDumpHloModule(*module_, "Before Domain Isolator");
 
   int64 added_domains = 0;
-  for (HloComputation* computation : module->computations()) {
+  for (HloComputation* computation : module_->computations()) {
     // Walk in post order and place all the required kDomain instructions.
     for (HloInstruction* instruction :
          computation->MakeInstructionPostOrder()) {
@@ -46,7 +55,8 @@ StatusOr<bool> RunInternal(HloModule* module,
           root = root->mutable_operand(0);
         }
         // Check whether a kDomain is necessary between instruction and operand.
-        HloInstruction* domain = (*creator)(instruction, root, operand);
+        HloInstruction* domain =
+            isolator_->creator_(instruction, root, operand);
         if (domain != nullptr) {
           VLOG(4) << "New domain: " << domain->ToString();
           TF_RETURN_IF_ERROR(operand->ReplaceUseWith(instruction, domain));
@@ -57,19 +67,17 @@ StatusOr<bool> RunInternal(HloModule* module,
   }
   VLOG(3) << "Added " << added_domains << " kDomain instructions";
   if (added_domains > 0) {
-    hlo_graph_dumper::MaybeDumpHloModule(*module, "After Domain Isolator");
+    hlo_graph_dumper::MaybeDumpHloModule(*module_, "After Domain Isolator");
   }
   return added_domains > 0;
 }
 
-}  // namespace
-
-HloDomainIsolator::HloDomainIsolator(DomainCreatorFactory creator_factory)
-    : creator_factory_(std::move(creator_factory)) {}
+HloDomainIsolator::HloDomainIsolator(DomainCreator creator)
+    : creator_(std::move(creator)) {}
 
 StatusOr<bool> HloDomainIsolator::Run(HloModule* module) {
-  DomainCreator creator = creator_factory_();
-  return RunInternal(module, &creator);
+  RunContext run_context(module, this);
+  return run_context.Run();
 }
 
 }  // namespace xla

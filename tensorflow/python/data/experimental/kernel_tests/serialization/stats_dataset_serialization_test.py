@@ -18,7 +18,6 @@ from __future__ import division
 from __future__ import print_function
 
 from tensorflow.python.data.experimental.kernel_tests.serialization import dataset_serialization_test_base
-from tensorflow.python.data.experimental.ops import stats_aggregator
 from tensorflow.python.data.experimental.ops import stats_ops
 from tensorflow.python.data.ops import dataset_ops
 from tensorflow.python.framework import errors
@@ -93,9 +92,9 @@ class StatsDatasetSerializationTest(
         None, num_outputs)
 
   def _build_dataset_stats_aggregator(self):
-    aggregator = stats_aggregator.StatsAggregator()
+    stats_aggregator = stats_ops.StatsAggregator()
     return dataset_ops.Dataset.range(10).apply(
-        stats_ops.set_stats_aggregator(aggregator))
+        stats_ops.set_stats_aggregator(stats_aggregator))
 
   def test_set_stats_aggregator_not_support_checkpointing(self):
     with self.assertRaisesRegexp(errors.UnimplementedError,

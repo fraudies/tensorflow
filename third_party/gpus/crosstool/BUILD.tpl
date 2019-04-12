@@ -22,12 +22,6 @@ cc_toolchain_suite(
         "local|compiler": ":cc-compiler-local",
         "darwin|compiler": ":cc-compiler-darwin",
         "x64_windows|msvc-cl": ":cc-compiler-windows",
-        "x64_windows": ":cc-compiler-windows",
-        "arm": ":cc-compiler-local",
-        "k8": ":cc-compiler-local",
-        "piii": ":cc-compiler-local",
-        "ppc": ":cc-compiler-local",
-        "darwin": ":cc-compiler-darwin",
     },
 )
 
@@ -47,7 +41,6 @@ cc_toolchain(
     # last on the command line and contain all shared libraries to link, so all
     # regular options will be left of them.
     supports_param_files = 1,
-    toolchain_identifier = "local_linux",
 )
 
 cc_toolchain(
@@ -62,7 +55,6 @@ cc_toolchain(
     static_runtime_libs = [":empty"],
     strip_files = ":empty",
     supports_param_files = 0,
-    toolchain_identifier = "local_darwin",
 )
 
 cc_toolchain(
@@ -77,7 +69,6 @@ cc_toolchain(
     static_runtime_libs = [":empty"],
     strip_files = ":empty",
     supports_param_files = 1,
-    toolchain_identifier = "local_windows",
 )
 
 filegroup(

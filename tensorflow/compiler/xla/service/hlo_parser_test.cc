@@ -21,8 +21,7 @@ limitations under the License.
 #include "absl/strings/string_view.h"
 #include "tensorflow/compiler/xla/service/hlo_casting_utils.h"
 #include "tensorflow/compiler/xla/service/hlo_instructions.h"
-#include "tensorflow/compiler/xla/service/pattern_matcher.h"
-#include "tensorflow/compiler/xla/service/pattern_matcher_gmock.h"
+#include "tensorflow/compiler/xla/service/hlo_matchers.h"
 #include "tensorflow/compiler/xla/window_util.h"
 #include "tensorflow/core/lib/core/status_test_util.h"
 #include "tensorflow/core/platform/test.h"
@@ -30,7 +29,7 @@ limitations under the License.
 namespace xla {
 namespace {
 
-namespace m = ::xla::match;
+namespace op = ::xla::testing::opcode_matchers;
 using absl::string_view;
 
 struct TestData {
@@ -76,18 +75,6 @@ ENTRY %constant_pred () -> pred[] {
 
 )"
 },
-// pred array constant
-{
-"ConstantPredArray",
-R"(HloModule module
-
-ENTRY %constant_pred_array () -> pred[2,3] {
-  ROOT %constant = pred[2,3]{1,0} constant(pred[2,3] { { 0, 1, 0 }, { 1, 0, 1 } })
-}
-
-)"
-},
-
 // s32 constant
 {
 "ConstantS32",
@@ -196,7 +183,7 @@ ENTRY %add_constants () -> f32[] {
 R"(HloModule TupleConstant_module
 
 ENTRY %TupleConstant.v1 () -> (f32[2,1], f32[2]) {
-  ROOT %constant = (f32[2,1]{1,0}, f32[2]{0}) constant((f32[2,1], f32[2]) ( f32[2,1] { {1}, {2} }, {2, 42} ))
+  ROOT %constant = (f32[2,1]{1,0}, f32[2]{0}) constant((f32[2,1], f32[2]) ( f32[2,1] { { 1 }, { 2 } }, {2, 42} ))
 }
 
 )"
@@ -588,7 +575,7 @@ ENTRY %DynamicUpdateSlice.v4 (input: s32[1,1,25,1], update: s32[1,1,2,1], start_
 R"(HloModule BasicTraining_module
 
 ENTRY %BasicTraining.v4 () -> (f32[2,2,1,2], f32[2], f32[2]) {
-  %constant = f32[2,2,1,2]{3,2,1,0} constant(f32[2,2,1,2] { { /*i0=0*/ { /*i1=0*/ { 1, 2 } }, { /*i1=1*/ { 3, 4 } } }, { /*i0=1*/ { /*i1=0*/ { 5, 6 } }, { /*i1=1*/ { 7, 8 } } } })
+  %constant = f32[2,2,1,2]{3,2,1,0} constant(f32[2,2,1,2] { { /*i0=0*/ { /*i1=0*/ {1, 2} }, { /*i1=1*/ {3, 4} } }, { /*i0=1*/ { /*i1=0*/ {5, 6} }, { /*i1=1*/ {7, 8} } } })
   %constant.1 = f32[2]{0} constant({2, 3})
   %constant.2 = f32[2]{0} constant({1, 2})
   ROOT %batch-norm-training = (f32[2,2,1,2]{3,2,1,0}, f32[2]{0}, f32[2]{0}) batch-norm-training(f32[2,2,1,2]{3,2,1,0} %constant, f32[2]{0} %constant.1, f32[2]{0} %constant.2), epsilon=0.001, feature_index=3
@@ -1153,25 +1140,6 @@ ENTRY CrossReplicaSumWithSubgroups {
 
 )"
 },
-// cross-replica-sum with all-reduce-id
-{
-"CrossReplicaSumAllReduce",
-R"(HloModule CRS
-
-add {
-  lhs = f32[] parameter(0)
-  rhs = f32[] parameter(1)
-  ROOT add = f32[] add(lhs, rhs)
-}
-
-ENTRY CRS {
-  input = f32[8]{0} parameter(0)
-  crs.1 = f32[8]{0} cross-replica-sum(input), replica_groups={{0}}, all_reduce_id=1, to_apply=add
-  ROOT crs.0 = f32[8]{0} cross-replica-sum(input), replica_groups={{0}}, all_reduce_id=1, to_apply=add
-}
-
-)"
-},
 // all-to-all
 {
 "AllToAll",
@@ -1242,38 +1210,7 @@ ENTRY Sort {
 }
 
 )"
-    },
-// AfterAll with multiple operands
-{
-"AfterAllWithMultipleOperands",
-R"(HloModule AfterAllWithMultipleOperands
-
-ENTRY AfterAllWithMultipleOperands {
-  p0 = f32[] parameter(0)
-  token0 = token[] after-all()
-  token1 = token[] after-all()
-  ROOT after-all = token[] after-all(p0, token0, token1)
 }
-
-)"
-},
-// AddDependency
-// A dependency chain is created from 'neg' to 'exp' using tokens.
-{
-"AddDependency",
-R"(HloModule AddDependency
-
-ENTRY AddDependency {
-  p = f32[] parameter(0)
-  neg = f32[] negate(p)
-  token = token[] after-all(neg)
-  p_after_token = f32[] add-dependency(p, token)
-  exp = f32[] exponential(p_after_token)
-  ROOT sum = f32[] add(neg, exp)
-}
-
-)"
-},
 });
   // clang-format on
 }
@@ -1894,8 +1831,7 @@ ENTRY ReduceR3ToR2 {
 )";
   TF_ASSERT_OK_AND_ASSIGN(auto module, ParseHloString(original));
   ASSERT_NE(module->entry_computation(), nullptr);
-  EXPECT_THAT(module->entry_computation()->root_instruction(),
-              GmockMatch(m::Reduce()));
+  EXPECT_THAT(module->entry_computation()->root_instruction(), op::Reduce());
 }
 
 TEST_F(HloParserTest, ParseSharding) {
@@ -1955,7 +1891,7 @@ TEST(HloParserSingleOpTest, SingleOp) {
   const HloComputation* computation = module->entry_computation();
   ASSERT_NE(computation, nullptr);
   EXPECT_THAT(computation->root_instruction(),
-              GmockMatch(m::Multiply(m::Parameter(0), m::Parameter(1))));
+              op::Multiply(op::Parameter(0), op::Parameter(1)));
 }
 
 TEST(HloParserSingleOpTest, SingleOpNoShapeProducesError) {
@@ -1983,7 +1919,7 @@ TEST(HloParserSingleOpTest, SingleOpNoNames) {
   const HloComputation* computation = module->entry_computation();
   ASSERT_NE(computation, nullptr);
   EXPECT_THAT(computation->root_instruction(),
-              GmockMatch(m::Multiply(m::Parameter(0), m::Parameter(1))));
+              op::Multiply(op::Parameter(0), op::Parameter(1)));
 }
 
 TEST(HloParserSingleOpTest, CanonicalOp) {
@@ -1992,7 +1928,7 @@ TEST(HloParserSingleOpTest, CanonicalOp) {
   const HloComputation* computation = module->entry_computation();
   ASSERT_NE(computation, nullptr);
   EXPECT_THAT(computation->root_instruction(),
-              GmockMatch(m::Multiply(m::Parameter(0), m::Parameter(1))));
+              op::Multiply(op::Parameter(0), op::Parameter(1)));
   EXPECT_EQ(
       computation->root_instruction()->ToString(HloPrintOptions::Canonical()),
       text);
@@ -2046,11 +1982,7 @@ TEST(HloParserSingleOpTest, SingleOpWithNested) {
   const HloComputation* computation = module->entry_computation();
   ASSERT_NE(computation, nullptr);
   EXPECT_THAT(computation->root_instruction(),
-              GmockMatch(m::Op()
-                             .WithOpcode(HloOpcode::kFusion)
-                             .WithNumOperands(2)
-                             .WithOperand(0, m::Parameter(0))
-                             .WithOperand(1, m::Parameter(1))));
+              op::Fusion(op::Parameter(0), op::Parameter(1)));
 }
 
 TEST(HloParserSingleOpTest, SingleOpWithNested_DoesNotExist) {
@@ -2094,7 +2026,7 @@ TEST(HloParserSingleOpTest, ConvolutionTrivialFeatureGroupCount) {
   const HloComputation* computation = module->entry_computation();
   ASSERT_NE(computation, nullptr);
   EXPECT_THAT(computation->root_instruction(),
-              GmockMatch(m::Convolution(m::Parameter(0), m::Parameter(1))));
+              op::Convolution(op::Parameter(0), op::Parameter(1)));
   auto* convolution =
       Cast<HloConvolutionInstruction>(computation->root_instruction());
   EXPECT_EQ(convolution->feature_group_count(), 1);
@@ -2158,10 +2090,8 @@ ENTRY %axpy.v5 (alpha: f32[], x: f32[2,4], y: f32[2,4]) -> f32[2,4] {
       module->schedule().is_computation_scheduled(module->entry_computation()));
   EXPECT_THAT(
       module->schedule().sequence(module->entry_computation()).instructions(),
-      ::testing::ElementsAre(
-          GmockMatch(m::Parameter()), GmockMatch(m::Broadcast()),
-          GmockMatch(m::Parameter()), GmockMatch(m::Multiply()),
-          GmockMatch(m::Parameter()), GmockMatch(m::Add())));
+      ::testing::ElementsAre(op::Parameter(), op::Broadcast(), op::Parameter(),
+                             op::Multiply(), op::Parameter(), op::Add()));
 }
 
 TEST_F(HloParserTest, IsScheduledIsTrueDifferentOrder) {
@@ -2187,10 +2117,8 @@ ENTRY %axpy.v5 (alpha: f32[], x: f32[2,4], y: f32[2,4]) -> f32[2,4] {
       module->schedule().is_computation_scheduled(module->entry_computation()));
   EXPECT_THAT(
       module->schedule().sequence(module->entry_computation()).instructions(),
-      ::testing::ElementsAre(
-          GmockMatch(m::Parameter()), GmockMatch(m::Parameter()),
-          GmockMatch(m::Parameter()), GmockMatch(m::Broadcast()),
-          GmockMatch(m::Multiply()), GmockMatch(m::Add())));
+      ::testing::ElementsAre(op::Parameter(), op::Parameter(), op::Parameter(),
+                             op::Broadcast(), op::Multiply(), op::Add()));
 }
 
 TEST_F(HloParserTest, CustomCallWrongNumberofOperandConstraints) {
@@ -2231,22 +2159,6 @@ ENTRY entry {
 )";
   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
                           ParseHloString(text));
-}
-
-TEST_F(HloParserTest, ShapeMismatchInOperand) {
-  const string text = R"(
-HloModule foobar
-
-ENTRY %entrycomp (p: f32[2,2]) -> f32[2,2] {
-  %p = f32[2,2] parameter(0)
-  %constant.1 = f32[2,2] constant(f32[2,2] {{1, 2}, {3, 4}})
-  ROOT %add.1 = f32[2,2] add(f32[2,2] %p, f32[2,5] %constant.1)
-}
-)";
-
-  ExpectHasSubstr(ParseHloString(text).status().error_message(),
-                  "The declared operand shape f32[2,5]{1,0} is not compatible"
-                  " with the shape of the operand instruction f32[2,2]{1,0}.");
 }
 
 // custom call incompatible shape.

@@ -27,7 +27,6 @@ from tensorflow.python.platform import googletest
 
 class CommonTest(test_util.TensorFlowTestCase):
 
-  @test_util.run_deprecated_v1
   def testOnFeedOneFetch(self):
     a = constant_op.constant(10.0, name="a")
     b = constant_op.constant(20.0, name="b")
@@ -36,7 +35,6 @@ class CommonTest(test_util.TensorFlowTestCase):
     self.assertItemsEqual(["a:0"], loaded[0])
     self.assertItemsEqual(["b:0"], loaded[1])
 
-  @test_util.run_deprecated_v1
   def testGetRunKeyFlat(self):
     a = constant_op.constant(10.0, name="a")
     b = constant_op.constant(20.0, name="b")
@@ -45,7 +43,6 @@ class CommonTest(test_util.TensorFlowTestCase):
     self.assertItemsEqual(["a:0"], loaded[0])
     self.assertItemsEqual(["a:0", "b:0"], loaded[1])
 
-  @test_util.run_deprecated_v1
   def testGetRunKeyNestedFetches(self):
     a = constant_op.constant(10.0, name="a")
     b = constant_op.constant(20.0, name="b")

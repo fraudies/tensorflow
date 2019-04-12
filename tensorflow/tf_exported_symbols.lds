@@ -5,4 +5,3 @@
 *TFE_*
 *nsync_*
 *pywrap_xla*
-*stream_executor*

@@ -38,7 +38,7 @@ class BroadcastToOp : public XlaOpKernel {
   }
 };
 
-REGISTER_XLA_OP(Name("BroadcastTo").CompileTimeConstantInput("shape"),
+REGISTER_XLA_OP(Name("BroadcastTo").CompileTimeConstInput("shape"),
                 BroadcastToOp);
 
 }  // namespace

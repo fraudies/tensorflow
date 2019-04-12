@@ -1,6 +1,5 @@
 op {
   graph_op_name: "PaddedBatchDataset"
-  visibility: HIDDEN
   in_arg {
     name: "batch_size"
     description: <<END

@@ -18,7 +18,6 @@ from __future__ import print_function
 
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
-from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import data_flow_ops
 from tensorflow.python.ops import math_ops
@@ -29,7 +28,6 @@ TIMEOUT = 1
 
 class StageTest(test.TestCase):
 
-  @test_util.run_deprecated_v1
   def testSimple(self):
     with ops.Graph().as_default() as G:
       with ops.device('/cpu:0'):
@@ -43,13 +41,12 @@ class StageTest(test.TestCase):
 
     G.finalize()
 
-    with self.session(use_gpu=True, graph=G) as sess:
+    with self.test_session(use_gpu=True, graph=G) as sess:
       sess.run(stage, feed_dict={x: -1})
       for i in range(10):
         _, yval = sess.run([stage, y], feed_dict={x: i})
         self.assertAllClose(4 * (i - 1) * (i - 1) * 128, yval, rtol=1e-4)
 
-  @test_util.run_deprecated_v1
   def testMultiple(self):
     with ops.Graph().as_default() as G:
       with ops.device('/cpu:0'):
@@ -63,14 +60,13 @@ class StageTest(test.TestCase):
 
     G.finalize()
 
-    with self.session(use_gpu=True, graph=G) as sess:
+    with self.test_session(use_gpu=True, graph=G) as sess:
       sess.run(stage, feed_dict={x: -1})
       for i in range(10):
         _, yval = sess.run([stage, y], feed_dict={x: i})
         self.assertAllClose(
             4 * (i - 1) * (i - 1) * (i - 1) * 128, yval, rtol=1e-4)
 
-  @test_util.run_deprecated_v1
   def testDictionary(self):
     with ops.Graph().as_default() as G:
       with ops.device('/cpu:0'):
@@ -89,7 +85,7 @@ class StageTest(test.TestCase):
 
     G.finalize()
 
-    with self.session(use_gpu=True, graph=G) as sess:
+    with self.test_session(use_gpu=True, graph=G) as sess:
       sess.run(stage, feed_dict={x: -1})
       for i in range(10):
         _, yval = sess.run([stage, y], feed_dict={x: i})
@@ -114,7 +110,6 @@ class StageTest(test.TestCase):
 
     G.finalize()
 
-  @test_util.run_deprecated_v1
   def testPeek(self):
     with ops.Graph().as_default() as G:
       with ops.device('/cpu:0'):
@@ -131,14 +126,13 @@ class StageTest(test.TestCase):
 
     G.finalize()
 
-    with self.session(use_gpu=True, graph=G) as sess:
+    with self.test_session(use_gpu=True, graph=G) as sess:
       for i in range(10):
         sess.run(stage, feed_dict={x: i})
 
       for i in range(10):
         self.assertTrue(sess.run(peek, feed_dict={p: i}) == [i])
 
-  @test_util.run_deprecated_v1
   def testSizeAndClear(self):
     with ops.Graph().as_default() as G:
       with ops.device('/cpu:0'):
@@ -156,7 +150,7 @@ class StageTest(test.TestCase):
 
     G.finalize()
 
-    with self.session(use_gpu=True, graph=G) as sess:
+    with self.test_session(use_gpu=True, graph=G) as sess:
       sess.run(stage, feed_dict={x: -1})
       self.assertEqual(sess.run(size), 1)
       sess.run(stage, feed_dict={x: -1})
@@ -164,7 +158,6 @@ class StageTest(test.TestCase):
       sess.run(clear)
       self.assertEqual(sess.run(size), 0)
 
-  @test_util.run_deprecated_v1
   def testCapacity(self):
     capacity = 3
 
@@ -188,7 +181,7 @@ class StageTest(test.TestCase):
     queue = Queue.Queue()
     n = 8
 
-    with self.session(use_gpu=True, graph=G) as sess:
+    with self.test_session(use_gpu=True, graph=G) as sess:
       # Stage data in a separate thread which will block
       # when it hits the staging area's capacity and thus
       # not fill the queue with n tokens
@@ -226,7 +219,6 @@ class StageTest(test.TestCase):
       # It should now be empty
       self.assertTrue(sess.run(size) == 0)
 
-  @test_util.run_deprecated_v1
   def testMemoryLimit(self):
     memory_limit = 512 * 1024  # 512K
     chunk = 200 * 1024  # 256K
@@ -253,7 +245,7 @@ class StageTest(test.TestCase):
     queue = Queue.Queue()
     n = 8
 
-    with self.session(use_gpu=True, graph=G) as sess:
+    with self.test_session(use_gpu=True, graph=G) as sess:
       # Stage data in a separate thread which will block
       # when it hits the staging area's capacity and thus
       # not fill the queue with n tokens

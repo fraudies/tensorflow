@@ -150,11 +150,10 @@ class TFRecordOptions(object):
     return options
 
 
-@tf_export(v1=["io.tf_record_iterator", "python_io.tf_record_iterator"])
-@deprecation.deprecated(
-    date=None,
-    instructions=("Use eager execution and: \n"
-                  "`tf.data.TFRecordDataset(path)`"))
+@tf_export(
+    "io.tf_record_iterator",
+    v1=["io.tf_record_iterator", "python_io.tf_record_iterator"])
+@deprecation.deprecated_endpoints("python_io.tf_record_iterator")
 def tf_record_iterator(path, options=None):
   """An iterator that read the records from a TFRecords file.
 

@@ -24,7 +24,6 @@ import zlib
 from six import BytesIO
 
 from tensorflow.python.framework import dtypes
-from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import parsing_ops
 from tensorflow.python.platform import test
@@ -43,7 +42,6 @@ class DecodeCompressedOpTest(test.TestCase):
         f.write(bytes_in)
       return out.getvalue()
 
-  @test_util.run_deprecated_v1
   def testDecompress(self):
     for compression_type in ["ZLIB", "GZIP", ""]:
       with self.cached_session():
@@ -57,7 +55,6 @@ class DecodeCompressedOpTest(test.TestCase):
                                   self._compress(b"bBbb", compression_type)]})
         self.assertAllEqual([b"AaAA", b"bBbb"], result)
 
-  @test_util.run_deprecated_v1
   def testDecompressWithRaw(self):
     for compression_type in ["ZLIB", "GZIP", ""]:
       with self.cached_session():

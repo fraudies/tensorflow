@@ -27,13 +27,12 @@ class ServerBuilder;
 namespace tensorflow {
 
 class AsyncServiceInterface;
-class ConfigProto;
 struct WorkerEnv;
 struct WorkerSession;
 
 class GrpcWorker : public Worker {
  public:
-  GrpcWorker(WorkerEnv* env, const ConfigProto& config);
+  GrpcWorker(WorkerEnv* env);
 
   // Specialized version of RecvTensor for gRPC, which avoids a copy.
   virtual void GrpcRecvTensorAsync(CallOptions* opts,
@@ -51,11 +50,9 @@ class GrpcWorker : public Worker {
 
  private:
   RecentRequestIds recent_request_ids_;
-  const int32 recv_buf_max_chunk_;
 };
 
-std::unique_ptr<GrpcWorker> NewGrpcWorker(WorkerEnv* worker_env,
-                                          const ConfigProto& config);
+std::unique_ptr<GrpcWorker> NewGrpcWorker(WorkerEnv* worker_env);
 
 // Returns an implementation of WorkerService rpc service.
 std::unique_ptr<AsyncServiceInterface> NewGrpcWorkerService(

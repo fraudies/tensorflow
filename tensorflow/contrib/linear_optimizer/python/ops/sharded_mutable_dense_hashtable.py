@@ -12,12 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Sharded mutable dense hash table (deprecated).
-
-This module and all its submodules are deprecated. To UPDATE or USE linear
-optimizers, please check its latest version in core:
-tensorflow_estimator/python/estimator/canned/linear_optimizer/.
-"""
+"""Sharded mutable dense hash table."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -33,12 +28,9 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import data_flow_ops
 from tensorflow.python.ops import math_ops
-from tensorflow.python.util import deprecation
 
 
-# TODO(rohanj): This should subclass Checkpointable and implement
-# _gather_saveables_for_checkpoint.
-class ShardedMutableDenseHashTable(object):
+class ShardedMutableDenseHashTable(lookup.LookupInterface):
   """A sharded version of MutableDenseHashTable.
 
   It is designed to be interface compatible with LookupInterface and
@@ -51,10 +43,6 @@ class ShardedMutableDenseHashTable(object):
 
   # TODO(andreasst): consider moving this to lookup module
 
-  @deprecation.deprecated(
-      None, 'This class is deprecated. To UPDATE or USE linear optimizers, '
-      'please check its latest version in core: '
-      'tensorflow_estimator/python/estimator/canned/linear_optimizer/.')
   def __init__(self,
                key_dtype,
                value_dtype,
@@ -64,10 +52,9 @@ class ShardedMutableDenseHashTable(object):
                num_shards=1,
                checkpoint=True,
                name='ShardedMutableHashTable'):
-    self._key_dtype = key_dtype
-    self._value_dtype = value_dtype
     with ops.name_scope(name, 'sharded_mutable_hash_table') as scope:
-      self._table_name = scope
+      super(ShardedMutableDenseHashTable, self).__init__(key_dtype,
+                                                         value_dtype, scope)
       table_shards = []
       for i in range(num_shards):
         table_shards.append(
@@ -84,10 +71,6 @@ class ShardedMutableDenseHashTable(object):
       # pylint: disable=protected-access
       self._value_shape = self._table_shards[0]._value_shape
       # pylint: enable=protected-access
-
-  @property
-  def name(self):
-    return self._table_name
 
   @property
   def _num_shards(self):
@@ -109,7 +92,7 @@ class ShardedMutableDenseHashTable(object):
     if key_shape.ndims > 1:
       # If keys are a matrix (i.e. a single key is a vector), we use the first
       # element of each key vector to determine the shard.
-      keys = array_ops.slice(keys, [0, 0], [key_shape.dims[0].value, 1])
+      keys = array_ops.slice(keys, [0, 0], [key_shape[0].value, 1])
       keys = array_ops.reshape(keys, [-1])
     indices = math_ops.mod(math_ops.abs(keys), self._num_shards)
     return math_ops.cast(indices, dtypes.int32)
@@ -123,7 +106,6 @@ class ShardedMutableDenseHashTable(object):
                        keys.get_shape())
 
   def lookup(self, keys, name=None):
-    """Looks up `keys` in a table, outputs the corresponding values."""
     if keys.dtype.base_dtype != self._key_dtype:
       raise TypeError('Signature mismatch. Keys must be dtype %s, got %s.' %
                       (self._key_dtype, keys.dtype))
@@ -152,7 +134,6 @@ class ShardedMutableDenseHashTable(object):
     return result
 
   def insert(self, keys, values, name=None):
-    """Inserts `keys` in a table."""
     self._check_keys(keys)
     num_shards = self._num_shards
     if num_shards == 1:

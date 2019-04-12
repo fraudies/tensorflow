@@ -5,6 +5,6 @@ op {
   }
   endpoint {
     name: "string_strip"
-    deprecation_version: 2
+    deprecated: true
   }
 }

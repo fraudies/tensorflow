@@ -102,7 +102,7 @@ class TFAPIChangeSpec(ast_edits.APIChangeSpec):
     }
 
     # Mapping from function to the new name of the function
-    self.symbol_renames = {
+    self.function_renames = {
         "tf.inv": "tf.reciprocal",
         "tf.contrib.deprecated.scalar_summary": "tf.summary.scalar",
         "tf.contrib.deprecated.histogram_summary": "tf.summary.histogram",
@@ -177,9 +177,6 @@ class TFAPIChangeSpec(ast_edits.APIChangeSpec):
 
     # Specially handled functions.
     self.function_handle = {"tf.reverse": self._reverse_handler}
-
-    # Warnings that should be printed if corresponding functions are used.
-    self.function_warnings = {}
 
   @staticmethod
   def _reverse_handler(file_edit_recorder, node):

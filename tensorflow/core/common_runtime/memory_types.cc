@@ -96,12 +96,11 @@ Status ValidateMemoryTypes(const DeviceType& device_type, const Graph* g) {
         if (sm == dm) {
           return Status::OK();
         }
-        return errors::Internal("Memory type mismatch (", sm, " ", dm,
-                                ") between :", e->src()->id(), ":",
-                                e->src_output(), " and ", e->dst()->id(), ":",
-                                e->dst_input(), " : from ",
-                                FormatNodeForError(*e->src()), " to ",
-                                FormatNodeForError(*e->dst()));
+        return errors::Internal(
+            "Memory type mismatch (", sm, " ", dm,
+            ") between :", e->src()->id(), ":", e->src_output(), " and ",
+            e->dst()->id(), ":", e->dst_input(), " : from ",
+            e->src()->DebugString(), " to ", e->dst()->DebugString());
       });
 }
 
@@ -210,7 +209,7 @@ Status MemoryTypeForOutput(const DeviceType& device_type, const Graph* g,
                                         &inp_mvec, &out_mvec));
   if (out_mvec.size() <= index) {
     return errors::Internal("Trying to get the memory type for ", index,
-                            "'th output of node ", FormatNodeForError(*n),
+                            "'th output of node ", n->DebugString(),
                             " that has only ", out_mvec.size(), " outputs");
   }
   *memory_type = out_mvec[index];
