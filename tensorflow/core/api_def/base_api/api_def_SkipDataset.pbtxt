@@ -1,6 +1,5 @@
 op {
   graph_op_name: "SkipDataset"
-  visibility: HIDDEN
   in_arg {
     name: "count"
     description: <<END

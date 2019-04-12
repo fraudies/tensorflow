@@ -21,7 +21,6 @@ limitations under the License.
 #include "absl/container/node_hash_map.h"
 #include "absl/memory/memory.h"
 #include "absl/types/span.h"
-#include "tensorflow/compiler/xla/array2d.h"
 #include "tensorflow/compiler/xla/service/dfs_hlo_visitor_with_default.h"
 #include "tensorflow/compiler/xla/service/hlo_computation.h"
 #include "tensorflow/compiler/xla/service/hlo_instruction.h"
@@ -120,17 +119,6 @@ class HloEvaluator : public DfsHloVisitorWithDefault {
                                   const PrecisionConfig& precision_config,
                                   const Literal& lhs, const Literal& rhs);
 
-  // Enable the fast path for certain operations like dot or convolution.
-  void set_use_fast_path(bool value) { use_fast_path_ = value; }
-
-  // Returns the result of a matrix multiply `lhs x rhs`.
-  static std::unique_ptr<Array2D<Eigen::half>> MatmulArray2D(
-      const Array2D<Eigen::half>& lhs, const Array2D<Eigen::half>& rhs);
-  static std::unique_ptr<Array2D<float>> MatmulArray2D(
-      const Array2D<float>& lhs, const Array2D<float>& rhs);
-  static std::unique_ptr<Array2D<double>> MatmulArray2D(
-      const Array2D<double>& lhs, const Array2D<double>& rhs);
-
  protected:
   // Make HloEvaluatorTypedVisitor a friend because it is logically part of this
   // class.
@@ -156,8 +144,6 @@ class HloEvaluator : public DfsHloVisitorWithDefault {
   // Operations that are type-agnostic or always return a specific type, such as
   // HandleIsFinite where boolean is always returned.
   //
-  Status HandleBitcast(HloInstruction* bitcast) override;
-
   Status HandleParameter(HloInstruction* parameter) override;
 
   Status HandleConstant(HloInstruction* constant) override;
@@ -194,9 +180,7 @@ class HloEvaluator : public DfsHloVisitorWithDefault {
 
   Status HandleBroadcast(HloInstruction* broadcast) override;
 
-  Status HandleAfterAll(HloInstruction* after_all) override;
-
-  Status HandleAddDependency(HloInstruction* add_dependency) override;
+  Status HandleAfterAll(HloInstruction* token) override;
 
   Status HandleSort(HloInstruction* sort) override;
 
@@ -229,9 +213,6 @@ class HloEvaluator : public DfsHloVisitorWithDefault {
   // we cannot use flat_hash_map any more.
   absl::node_hash_map<const HloInstruction*, Literal> evaluated_;
 
-  // Use fast path that uses eigen in the evaluator.
-  bool use_fast_path_ = false;
-
  private:
   template <typename ReturnT, typename NativeT>
   static StatusOr<Literal> ElementWiseUnaryOpImpl(
@@ -240,7 +221,16 @@ class HloEvaluator : public DfsHloVisitorWithDefault {
       const Literal& operand_literal) {
     const auto shape = instruction->shape();
     const auto* operand = instruction->operand(0);
-    TF_RET_CHECK(ShapeUtil::SameDimensions(shape, operand->shape()));
+
+    // TODO(b/35950897, b/27796129): add DCHECK back once implicit broadcast is
+    // removed.
+    if (!ShapeUtil::SameDimensions(shape, operand->shape())) {
+      return Unimplemented(
+          "Implicit broadcasting is currently unsupported in HLO evaluator "
+          "Shape Mismatch: %s vs %s",
+          ShapeUtil::HumanString(shape),
+          ShapeUtil::HumanString(operand->shape()));
+    }
 
     Literal result(shape);
     TF_RETURN_IF_ERROR(
@@ -265,8 +255,6 @@ class HloEvaluator : public DfsHloVisitorWithDefault {
   TF_DISALLOW_COPY_AND_ASSIGN(HloEvaluator);
 };
 
-std::unique_ptr<Array2D<float>> MatmulArray2D(const Array2D<float>& lhs,
-                                              const Array2D<float>& rhs);
 }  // namespace xla
 
 #endif  // TENSORFLOW_COMPILER_XLA_SERVICE_HLO_EVALUATOR_H_

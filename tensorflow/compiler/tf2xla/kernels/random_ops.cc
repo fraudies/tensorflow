@@ -20,12 +20,13 @@ limitations under the License.
 #include "tensorflow/compiler/tf2xla/kernels/gather_op_helpers.h"
 #include "tensorflow/compiler/tf2xla/lib/random.h"
 #include "tensorflow/compiler/tf2xla/lib/util.h"
+#include "tensorflow/compiler/tf2xla/lib/while_loop.h"
 #include "tensorflow/compiler/tf2xla/shape_util.h"
 #include "tensorflow/compiler/tf2xla/xla_helpers.h"
 #include "tensorflow/compiler/tf2xla/xla_op_kernel.h"
 #include "tensorflow/compiler/tf2xla/xla_op_registry.h"
 #include "tensorflow/compiler/xla/client/lib/arithmetic.h"
-#include "tensorflow/compiler/xla/client/lib/loops.h"
+#include "tensorflow/compiler/xla/client/lib/numeric.h"
 #include "tensorflow/compiler/xla/client/xla_builder.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/tensor.h"
@@ -57,7 +58,7 @@ class RandomUniformOp : public XlaOpKernel {
   TF_DISALLOW_COPY_AND_ASSIGN(RandomUniformOp);
 };
 
-REGISTER_XLA_OP(Name("RandomUniform").CompileTimeConstantInput("shape"),
+REGISTER_XLA_OP(Name("RandomUniform").CompileTimeConstInput("shape"),
                 RandomUniformOp);
 
 class RandomShuffleOp : public XlaOpKernel {
@@ -175,8 +176,8 @@ class RandomShuffleOp : public XlaOpKernel {
     };
     // for i in range(n):
     auto swap_loop_result =
-        xla::ForEachIndex(n, xla::S32, swap_body_fn, {swaps, indices},
-                          "indices_swap_loop", builder)
+        XlaForEachIndex(n, xla::S32, swap_body_fn, {swaps, indices},
+                        "indices_swap_loop", builder)
             .ValueOrDie();
     auto swapped_indices = swap_loop_result[1];
 
@@ -226,7 +227,7 @@ class RandomUniformIntOp : public XlaOpKernel {
   TF_DISALLOW_COPY_AND_ASSIGN(RandomUniformIntOp);
 };
 
-REGISTER_XLA_OP(Name("RandomUniformInt").CompileTimeConstantInput("shape"),
+REGISTER_XLA_OP(Name("RandomUniformInt").CompileTimeConstInput("shape"),
                 RandomUniformIntOp);
 
 class RandomStandardNormalOp : public XlaOpKernel {
@@ -255,7 +256,7 @@ class RandomStandardNormalOp : public XlaOpKernel {
   TF_DISALLOW_COPY_AND_ASSIGN(RandomStandardNormalOp);
 };
 
-REGISTER_XLA_OP(Name("RandomStandardNormal").CompileTimeConstantInput("shape"),
+REGISTER_XLA_OP(Name("RandomStandardNormal").CompileTimeConstInput("shape"),
                 RandomStandardNormalOp);
 
 class TruncatedNormalOp : public XlaOpKernel {
@@ -281,7 +282,7 @@ class TruncatedNormalOp : public XlaOpKernel {
 };
 
 REGISTER_XLA_OP(Name("TruncatedNormal")
-                    .CompileTimeConstantInput("shape")
+                    .CompileTimeConstInput("shape")
                     .TypeConstraint("dtype", DT_FLOAT),
                 TruncatedNormalOp);
 

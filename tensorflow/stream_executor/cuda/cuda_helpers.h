@@ -25,6 +25,7 @@ limitations under the License.
 #include <complex>
 
 #include "cuda/include/cuComplex.h"
+#include "cuda/include/cuda.h"
 
 namespace stream_executor {
 

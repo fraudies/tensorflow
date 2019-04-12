@@ -81,10 +81,9 @@ int DecisionTree::Traverse(const DecisionTreeConfig& config,
         const auto& split = current_node.categorical_id_binary_split();
         const auto& features =
             example.sparse_int_features[split.feature_column()];
-        node_id = (std::find(features.begin(), features.end(),
-                             split.feature_id()) == features.end())
-                      ? split.right_id()
-                      : split.left_id();
+        node_id = features.find(split.feature_id()) != features.end()
+                      ? split.left_id()
+                      : split.right_id();
         break;
       }
       case TreeNode::kCategoricalIdSetMembershipBinarySplit: {
@@ -118,8 +117,7 @@ int DecisionTree::Traverse(const DecisionTreeConfig& config,
         oblivious_leaf_idx <<= 1;
         const auto& features =
             example.sparse_int_features[split.feature_column()];
-        if (std::find(features.begin(), features.end(), split.feature_id()) ==
-            features.end()) {
+        if (features.find(split.feature_id()) == features.end()) {
           oblivious_leaf_idx++;
         }
         node_id++;

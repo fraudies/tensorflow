@@ -557,7 +557,6 @@ py_test(
         ":source_utils",
         "//tensorflow/core:protos_all_py",
         "//tensorflow/python:client",
-        "//tensorflow/python:cond_v2",
         "//tensorflow/python:constant_op",
         "//tensorflow/python:control_flow_ops",
         "//tensorflow/python:framework_ops",
@@ -567,7 +566,6 @@ py_test(
         "//tensorflow/python:resource_variable_ops",
         "//tensorflow/python:util",
         "//tensorflow/python:variables",
-        "//tensorflow/python:while_v2",
         "//third_party/py/numpy",
     ],
 )
@@ -617,7 +615,7 @@ cuda_py_test(
 
 py_test(
     name = "framework_test",
-    size = "medium",
+    size = "small",
     srcs = ["wrappers/framework_test.py"],
     srcs_version = "PY2AND3",
     deps = [
@@ -1131,8 +1129,5 @@ sh_test(
         ":debug_mnist",
         ":debug_tflearn_iris",
         ":offline_analyzer",
-    ],
-    tags = [
-        "no_windows",
     ],
 )

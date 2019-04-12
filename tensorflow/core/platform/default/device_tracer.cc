@@ -132,17 +132,7 @@ class CUPTIManager {
  public:
   CUPTIManager() {
     cupti_wrapper_.reset(new perftools::gputools::profiler::CuptiWrapper());
-  }
-
-  static CUPTIManager *Create() {
-    auto manager = absl::make_unique<CUPTIManager>();
-    CUptiResult status = manager->cupti_wrapper_->ActivityRegisterCallbacks(
-        BufferRequested, BufferCompleted);
-    if (status != CUPTI_SUCCESS) {
-      LOG(ERROR) << "Failed to initialize CUPTI: " << status;
-      return nullptr;
-    }
-    return manager.release();
+    CUPTI_CALL(ActivityRegisterCallbacks(BufferRequested, BufferCompleted));
   }
 
   // Enables tracing and delivers event callbacks to 'client'.
@@ -264,7 +254,7 @@ void CUPTIManager::InternalBufferCompleted(CUcontext ctx, uint32_t streamId,
 }
 
 CUPTIManager *GetCUPTIManager() {
-  static CUPTIManager *manager = CUPTIManager::Create();
+  static CUPTIManager *manager = new CUPTIManager();
   return manager;
 }
 
@@ -297,16 +287,19 @@ CUPTIManager *GetCUPTIManager() {
 // for the duration of the CUPTI API callback.
 TF_STATIC_THREAD_LOCAL_POD(const char *, tls_current_annotation);
 
-class TraceCollectorImpl : public tracing::TraceCollector {
+class DeviceTracerImpl : public DeviceTracer,
+                         public CUPTIClient,
+                         public tracing::TraceCollector {
  public:
-  TraceCollectorImpl() { tracing::SetTraceCollector(this); }
+  DeviceTracerImpl();
+  ~DeviceTracerImpl() override;
 
-  ~TraceCollectorImpl() override {
-    DCHECK(!active_trace_session_)
-        << "Unexpected active trace session detected. ";
-  }
+  // DeviceTracer interface:
+  Status Start() override;
+  Status Stop() override;
+  Status Collect(StepStatsCollector *collector) override;
 
-  // Note the method can be called after a call to Stop().
+  // tracing::TraceCollector interface:
   virtual std::unique_ptr<Handle> CreateAnnotationHandle(
       StringPiece name_part1, StringPiece name_part2) const {
     struct Impl : public tracing::TraceCollector::Handle {
@@ -329,43 +322,14 @@ class TraceCollectorImpl : public tracing::TraceCollector {
   }
 
   bool IsEnabledForAnnotations() const override {
-    return active_trace_session_.load(std::memory_order_relaxed);
+    // We are always enabled for 'Annotations'.
+    return true;
   }
 
   bool IsEnabledForActivities(bool is_expensive) const override {
     // We don't do anything with 'Activities' so we are never 'enabled'.
     return false;
   }
-
-  void Start() {
-    DCHECK(!active_trace_session_)
-        << "Unexpected active trace session detected. ";
-    active_trace_session_ = true;
-  }
-
-  void Stop() {
-    DCHECK(active_trace_session_) << "No active trace session detected. ";
-    active_trace_session_ = false;
-  }
-
- private:
-  std::atomic<bool> active_trace_session_;
-};
-
-TraceCollectorImpl *GlobalDefaultTraceCollector() {
-  static auto *instance = new TraceCollectorImpl();
-  return instance;
-}
-
-class DeviceTracerImpl : public DeviceTracer, public CUPTIClient {
- public:
-  DeviceTracerImpl(CUPTIManager *cupti_manager);
-  ~DeviceTracerImpl() override;
-
-  // DeviceTracer interface:
-  Status Start() override;
-  Status Stop() override;
-  Status Collect(StepStatsCollector *collector) override;
 
  protected:
   // This callback is used exclusively by CUPTIManager.
@@ -425,9 +389,10 @@ class DeviceTracerImpl : public DeviceTracer, public CUPTIClient {
   TF_DISALLOW_COPY_AND_ASSIGN(DeviceTracerImpl);
 };
 
-DeviceTracerImpl::DeviceTracerImpl(CUPTIManager *cupti_manager)
-    : cupti_manager_(cupti_manager) {
+DeviceTracerImpl::DeviceTracerImpl() {
   VLOG(1) << "DeviceTracer created.";
+  cupti_manager_ = GetCUPTIManager();
+  CHECK(cupti_manager_);
   cupti_wrapper_.reset(new perftools::gputools::profiler::CuptiWrapper());
   enabled_ = false;
 }
@@ -456,7 +421,7 @@ Status DeviceTracerImpl::Start() {
   }
 
   // Register as a TraceEngine to receive ScopedAnnotations.
-  GlobalDefaultTraceCollector()->Start();
+  tracing::SetTraceCollector(this);
 
   // Intercept launch and memcpy calls to capture the Op name annotation.
   // TODO(pbar) Add callbacks for memcpy variants.
@@ -504,8 +469,7 @@ Status DeviceTracerImpl::Stop() {
     return Status::OK();
   }
   CUPTI_CALL(Unsubscribe(subscriber_));
-  GlobalDefaultTraceCollector()->Stop();
-
+  tracing::SetTraceCollector(nullptr);
   TF_RETURN_IF_ERROR(cupti_manager_->DisableTrace());
   end_walltime_us_ = NowInUsec();
   CUPTI_CALL(GetTimestamp(&end_timestamp_));
@@ -682,12 +646,7 @@ Status DeviceTracerImpl::Collect(StepStatsCollector *collector) {
 }  // namespace devicetracer
 
 std::unique_ptr<DeviceTracer> CreateDeviceTracer() {
-  devicetracer::CUPTIManager *cupti_manager = devicetracer::GetCUPTIManager();
-  if (cupti_manager == nullptr) {
-    return nullptr;
-  }
-  std::unique_ptr<DeviceTracer> tracer(
-      new devicetracer::DeviceTracerImpl(cupti_manager));
+  std::unique_ptr<DeviceTracer> tracer(new devicetracer::DeviceTracerImpl());
   return tracer;
 }
 

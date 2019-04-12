@@ -67,8 +67,8 @@ class BCastArgsOp : public XlaOpKernel {
   TF_DISALLOW_COPY_AND_ASSIGN(BCastArgsOp);
 };
 REGISTER_XLA_OP(Name("BroadcastArgs")
-                    .CompileTimeConstantInput("s0")
-                    .CompileTimeConstantInput("s1"),
+                    .CompileTimeConstInput("s0")
+                    .CompileTimeConstInput("s1"),
                 BCastArgsOp);
 
 // Given shapes of two tensors, computes the reduction indices for the
@@ -94,10 +94,14 @@ class BCastGradArgsOp : public XlaOpKernel {
       OP_REQUIRES(ctx, TensorShapeUtils::IsVector(in_shape),
                   errors::InvalidArgument("In[", i, "] must be a vector.",
                                           in_shape.DebugString()));
-      std::vector<int64> vec;
-      OP_REQUIRES_OK(ctx, ctx->ConstantInputAsIntVector(i, &vec));
+      xla::Literal literal;
+      OP_REQUIRES_OK(ctx, ctx->ConstantInput(i, &literal));
 
-      shapes.push_back(BCast::Vec(vec.begin(), vec.end()));
+      BCast::Vec vec;
+      for (int64 i = 0; i < in_shape.num_elements(); ++i) {
+        vec.push_back(literal.Get<int>({i}));
+      }
+      shapes.push_back(vec);
     }
     BCast bcast(shapes[0], shapes[1]);
     OP_REQUIRES(ctx, bcast.IsValid(),
@@ -122,8 +126,8 @@ class BCastGradArgsOp : public XlaOpKernel {
 };
 
 REGISTER_XLA_OP(Name("BroadcastGradientArgs")
-                    .CompileTimeConstantInput("s0")
-                    .CompileTimeConstantInput("s1"),
+                    .CompileTimeConstInput("s0")
+                    .CompileTimeConstInput("s1"),
                 BCastGradArgsOp);
 
 }  // namespace

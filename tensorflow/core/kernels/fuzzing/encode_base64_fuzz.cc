@@ -19,7 +19,7 @@ limitations under the License.
 namespace tensorflow {
 namespace fuzzing {
 
-class FuzzEncodeBase64 : public FuzzStringInputOp {
+class FuzzEncodeBase64 : public FuzzSession {
   SINGLE_INPUT_OP_BUILDER(DT_STRING, EncodeBase64);
 };
 

@@ -188,6 +188,7 @@ def _histogram(values, value_range, nbins=100, dtype=dtypes.int32, name=None):
   with ops.name_scope(name, 'histogram', [values, value_range, nbins]) as scope:
     values = ops.convert_to_tensor(values, name='values')
     values = array_ops.reshape(values, [-1])
+    value_range = ops.convert_to_tensor(value_range, name='value_range')
     nbins_float = np.float32(nbins)
 
     # Map tensor values that fall within value_range to [0, 1].
@@ -249,6 +250,7 @@ def compute_cdf(values, value_range, **kwargs):
   name = kwargs.get('name', None)
   with ops.name_scope(name, 'cdf', [values, value_range, nbins]):
     values = ops.convert_to_tensor(values, name='values')
+    value_range = ops.convert_to_tensor(value_range, name='value_range')
     nbins_float = np.float32(nbins)
 
     # Map tensor values that fall within value_range to [0, 1].
@@ -334,7 +336,7 @@ def factorized_pool(input_tensor,
         padding=padding)
 
   return array_ops.squeeze(
-      array_ops.transpose(width_pooling, perm=[0, 1, 3, 2]), axis=[0, 1])
+      array_ops.transpose(width_pooling, perm=[0, 1, 3, 2]))
 
 
 def determine_partitioned_axis(partitioned_variable):

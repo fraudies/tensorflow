@@ -19,7 +19,6 @@ from __future__ import print_function
 
 from tensorflow.python.data.experimental.kernel_tests import reader_dataset_ops_test_base
 from tensorflow.python.data.experimental.ops import readers
-from tensorflow.python.data.ops import dataset_ops
 from tensorflow.python.data.util import nest
 from tensorflow.python.framework import errors
 from tensorflow.python.framework import ops
@@ -106,7 +105,7 @@ class MakeTFRecordDatasetTest(
     for expected_batch in self._next_expected_batch(
         file_indices, batch_size, num_epochs, interleave_cycle_length,
         drop_final_batch, use_parser_fn):
-      actual_batch = self.evaluate(outputs)
+      actual_batch = sess.run(outputs)
       self.assertAllEqual(expected_batch, actual_batch)
 
   def _read_test(self, batch_size, num_epochs, file_index=None,
@@ -123,21 +122,20 @@ class MakeTFRecordDatasetTest(
 
     with ops.Graph().as_default() as g:
       with self.session(graph=g) as sess:
-        outputs = dataset_ops.make_one_shot_iterator(
-            readers.make_tf_record_dataset(
-                file_pattern=file_pattern,
-                num_epochs=num_epochs,
-                batch_size=batch_size,
-                parser_fn=fn,
-                num_parallel_reads=num_parallel_reads,
-                drop_final_batch=drop_final_batch,
-                shuffle=False)).get_next()
+        outputs = readers.make_tf_record_dataset(
+            file_pattern=file_pattern,
+            num_epochs=num_epochs,
+            batch_size=batch_size,
+            parser_fn=fn,
+            num_parallel_reads=num_parallel_reads,
+            drop_final_batch=drop_final_batch,
+            shuffle=False).make_one_shot_iterator().get_next()
         self._verify_records(
             sess, outputs, batch_size, file_index, num_epochs=num_epochs,
             interleave_cycle_length=num_parallel_reads,
             drop_final_batch=drop_final_batch, use_parser_fn=parser_fn)
         with self.assertRaises(errors.OutOfRangeError):
-          self.evaluate(outputs)
+          sess.run(outputs)
 
   def testRead(self):
     for batch_size in [1, 2]:
@@ -187,22 +185,22 @@ class MakeTFRecordDatasetTest(
             num_parallel_reads=num_parallel_reads,
             shuffle=True,
             shuffle_seed=seed)
-        iterator = dataset_ops.make_initializable_iterator(dataset)
+        iterator = dataset.make_initializable_iterator()
         next_element = iterator.get_next()
 
-        self.evaluate(iterator.initializer)
+        sess.run(iterator.initializer)
         first_batches = []
         try:
           while True:
-            first_batches.append(self.evaluate(next_element))
+            first_batches.append(sess.run(next_element))
         except errors.OutOfRangeError:
           pass
 
-        self.evaluate(iterator.initializer)
+        sess.run(iterator.initializer)
         second_batches = []
         try:
           while True:
-            second_batches.append(self.evaluate(next_element))
+            second_batches.append(sess.run(next_element))
         except errors.OutOfRangeError:
           pass
 

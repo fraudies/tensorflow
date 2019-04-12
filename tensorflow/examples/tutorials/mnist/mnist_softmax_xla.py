@@ -14,7 +14,6 @@
 # ==============================================================================
 """Simple MNIST classifier example with JIT XLA and timelines.
 
-  Note: Please see further comments in the BUILD file to invoke XLA.
 """
 from __future__ import absolute_import
 from __future__ import division
@@ -80,7 +79,7 @@ def main(_):
                options=tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE),
                run_metadata=run_metadata)
       trace = timeline.Timeline(step_stats=run_metadata.step_stats)
-      with open('/tmp/timeline.ctf.json', 'w') as trace_file:
+      with open('timeline.ctf.json', 'w') as trace_file:
         trace_file.write(trace.generate_chrome_trace_format())
     else:
       sess.run(train_step, feed_dict={x: batch_xs, y_: batch_ys})

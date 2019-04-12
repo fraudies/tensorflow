@@ -22,10 +22,9 @@ import numpy as np
 
 from tensorflow.python import keras
 from tensorflow.python.data.ops import dataset_ops
-from tensorflow.python.feature_column import feature_column_lib as fc
-from tensorflow.python.keras import keras_parameterized
+from tensorflow.python.feature_column import feature_column_v2 as fc
+from tensorflow.python.framework import test_util as tf_test_util
 from tensorflow.python.keras import metrics as metrics_module
-from tensorflow.python.keras import testing_utils
 from tensorflow.python.platform import test
 from tensorflow.python.training import rmsprop
 
@@ -34,7 +33,7 @@ class TestDNNModel(keras.models.Model):
 
   def __init__(self, feature_columns, units, name=None, **kwargs):
     super(TestDNNModel, self).__init__(name=name, **kwargs)
-    self._input_layer = fc.DenseFeatures(feature_columns, name='input_layer')
+    self._input_layer = fc.FeatureLayer(feature_columns, name='input_layer')
     self._dense_layer = keras.layers.Dense(units, name='dense_layer')
 
   def call(self, features):
@@ -43,24 +42,23 @@ class TestDNNModel(keras.models.Model):
     return net
 
 
-class FeatureColumnsIntegrationTest(keras_parameterized.TestCase):
+class FeatureColumnsIntegrationTest(test.TestCase):
   """Most Sequential model API tests are covered in `training_test.py`.
 
   """
 
-  @keras_parameterized.run_all_keras_modes
+  @tf_test_util.run_in_graph_and_eager_modes
   def test_sequential_model(self):
     columns = [fc.numeric_column('a')]
     model = keras.models.Sequential([
-        fc.DenseFeatures(columns),
+        fc.FeatureLayer(columns),
         keras.layers.Dense(64, activation='relu'),
         keras.layers.Dense(20, activation='softmax')
     ])
     model.compile(
         optimizer=rmsprop.RMSPropOptimizer(1e-3),
         loss='categorical_crossentropy',
-        metrics=['accuracy'],
-        run_eagerly=testing_utils.should_run_eagerly())
+        metrics=['accuracy'])
 
     x = {'a': np.random.random((10, 1))}
     y = np.random.randint(20, size=(10, 1))
@@ -70,19 +68,18 @@ class FeatureColumnsIntegrationTest(keras_parameterized.TestCase):
     model.evaluate(x, y, batch_size=5)
     model.predict(x, batch_size=5)
 
-  @keras_parameterized.run_all_keras_modes
+  @tf_test_util.run_in_graph_and_eager_modes
   def test_sequential_model_with_ds_input(self):
     columns = [fc.numeric_column('a')]
     model = keras.models.Sequential([
-        fc.DenseFeatures(columns),
+        fc.FeatureLayer(columns),
         keras.layers.Dense(64, activation='relu'),
         keras.layers.Dense(20, activation='softmax')
     ])
     model.compile(
         optimizer=rmsprop.RMSPropOptimizer(1e-3),
         loss='categorical_crossentropy',
-        metrics=['accuracy'],
-        run_eagerly=testing_utils.should_run_eagerly())
+        metrics=['accuracy'])
 
     y = np.random.randint(20, size=(100, 1))
     y = keras.utils.to_categorical(y, num_classes=20)
@@ -95,7 +92,7 @@ class FeatureColumnsIntegrationTest(keras_parameterized.TestCase):
     model.evaluate(ds, steps=1)
     model.predict(ds, steps=1)
 
-  @keras_parameterized.run_all_keras_modes
+  @tf_test_util.run_in_graph_and_eager_modes
   def test_subclassed_model_with_feature_columns(self):
     col_a = fc.numeric_column('a')
     col_b = fc.numeric_column('b')
@@ -105,8 +102,7 @@ class FeatureColumnsIntegrationTest(keras_parameterized.TestCase):
     dnn_model.compile(
         optimizer=rmsprop.RMSPropOptimizer(learning_rate=0.001),
         loss='categorical_crossentropy',
-        metrics=['accuracy'],
-        run_eagerly=testing_utils.should_run_eagerly())
+        metrics=['accuracy'])
 
     x = {'a': np.random.random((10, 1)), 'b': np.random.random((10, 1))}
     y = np.random.randint(20, size=(10, 1))
@@ -116,7 +112,7 @@ class FeatureColumnsIntegrationTest(keras_parameterized.TestCase):
     dnn_model.evaluate(x=x, y=y, batch_size=5)
     dnn_model.predict(x=x, batch_size=5)
 
-  @keras_parameterized.run_all_keras_modes
+  @tf_test_util.run_in_graph_and_eager_modes
   def test_subclassed_model_with_feature_columns_with_ds_input(self):
     col_a = fc.numeric_column('a')
     col_b = fc.numeric_column('b')
@@ -126,8 +122,7 @@ class FeatureColumnsIntegrationTest(keras_parameterized.TestCase):
     dnn_model.compile(
         optimizer=rmsprop.RMSPropOptimizer(learning_rate=0.001),
         loss='categorical_crossentropy',
-        metrics=['accuracy'],
-        run_eagerly=testing_utils.should_run_eagerly())
+        metrics=['accuracy'])
 
     y = np.random.randint(20, size=(100, 1))
     y = keras.utils.to_categorical(y, num_classes=20)
@@ -140,16 +135,15 @@ class FeatureColumnsIntegrationTest(keras_parameterized.TestCase):
     dnn_model.evaluate(ds, steps=1)
     dnn_model.predict(ds, steps=1)
 
-  # TODO(kaftan) seems to throw an error when enabled.
-  @keras_parameterized.run_all_keras_modes
+  @tf_test_util.run_in_graph_and_eager_modes
   def DISABLED_test_function_model_feature_layer_input(self):
     col_a = fc.numeric_column('a')
     col_b = fc.numeric_column('b')
 
-    feature_layer = fc.DenseFeatures([col_a, col_b], name='fc')
+    feature_layer = fc.FeatureLayer([col_a, col_b], name='fc')
     dense = keras.layers.Dense(4)
 
-    # This seems problematic.... We probably need something for DenseFeatures
+    # This seems problematic.... We probably need something for FeatureLayer
     # the way Input is for InputLayer.
     output = dense(feature_layer)
 
@@ -167,18 +161,17 @@ class FeatureColumnsIntegrationTest(keras_parameterized.TestCase):
     data = ({'a': np.arange(10), 'b': np.arange(10)}, np.arange(10, 20))
     print(model.fit(*data, epochs=1))
 
-  # TODO(kaftan) seems to throw an error when enabled.
-  @keras_parameterized.run_all_keras_modes
+  @tf_test_util.run_in_graph_and_eager_modes
   def DISABLED_test_function_model_multiple_feature_layer_inputs(self):
     col_a = fc.numeric_column('a')
     col_b = fc.numeric_column('b')
     col_c = fc.numeric_column('c')
 
-    fc1 = fc.DenseFeatures([col_a, col_b], name='fc1')
-    fc2 = fc.DenseFeatures([col_b, col_c], name='fc2')
+    fc1 = fc.FeatureLayer([col_a, col_b], name='fc1')
+    fc2 = fc.FeatureLayer([col_b, col_c], name='fc2')
     dense = keras.layers.Dense(4)
 
-    # This seems problematic.... We probably need something for DenseFeatures
+    # This seems problematic.... We probably need something for FeatureLayer
     # the way Input is for InputLayer.
     output = dense(fc1) + dense(fc2)
 

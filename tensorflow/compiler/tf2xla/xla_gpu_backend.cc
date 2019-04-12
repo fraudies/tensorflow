@@ -21,10 +21,10 @@ namespace tensorflow {
 
 bool GpuOpFilter(KernelDef* kdef) {
   if (kdef->op() == "Const") {
-    AddDtypeToKernelDefConstraint("dtype", DT_STRING, kdef);
+    AddDtypeToKernalDefConstraint("dtype", DT_STRING, kdef);
   }
   if (kdef->op() == "Assert") {
-    AddDtypeToKernelDefConstraint("T", DT_STRING, kdef);
+    AddDtypeToKernalDefConstraint("T", DT_STRING, kdef);
   }
   return true;
 }

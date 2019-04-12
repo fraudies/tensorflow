@@ -102,27 +102,6 @@ REGISTER_OP("Test4").Input("i: float").Output("o: float");
 REGISTER_KERNEL_BUILDER(Name("Test4").Device(DEVICE_CPU), DummyKernel);
 REGISTER_KERNEL_BUILDER(Name("Test4").Device(DEVICE_GPU), DummyKernel);
 
-// Kernels with different priorities.
-REGISTER_OP("Test5").Input("a: T").Input("b: T").Attr("T: type");
-
-class TestOp5Cpu : public tensorflow::OpKernel {
- public:
-  explicit TestOp5Cpu(OpKernelConstruction* context) : OpKernel(context) {}
-  void Compute(OpKernelContext* context) override {}
-};
-
-REGISTER_KERNEL_BUILDER(Name("Test5").Device(DEVICE_CPU).Priority(2),
-                        TestOp5Cpu);
-
-class TestOp5Gpu : public tensorflow::OpKernel {
- public:
-  explicit TestOp5Gpu(OpKernelConstruction* context) : OpKernel(context) {}
-  void Compute(OpKernelContext* context) override {}
-};
-
-REGISTER_KERNEL_BUILDER(Name("Test5").Device(DEVICE_GPU).Priority(1),
-                        TestOp5Gpu);
-
 static std::vector<DeviceType> DeviceTypes() {
   return {DeviceType(DEVICE_GPU), DeviceType(DEVICE_CPU)};
 }
@@ -206,10 +185,10 @@ TEST_F(OpKernelTest, SuccessBothCpuAndGpu) {
 
 TEST_F(OpKernelTest, CpuTypeRegistered) {
   NodeDef ndef = CreateNodeDef("Test1", {DT_FLOAT, DT_INT32});
-  PrioritizedDeviceTypeVector devs;
+  DeviceTypeVector devs;
   TF_ASSERT_OK(SupportedDeviceTypesForNode(DeviceTypes(), ndef, &devs));
   EXPECT_EQ(1, devs.size());
-  EXPECT_EQ(DeviceType(DEVICE_CPU), devs[0].first);
+  EXPECT_EQ(DeviceType(DEVICE_CPU), devs[0]);
 }
 
 TEST_F(OpKernelTest, CpuAndGpuTypeRegistered) {
@@ -217,24 +196,24 @@ TEST_F(OpKernelTest, CpuAndGpuTypeRegistered) {
     // Try a node def of an op that is registered for a specific type
     // only on CPU.
     NodeDef ndef = CreateNodeDef("Test3", {DT_INT8, DT_INT8});
-    PrioritizedDeviceTypeVector devs;
+    DeviceTypeVector devs;
     TF_ASSERT_OK(SupportedDeviceTypesForNode(DeviceTypes(), ndef, &devs));
     EXPECT_EQ(1, devs.size());
-    EXPECT_EQ(DeviceType(DEVICE_CPU), devs[0].first);
+    EXPECT_EQ(DeviceType(DEVICE_CPU), devs[0]);
   }
   {
     // Try a node def of an op that is registered for a specific type
     // only on GPU.
     NodeDef ndef = CreateNodeDef("Test3", {DT_FLOAT, DT_FLOAT});
-    PrioritizedDeviceTypeVector devs;
+    DeviceTypeVector devs;
     TF_ASSERT_OK(SupportedDeviceTypesForNode(DeviceTypes(), ndef, &devs));
     EXPECT_EQ(1, devs.size());
-    EXPECT_EQ(DeviceType(DEVICE_GPU), devs[0].first);
+    EXPECT_EQ(DeviceType(DEVICE_GPU), devs[0]);
   }
   {
     // Try a node def of an op that is only registered for other types.
     NodeDef ndef = CreateNodeDef("Test3", {DT_STRING, DT_STRING});
-    PrioritizedDeviceTypeVector devs;
+    DeviceTypeVector devs;
     TF_ASSERT_OK(SupportedDeviceTypesForNode(DeviceTypes(), ndef, &devs));
     EXPECT_EQ(0, devs.size());
   }
@@ -242,23 +221,11 @@ TEST_F(OpKernelTest, CpuAndGpuTypeRegistered) {
   {
     // Try a node def of an op that is registered for both.
     NodeDef ndef = CreateNodeDef("Test4", {DT_FLOAT});
-    PrioritizedDeviceTypeVector devs;
+    DeviceTypeVector devs;
     TF_ASSERT_OK(SupportedDeviceTypesForNode(DeviceTypes(), ndef, &devs));
     EXPECT_EQ(2, devs.size());
-    EXPECT_EQ(DeviceType(DEVICE_GPU), devs[0].first);
-    EXPECT_EQ(DeviceType(DEVICE_CPU), devs[1].first);
-  }
-
-  {
-    // Try a node def of an op where kernels have priorities.
-    NodeDef ndef = CreateNodeDef("Test5", {DT_STRING, DT_STRING});
-    PrioritizedDeviceTypeVector devs;
-    TF_ASSERT_OK(SupportedDeviceTypesForNode(DeviceTypes(), ndef, &devs));
-    EXPECT_EQ(2, devs.size());
-    EXPECT_EQ(DeviceType(DEVICE_CPU), devs[0].first);
-    EXPECT_EQ(2, devs[0].second);
-    EXPECT_EQ(DeviceType(DEVICE_GPU), devs[1].first);
-    EXPECT_EQ(1, devs[1].second);
+    EXPECT_EQ(DeviceType(DEVICE_GPU), devs[0]);
+    EXPECT_EQ(DeviceType(DEVICE_CPU), devs[1]);
   }
 }
 
@@ -445,11 +412,11 @@ class OpKernelBuilderTest : public ::testing::Test {
     }
 
     // Test SupportedDeviceTypesForNode()
-    PrioritizedDeviceTypeVector devices;
+    DeviceTypeVector devices;
     TF_EXPECT_OK(SupportedDeviceTypesForNode(DeviceTypes(), def, &devices));
     bool found = false;
-    for (const auto& dt : devices) {
-      if (dt.first == device_type) {
+    for (const DeviceType& dt : devices) {
+      if (dt == device_type) {
         found = true;
       }
     }
@@ -478,11 +445,11 @@ class OpKernelBuilderTest : public ::testing::Test {
       EXPECT_EQ(code, status.code());
 
       // Test SupportedDeviceTypesForNode().
-      PrioritizedDeviceTypeVector devices;
+      DeviceTypeVector devices;
       if (errors::IsNotFound(status)) {
         TF_EXPECT_OK(SupportedDeviceTypesForNode(DeviceTypes(), def, &devices));
-        for (const auto& dt : devices) {
-          EXPECT_NE(dt.first, device_type);
+        for (const DeviceType& dt : devices) {
+          EXPECT_NE(dt, device_type);
         }
       } else {
         Status status2 =
@@ -595,7 +562,7 @@ REGISTER_KERNEL_BUILDER(Name("DuplicateKernel").Device(DEVICE_CPU),
 
 TEST_F(OpKernelBuilderTest, DuplicateKernel) {
   const NodeDef ndef = CreateNodeDef("DuplicateKernel", {});
-  PrioritizedDeviceTypeVector devs;
+  DeviceTypeVector devs;
   Status status = SupportedDeviceTypesForNode(DeviceTypes(), ndef, &devs);
   ASSERT_FALSE(status.ok());
   EXPECT_TRUE(str_util::StrContains(
@@ -615,7 +582,7 @@ REGISTER_KERNEL_BUILDER(
 TEST_F(OpKernelBuilderTest, DuplicateKernelForT) {
   const NodeDef ndef =
       CreateNodeDef("DuplicateKernelForT", {"T|type|DT_FLOAT"});
-  PrioritizedDeviceTypeVector devs;
+  DeviceTypeVector devs;
   Status status = SupportedDeviceTypesForNode(DeviceTypes(), ndef, &devs);
   ASSERT_FALSE(status.ok());
   EXPECT_TRUE(str_util::StrContains(
@@ -636,7 +603,7 @@ REGISTER_KERNEL_BUILDER(Name("BadConstraint")
 
 TEST_F(OpKernelBuilderTest, BadConstraint) {
   const NodeDef ndef = CreateNodeDef("BadConstraint", {});
-  PrioritizedDeviceTypeVector devs;
+  DeviceTypeVector devs;
   Status status = SupportedDeviceTypesForNode(DeviceTypes(), ndef, &devs);
   ASSERT_FALSE(status.ok());
   EXPECT_TRUE(

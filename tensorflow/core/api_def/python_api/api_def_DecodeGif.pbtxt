@@ -1,4 +1,6 @@
 op {
   graph_op_name: "DecodeGif"
-  visibility: HIDDEN
+  endpoint {
+    name: "image.decode_gif"
+  }
 }

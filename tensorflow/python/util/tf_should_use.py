@@ -23,7 +23,6 @@ import traceback
 
 import six  # pylint: disable=unused-import
 
-from tensorflow.python.framework import ops
 from tensorflow.python.platform import tf_logging
 from tensorflow.python.util import tf_decorator
 # pylint: enable=g-bad-import-order,g-import-not-at-top
@@ -33,8 +32,7 @@ class _TFShouldUseHelper(object):
   """Object stored in TFShouldUse-wrapped objects.
 
   When it is deleted it will emit a warning or error if its `sate` method
-  has not been called by time of deletion, and Tensorflow is not executing
-  eagerly outside of functions.
+  has not been called by time of deletion.
   """
 
   def __init__(self, type_, repr_, stack_frame, fatal_error_if_unsated):
@@ -52,8 +50,6 @@ class _TFShouldUseHelper(object):
     self._logging_module = None
 
   def __del__(self):
-    if ops.executing_eagerly_outside_functions():
-      return
     if self._sated:
       return
     if self._fatal_error_if_unsated:

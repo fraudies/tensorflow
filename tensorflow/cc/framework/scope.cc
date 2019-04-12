@@ -95,7 +95,6 @@ Scope::Impl::Impl(const Scope& other, Tags::ScopeName, const string& name,
       kernel_label_(other.impl()->kernel_label_),
       device_(other.impl()->device_),
       assigned_device_(other.impl()->assigned_device_),
-      xla_cluster_(other.impl()->xla_cluster_),
       colocation_constraints_(other.impl()->colocation_constraints_),
       disable_shape_inference_(other.impl()->disable_shape_inference_) {}
 
@@ -113,7 +112,6 @@ Scope::Impl::Impl(const Scope& other, Tags::OpName, const string& name,
       kernel_label_(other.impl()->kernel_label_),
       device_(other.impl()->device_),
       assigned_device_(other.impl()->assigned_device_),
-      xla_cluster_(other.impl()->xla_cluster_),
       colocation_constraints_(other.impl()->colocation_constraints_),
       disable_shape_inference_(other.impl()->disable_shape_inference_) {}
 
@@ -137,7 +135,6 @@ Scope::Impl::Impl(const Scope& other, Tags::ControlDeps,
       kernel_label_(other.impl()->kernel_label_),
       device_(other.impl()->device_),
       assigned_device_(other.impl()->assigned_device_),
-      xla_cluster_(other.impl()->xla_cluster_),
       colocation_constraints_(other.impl()->colocation_constraints_),
       disable_shape_inference_(other.impl()->disable_shape_inference_) {}
 
@@ -170,7 +167,6 @@ Scope::Impl::Impl(const Scope& other, Tags::SingleUseScope,
       kernel_label_(other.impl()->kernel_label_),
       device_(other.impl()->device_),
       assigned_device_(other.impl()->assigned_device_),
-      xla_cluster_(other.impl()->xla_cluster_),
       colocation_constraints_(other.impl()->colocation_constraints_),
       disable_shape_inference_(other.impl()->disable_shape_inference_) {}
 
@@ -187,7 +183,6 @@ Scope::Impl::Impl(const Scope& other, Tags::ExitOnError)
       kernel_label_(other.impl()->kernel_label_),
       device_(other.impl()->device_),
       assigned_device_(other.impl()->assigned_device_),
-      xla_cluster_(other.impl()->xla_cluster_),
       colocation_constraints_(other.impl()->colocation_constraints_),
       disable_shape_inference_(other.impl()->disable_shape_inference_) {}
 
@@ -205,7 +200,6 @@ Scope::Impl::Impl(const Scope& other, Tags::KernelLabel,
       kernel_label_(kernel_label),
       device_(other.impl()->device_),
       assigned_device_(other.impl()->assigned_device_),
-      xla_cluster_(other.impl()->xla_cluster_),
       colocation_constraints_(other.impl()->colocation_constraints_),
       disable_shape_inference_(other.impl()->disable_shape_inference_) {}
 
@@ -223,7 +217,6 @@ Scope::Impl::Impl(const Scope& other, Tags::Colocate,
       kernel_label_(other.impl()->kernel_label_),
       device_(other.impl()->device_),
       assigned_device_(other.impl()->assigned_device_),
-      xla_cluster_(other.impl()->xla_cluster_),
       colocation_constraints_(
           clear_colocations
               ? std::unordered_set<string>()
@@ -244,25 +237,6 @@ Scope::Impl::Impl(const Scope& other, Tags::AssignedDevice,
       kernel_label_(other.impl()->kernel_label_),
       device_(other.impl()->device_),
       assigned_device_(assigned_device),
-      xla_cluster_(other.impl()->xla_cluster_),
-      colocation_constraints_(other.impl()->colocation_constraints_),
-      disable_shape_inference_(other.impl()->disable_shape_inference_) {}
-
-Scope::Impl::Impl(const Scope& other, Tags::XlaCluster,
-                  const string& xla_cluster)
-    : graph_(other.impl()->graph_),
-      status_(other.impl()->status_),
-      name_map_(other.impl()->name_map_),
-      refiner_(other.impl()->refiner_),
-      scope_used_(other.impl()->scope_used_),
-      control_deps_(other.impl()->control_deps_),
-      name_(other.impl()->name_),
-      op_name_(other.impl()->op_name_),
-      exit_on_error_(other.impl()->exit_on_error_),
-      kernel_label_(other.impl()->kernel_label_),
-      device_(other.impl()->device_),
-      assigned_device_(other.impl()->assigned_device_),
-      xla_cluster_(xla_cluster),
       colocation_constraints_(other.impl()->colocation_constraints_),
       disable_shape_inference_(other.impl()->disable_shape_inference_) {}
 
@@ -352,9 +326,6 @@ void Scope::UpdateBuilder(NodeBuilder* builder) const {
   if (!impl()->assigned_device_.empty()) {
     builder->AssignedDevice(impl()->assigned_device_);
   }
-  if (!impl()->xla_cluster_.empty()) {
-    builder->XlaCluster(impl()->xla_cluster_);
-  }
 }
 
 string Scope::Impl::GetUniqueName(const string& prefix,
@@ -417,7 +388,7 @@ Scope Scope::NewSubScope(const string& child_scope_name) const {
                         false /* copy_names */));
 }
 
-Scope Scope::WithOpNameImpl(const string& op_name) const {
+Scope Scope::WithOpName(const string& op_name) const {
   if (impl()->single_use_scope()) {
     UpdateStatus(errors::InvalidArgument("Cannot set op name ", op_name,
                                          " on this scope"));
@@ -452,10 +423,6 @@ Scope Scope::WithDevice(const string& device) const {
 
 Scope Scope::WithAssignedDevice(const string& assigned_device) const {
   return Scope(new Impl(*this, Impl::Tags::AssignedDevice(), assigned_device));
-}
-
-Scope Scope::WithXlaCluster(const string& xla_cluster) const {
-  return Scope(new Impl(*this, Impl::Tags::XlaCluster(), xla_cluster));
 }
 
 Scope Scope::ColocateWith(const Operation& op) const {

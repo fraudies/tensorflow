@@ -2,10 +2,7 @@
 #   OpKernels for boosted trees ops.
 
 package(
-    default_visibility = [
-        "//tensorflow:__subpackages__",
-        "//tensorflow:internal",
-    ],
+    default_visibility = ["//tensorflow:internal"],
 )
 
 licenses(["notice"])  # Apache 2.0

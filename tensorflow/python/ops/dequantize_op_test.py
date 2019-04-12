@@ -35,7 +35,7 @@ class DequantizeOpTest(test.TestCase):
     with self.cached_session():
       input_op = constant_op.constant(inputs, shape=[len(inputs)], dtype=dtype)
       dequantized = array_ops.dequantize(input_op, min_range, max_range)
-      tf_ans = self.evaluate(dequantized)
+      tf_ans = dequantized.eval()
 
     # TODO(vrv): Add support for DT_QINT32 quantization if needed.
     type_dict = {

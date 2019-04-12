@@ -20,7 +20,6 @@ from __future__ import print_function
 
 import numpy as np
 
-from tensorflow.python.framework import test_util
 from tensorflow.python.ops import math_ops
 from tensorflow.python.platform import test
 
@@ -31,15 +30,15 @@ class CompareAndBitpackTest(test.TestCase):
                              x, threshold,
                              truth,
                              expected_err_re=None):
-    with test_util.use_gpu():
+    with self.test_session(use_gpu=True):
       ans = math_ops.compare_and_bitpack(x, threshold)
       if expected_err_re is None:
-        tf_ans = self.evaluate(ans)
+        tf_ans = ans.eval()
         self.assertShapeEqual(truth, ans)
         self.assertAllEqual(tf_ans, truth)
       else:
         with self.assertRaisesOpError(expected_err_re):
-          self.evaluate(ans)
+          ans.eval()
 
   def _testBasic(self, dtype):
     rows = 371

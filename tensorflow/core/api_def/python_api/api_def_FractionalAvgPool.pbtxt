@@ -1,4 +1,6 @@
 op {
   graph_op_name: "FractionalAvgPool"
-  visibility: HIDDEN
+  endpoint {
+    name: "nn.fractional_avg_pool"
+  }
 }

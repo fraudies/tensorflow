@@ -12,10 +12,10 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-#include "tensorflow/core/framework/dataset.h"
 #include "tensorflow/core/framework/partial_tensor_shape.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/graph/graph.h"
+#include "tensorflow/core/kernels/data/dataset.h"
 
 namespace tensorflow {
 namespace data {
@@ -61,8 +61,6 @@ class TensorDatasetOp : public DatasetOpKernel {
 
     string DebugString() const override { return "TensorDatasetOp::Dataset"; }
 
-    int64 Cardinality() const override { return 1LL; }
-
    protected:
     Status AsGraphDefInternal(SerializationContext* ctx,
                               DatasetGraphDefBuilder* b,
@@ -71,10 +69,10 @@ class TensorDatasetOp : public DatasetOpKernel {
       components.reserve(tensors_.size());
       for (const Tensor& t : tensors_) {
         Node* node;
-        if (ctx->optimization_only()) {
+        std::vector<std::pair<string, Tensor>>* input_list = ctx->input_list();
+        if (input_list) {
           TF_RETURN_IF_ERROR(b->AddPlaceholder(t, &node));
-          DCHECK_NE(ctx->input_list(), nullptr);
-          ctx->input_list()->emplace_back(node->name(), t);
+          input_list->emplace_back(node->name(), t);
         } else {
           TF_RETURN_IF_ERROR(b->AddTensor(t, &node));
         }
@@ -109,11 +107,6 @@ class TensorDatasetOp : public DatasetOpKernel {
       }
 
      protected:
-      std::shared_ptr<model::Node> CreateNode(
-          IteratorContext* ctx, model::Node::Args args) const override {
-        return model::MakeSourceNode(std::move(args));
-      }
-
       Status SaveInternal(IteratorStateWriter* writer) override {
         mutex_lock l(mu_);
         if (produced_)

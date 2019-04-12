@@ -45,10 +45,6 @@ tf_module {
     mtype: "<class \'tensorflow.python.framework.dtypes.DType\'>"
   }
   member {
-    name: "int16"
-    mtype: "<class \'tensorflow.python.framework.dtypes.DType\'>"
-  }
-  member {
     name: "int32"
     mtype: "<class \'tensorflow.python.framework.dtypes.DType\'>"
   }

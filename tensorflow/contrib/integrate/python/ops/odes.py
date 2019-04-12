@@ -540,8 +540,7 @@ def odeint(func,
         **options)
 
 
-@six.add_metaclass(abc.ABCMeta)
-class _FixedGridIntegrator(object):
+class _FixedGridIntegrator(six.with_metaclass(abc.ABCMeta)):
   """Base class for fixed-grid ODE integrators."""
 
   def integrate(self, evol_func, y0, time_grid, dt_grid, steps_on_intervals):

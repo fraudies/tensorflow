@@ -30,7 +30,7 @@ namespace tensorflow {
 namespace grappler {
 namespace {
 
-bool IsTakeAll(const NodeDef& take_node, const MutableGraphView& graph) {
+bool IsTakeAll(const NodeDef& take_node, const GraphView& graph) {
   if (take_node.op() != "TakeDataset") return false;
 
   const auto& count_node = *graph.GetNode(take_node.input(1));
@@ -44,28 +44,21 @@ bool IsConstNodeWithValue(const NodeDef& node, int value) {
   return node.attr().at("value").tensor().int64_val(0) == value;
 }
 
-bool IsSkipNone(const NodeDef& skip_node, const MutableGraphView& graph) {
+bool IsSkipNone(const NodeDef& skip_node, const GraphView& graph) {
   if (skip_node.op() != "SkipDataset") return false;
   // We are looking only for skip(0) nodes.
   return IsConstNodeWithValue(*graph.GetNode(skip_node.input(1)), 0);
 }
 
-bool IsRepeatOne(const NodeDef& repeat_node, const MutableGraphView& graph) {
+bool IsRepeatOne(const NodeDef& repeat_node, const GraphView& graph) {
   if (repeat_node.op() != "RepeatDataset") return false;
   // We are looking only for repeat(1) nodes.
   return IsConstNodeWithValue(*graph.GetNode(repeat_node.input(1)), 1);
 }
 
-bool IsPrefetchZero(const NodeDef& prefetch_node,
-                    const MutableGraphView& graph) {
-  if (prefetch_node.op() != "PrefetchDataset") return false;
-  // We are looking only for prefetch(0) nodes.
-  return IsConstNodeWithValue(*graph.GetNode(prefetch_node.input(1)), 0);
-}
-
-bool IsNoOp(const NodeDef& node, const MutableGraphView& graph) {
+bool IsNoOp(const NodeDef& node, const GraphView& graph) {
   return IsTakeAll(node, graph) || IsSkipNone(node, graph) ||
-         IsRepeatOne(node, graph) || IsPrefetchZero(node, graph);
+         IsRepeatOne(node, graph);
 }
 
 }  // namespace
@@ -79,7 +72,7 @@ Status NoOpElimination::Optimize(Cluster* cluster, const GrapplerItem& item,
     if (!IsNoOp(node, graph)) continue;
 
     NodeDef* const parent = graph_utils::GetInputNode(node, graph);
-    graph.UpdateFanouts(node.name(), parent->name());
+    graph.ReplaceInput(node, *parent);
 
     nodes_to_delete.insert(node.name());
   }

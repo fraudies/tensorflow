@@ -1,4 +1,6 @@
 op {
   graph_op_name: "Conv3D"
-  visibility: HIDDEN
+  endpoint {
+    name: "nn.conv3d"
+  }
 }

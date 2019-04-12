@@ -1,4 +1,6 @@
 op {
   graph_op_name: "DecodeBmp"
-  visibility: HIDDEN
+  endpoint {
+    name: "image.decode_bmp"
+  }
 }

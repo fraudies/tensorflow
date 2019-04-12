@@ -49,6 +49,7 @@ py_library(
         "//tensorflow/python:training",
         "//tensorflow/python:training_util",
         "//tensorflow/python:variable_scope",
+        "//tensorflow/python/ops/distributions",
         "//tensorflow/python/ops/losses",
     ],
 )

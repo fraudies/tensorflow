@@ -5,6 +5,6 @@ op {
   }
   endpoint {
     name: "unsorted_segment_max"
-    deprecation_version: 2
+    deprecated: true
   }
 }

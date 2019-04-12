@@ -163,9 +163,6 @@ TokKind HloLexer::LexToken() {
               current_ptr_ = comment_start;
               return TokKind::kError;
             }
-            if (current == kError) {
-              return TokKind::kError;
-            }
           }
           // Return no token for the comment. Keep lexing.
           continue;
@@ -179,9 +176,6 @@ TokKind HloLexer::LexToken() {
             int current = PeekCurrentChar();
             if (current == kEOF || current == '\n' || current == '\r') {
               break;
-            }
-            if (current == kError) {
-              return TokKind::kError;
             }
             current_ptr_++;
           }

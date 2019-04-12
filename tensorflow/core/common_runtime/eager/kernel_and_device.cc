@@ -16,9 +16,7 @@ limitations under the License.
 #include "tensorflow/core/common_runtime/eager/kernel_and_device.h"
 
 #include "tensorflow/core/common_runtime/device_factory.h"
-#include "tensorflow/core/common_runtime/eager/attr_builder.h"
 #include "tensorflow/core/common_runtime/rendezvous_mgr.h"
-#include "tensorflow/core/common_runtime/step_stats_collector.h"
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/framework/node_def.pb.h"
 #include "tensorflow/core/framework/resource_mgr.h"
@@ -34,45 +32,32 @@ limitations under the License.
 namespace tensorflow {
 
 // static
-Status KernelAndDevice::Init(const NodeDef& ndef, FunctionLibraryRuntime* flr,
+Status KernelAndDevice::Init(const NodeDef& ndef, FunctionLibraryRuntime* flib,
                              std::function<void(std::function<void()>)>* runner,
                              KernelAndDevice* out) {
   OpKernel* k = nullptr;
-  TF_RETURN_IF_ERROR(flr->CreateKernel(ndef, &k));
-  out->device_ = flr->device();
+  Status s = flib->CreateKernel(ndef, &k);
+  out->device_ = flib->device();
   out->kernel_.reset(k);
-  out->flr_ = flr;
+  out->flib_ = flib;
   out->runner_ = runner;
   out->default_runner_ = [](std::function<void()> f) { f(); };
-
-  // Update output_dtypes_.
-  const OpDef* op_def = nullptr;
-  const FunctionDef* function_def =
-      flr->GetFunctionLibraryDefinition()->Find(ndef.op());
-  if (function_def != nullptr) {
-    op_def = &(function_def->signature());
-  } else {
-    TF_RETURN_IF_ERROR(OpDefForOp(ndef.op().c_str(), &op_def));
-  }
-  return OutputTypesForNode(ndef, *op_def, &out->output_dtypes_);
+  return s;
 }
 
 Status KernelAndDevice::Run(std::vector<Tensor>* inputs,
-                            std::vector<Tensor>* outputs, NodeExecStats* stats,
-                            StepStats* step_stats,
-                            GraphCollector* graph_collector) {
+                            std::vector<Tensor>* outputs,
+                            NodeExecStats* stats) {
   ScopedStepContainer step_container(0, [this](const string& name) {
     device_->resource_manager()->Cleanup(name).IgnoreError();
   });
-  return this->Run(&step_container, inputs, outputs, stats, step_stats,
-                   graph_collector);
+  return this->Run(&step_container, inputs, outputs, stats);
 }
 
 Status KernelAndDevice::Run(ScopedStepContainer* step_container,
                             std::vector<Tensor>* inputs,
-                            std::vector<Tensor>* outputs, NodeExecStats* stats,
-                            StepStats* step_stats,
-                            GraphCollector* graph_collector) {
+                            std::vector<Tensor>* outputs,
+                            NodeExecStats* stats) {
   gtl::InlinedVector<TensorValue, 4> input_vector;
   for (Tensor& t : *inputs) {
     input_vector.push_back(TensorValue(&t));
@@ -84,15 +69,6 @@ Status KernelAndDevice::Run(ScopedStepContainer* step_container,
                              tensorflow::HOST_MEMORY);
   }
 
-  gtl::InlinedVector<DeviceContext*, 4> input_device_contexts;
-  for (int i = 0; i < inputs->size(); i++) {
-    DeviceContext* device_context = nullptr;
-    if (device_->tensorflow_gpu_device_info() != nullptr) {
-      device_context = device_->tensorflow_gpu_device_info()->default_context;
-    }
-    input_device_contexts.push_back(device_context);
-  }
-
   OpKernelContext::Params params;
   params.device = device_;
   params.frame_iter = FrameAndIter(0, 0);
@@ -100,17 +76,13 @@ Status KernelAndDevice::Run(ScopedStepContainer* step_container,
   params.op_kernel = kernel_.get();
   params.resource_manager = device_->resource_manager();
   params.output_attr_array = gtl::vector_as_array(&out_attrs);
-  params.function_library = flr_;
+  params.function_library = flib_;
   params.slice_reader_cache = &slice_reader_cache_;
   params.rendezvous = rendez_;
   params.cancellation_manager = &cm_;
   params.log_memory = log_memory_;
-  std::unique_ptr<StepStatsCollector> step_stats_collector;
   if (stats != nullptr) {
-    step_stats_collector.reset(new StepStatsCollector(step_stats));
     params.track_allocations = true;
-    params.stats_collector = step_stats_collector.get();
-    params.graph_collector = graph_collector;
   }
   if (runner_ == nullptr) {
     params.runner = &default_runner_;
@@ -119,9 +91,6 @@ Status KernelAndDevice::Run(ScopedStepContainer* step_container,
   }
 
   params.step_container = step_container;
-  params.collective_executor =
-      collective_executor_ ? collective_executor_->get() : nullptr;
-  params.input_device_contexts = &input_device_contexts;
 
   OpKernelContext context(&params);
 
@@ -143,7 +112,7 @@ Status KernelAndDevice::Run(ScopedStepContainer* step_container,
     outputs->push_back(Tensor(*context.mutable_output(i)));
   }
   if (stats != nullptr) {
-    for (const auto& allocator_pair : context.ConsumeWrappedAllocators()) {
+    for (const auto& allocator_pair : context.wrapped_allocators()) {
       AllocatorMemoryUsed* memory = stats->add_memory();
       memory->set_allocator_name(allocator_pair.first->Name());
       auto sizes = allocator_pair.second->GetSizes();
@@ -163,17 +132,8 @@ Status KernelAndDevice::Run(ScopedStepContainer* step_container,
     }
 
     ms->set_persistent_memory_size(context.persistent_memory_allocated());
-    step_stats_collector->Finalize();
   }
   return Status::OK();
-}
-
-tensorflow::Device* KernelAndDevice::OutputDevice(int idx) const {
-  if (device_ != nullptr &&
-      kernel_->output_memory_types()[idx] == HOST_MEMORY) {
-    return nullptr;
-  }
-  return device_;
 }
 
 }  // namespace tensorflow

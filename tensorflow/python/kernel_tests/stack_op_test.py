@@ -24,7 +24,6 @@ from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import errors_impl
 from tensorflow.python.framework import ops
-from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import gradient_checker
 from tensorflow.python.ops import variables
@@ -42,10 +41,9 @@ def np_split_squeeze(array, axis):
 
 class StackOpTest(test.TestCase):
 
-  @test_util.run_deprecated_v1
   def testSimple(self):
     np.random.seed(7)
-    with self.session(use_gpu=True):
+    with self.test_session(use_gpu=True):
       for shape in (2,), (3,), (2, 3), (3, 2), (4, 3, 2):
         for dtype in [np.bool, np.float32, np.int32, np.int64]:
           data = np.random.randn(*shape).astype(dtype)
@@ -56,30 +54,27 @@ class StackOpTest(test.TestCase):
           c = array_ops.stack(xs)
           self.assertAllEqual(c.eval(), data)
 
-  @test_util.run_deprecated_v1
   def testSimpleParallelCPU(self):
     np.random.seed(7)
-    with self.session(use_gpu=False):
+    with self.test_session(use_gpu=False):
       for shape in (2,), (3,), (2, 3), (3, 2), (4, 3, 2):
         data = np.random.randn(*shape).astype(np.float32)
         xs = list(map(constant_op.constant, data))
         c = array_ops.parallel_stack(xs)
         self.assertAllEqual(c.eval(), data)
 
-  @test_util.run_deprecated_v1
   def testSimpleParallelGPU(self):
     np.random.seed(7)
-    with self.session(use_gpu=True):
+    with self.test_session(use_gpu=True):
       for shape in (2,), (3,), (2, 3), (3, 2), (4, 3, 2):
         data = np.random.randn(*shape).astype(np.float32)
         xs = list(map(constant_op.constant, data))
         c = array_ops.parallel_stack(xs)
         self.assertAllEqual(c.eval(), data)
 
-  @test_util.run_deprecated_v1
   def testConst(self):
     np.random.seed(7)
-    with self.session(use_gpu=True):
+    with self.test_session(use_gpu=True):
       for shape in (2,), (3,), (2, 3), (3, 2), (4, 3, 2):
         for dtype in [np.bool, np.float32, np.int32, np.int64]:
           data = np.random.randn(*shape).astype(dtype)
@@ -101,10 +96,9 @@ class StackOpTest(test.TestCase):
         b = array_ops.reshape(a, array_ops.stack([2, 3]))
         self.assertAllEqual(b.get_shape(), [2, 3])
 
-  @test_util.run_deprecated_v1
   def testConstParallelCPU(self):
     np.random.seed(7)
-    with self.session(use_gpu=False):
+    with self.test_session(use_gpu=False):
       for shape in (2,), (3,), (2, 3), (3, 2), (4, 3, 2):
         data = np.random.randn(*shape).astype(np.float32)
         if len(shape) == 1:
@@ -116,10 +110,9 @@ class StackOpTest(test.TestCase):
         c = array_ops.parallel_stack(data)
         self.assertAllEqual(c.eval(), data)
 
-  @test_util.run_deprecated_v1
   def testConstParallelGPU(self):
     np.random.seed(7)
-    with self.session(use_gpu=True):
+    with self.test_session(use_gpu=True):
       for shape in (2,), (3,), (2, 3), (3, 2), (4, 3, 2):
         data = np.random.randn(*shape).astype(np.float32)
         if len(shape) == 1:
@@ -131,20 +124,18 @@ class StackOpTest(test.TestCase):
         c = array_ops.parallel_stack(data)
         self.assertAllEqual(c.eval(), data)
 
-  @test_util.run_deprecated_v1
   def testGradientsAxis0(self):
     np.random.seed(7)
     for shape in (2,), (3,), (2, 3), (3, 2), (4, 3, 2):
       data = np.random.randn(*shape)
       shapes = [shape[1:]] * shape[0]
-      with self.cached_session(use_gpu=True):
+      with self.test_session(use_gpu=True):
         # TODO(irving): Remove list() once we handle maps correctly
         xs = list(map(constant_op.constant, data))
         c = array_ops.stack(xs)
         err = gradient_checker.compute_gradient_error(xs, shapes, c, shape)
         self.assertLess(err, 1e-6)
 
-  @test_util.run_deprecated_v1
   def testGradientsAxis1(self):
     np.random.seed(7)
     for shape in (2, 3), (3, 2), (4, 3, 2):
@@ -152,17 +143,16 @@ class StackOpTest(test.TestCase):
       shapes = [shape[1:]] * shape[0]
       out_shape = list(shape[1:])
       out_shape.insert(1, shape[0])
-      with self.cached_session(use_gpu=True):
+      with self.test_session(use_gpu=True):
         # TODO(irving): Remove list() once we handle maps correctly
         xs = list(map(constant_op.constant, data))
         c = array_ops.stack(xs, axis=1)
         err = gradient_checker.compute_gradient_error(xs, shapes, c, out_shape)
         self.assertLess(err, 1e-6)
 
-  @test_util.run_deprecated_v1
   def testZeroSizeCPU(self):
     # Verify that stack doesn't crash for zero size inputs
-    with self.session(use_gpu=False):
+    with self.test_session(use_gpu=False):
       for shape in (0,), (3, 0), (0, 3):
         x = np.zeros((2,) + shape).astype(np.int32)
         p = array_ops.stack(list(x)).eval()
@@ -171,10 +161,9 @@ class StackOpTest(test.TestCase):
         p = array_ops.parallel_stack(list(x)).eval()
         self.assertAllEqual(p, x)
 
-  @test_util.run_deprecated_v1
   def testZeroSizeGPU(self):
     # Verify that stack doesn't crash for zero size inputs
-    with self.session(use_gpu=True):
+    with self.test_session(use_gpu=True):
       for shape in (0,), (3, 0), (0, 3):
         x = np.zeros((2,) + shape).astype(np.int32)
         p = array_ops.stack(list(x)).eval()
@@ -183,9 +172,8 @@ class StackOpTest(test.TestCase):
         p = array_ops.parallel_stack(list(x)).eval()
         self.assertAllEqual(p, x)
 
-  @test_util.run_deprecated_v1
   def testAxis0DefaultCPU(self):
-    with self.session(use_gpu=False):
+    with self.test_session(use_gpu=False):
       t = [constant_op.constant([1, 2, 3]), constant_op.constant([4, 5, 6])]
       stacked = array_ops.stack(t).eval()
       parallel_stacked = array_ops.parallel_stack(t).eval()
@@ -194,9 +182,8 @@ class StackOpTest(test.TestCase):
     self.assertAllEqual(stacked, expected)
     self.assertAllEqual(parallel_stacked, expected)
 
-  @test_util.run_deprecated_v1
   def testAxis0DefaultGPU(self):
-    with self.session(use_gpu=True):
+    with self.test_session(use_gpu=True):
       t = [constant_op.constant([1, 2, 3]), constant_op.constant([4, 5, 6])]
       stacked = array_ops.stack(t).eval()
       parallel_stacked = array_ops.parallel_stack(t).eval()
@@ -214,14 +201,14 @@ class StackOpTest(test.TestCase):
       for j in range(-i, i):
         test_arrays = np_split_squeeze(expected, j)
 
-        with self.cached_session(use_gpu=True):
+        with self.test_session(use_gpu=True):
           actual_pack = array_ops.stack(test_arrays, axis=j)
           self.assertEqual(expected.shape, actual_pack.get_shape())
-          actual_pack = self.evaluate(actual_pack)
+          actual_pack = actual_pack.eval()
 
           actual_stack = array_ops.stack(test_arrays, axis=j)
           self.assertEqual(expected.shape, actual_stack.get_shape())
-          actual_stack = self.evaluate(actual_stack)
+          actual_stack = actual_stack.eval()
 
         self.assertNDArrayNear(expected, actual_stack, 1e-6)
 
@@ -238,9 +225,8 @@ class StackOpTest(test.TestCase):
 
 class AutomaticStackingTest(test.TestCase):
 
-  @test_util.run_deprecated_v1
   def testSimple(self):
-    with self.session(use_gpu=True):
+    with self.test_session(use_gpu=True):
       self.assertAllEqual(
           [1, 0, 2],
           ops.convert_to_tensor([1, constant_op.constant(0), 2]).eval())
@@ -260,27 +246,24 @@ class AutomaticStackingTest(test.TestCase):
                           ]).eval())
 
   def testWithNDArray(self):
-    with self.session(use_gpu=True):
+    with self.test_session(use_gpu=True):
       result = ops.convert_to_tensor([[[0., 0.],
                                        constant_op.constant([1., 1.])],
                                       np.array(
                                           [[2., 2.], [3., 3.]],
                                           dtype=np.float32)])
       self.assertAllEqual([[[0., 0.], [1., 1.]], [[2., 2.], [3., 3.]]],
-                          self.evaluate(result))
+                          result.eval())
 
-  @test_util.run_deprecated_v1
   def testVariable(self):
-    with self.session(use_gpu=True):
+    with self.test_session(use_gpu=True):
       v = variables.Variable(17)
       result = ops.convert_to_tensor([[0, 0, 0], [0, v, 0], [0, 0, 0]])
       v.initializer.run()
-      self.assertAllEqual([[0, 0, 0], [0, 17, 0], [0, 0, 0]],
-                          self.evaluate(result))
+      self.assertAllEqual([[0, 0, 0], [0, 17, 0], [0, 0, 0]], result.eval())
 
       v.assign(38).op.run()
-      self.assertAllEqual([[0, 0, 0], [0, 38, 0], [0, 0, 0]],
-                          self.evaluate(result))
+      self.assertAllEqual([[0, 0, 0], [0, 38, 0], [0, 0, 0]], result.eval())
 
   def testDtype(self):
     t_0 = ops.convert_to_tensor([[0., 0., 0.], [0., 0., 0.], [0., 0., 0.]])
@@ -323,9 +306,8 @@ class AutomaticStackingTest(test.TestCase):
     t_2 = ops.convert_to_tensor([t_0, t_0, t_1], dtype=dtypes.float64)
     self.assertEqual(dtypes.float64, t_2.dtype)
 
-  @test_util.run_deprecated_v1
   def testPlaceholder(self):
-    with self.session(use_gpu=True):
+    with self.test_session(use_gpu=True):
       # Test using placeholder with a defined shape.
       ph_0 = array_ops.placeholder(dtypes.int32, shape=[])
       result_0 = ops.convert_to_tensor([[0, 0, 0], [0, ph_0, 0], [0, 0, 0]])
@@ -342,7 +324,6 @@ class AutomaticStackingTest(test.TestCase):
       self.assertAllEqual(
           [[0, 0, 0], [0, 2, 0], [0, 0, 0]], result_1.eval(feed_dict={ph_1: 2}))
 
-  @test_util.run_deprecated_v1
   def testShapeErrors(self):
     # Static shape error.
     ph_0 = array_ops.placeholder(dtypes.int32, shape=[1])
@@ -352,7 +333,7 @@ class AutomaticStackingTest(test.TestCase):
     # Dynamic shape error.
     ph_1 = array_ops.placeholder(dtypes.int32)
     result_1 = ops.convert_to_tensor([[0, 0, 0], [0, ph_1, 0], [0, 0, 0]])
-    with self.session(use_gpu=True):
+    with self.test_session(use_gpu=True):
       with self.assertRaises(errors_impl.InvalidArgumentError):
         result_1.eval(feed_dict={ph_1: [1]})
 

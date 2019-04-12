@@ -56,7 +56,12 @@ def _eager_safe_variable_handle(shape, dtype, shared_name, name, graph_mode):
     # shape inference doesn't run in eager mode we copy this data here for when
     # the handle is captured by an eager mode function.
     # pylint: disable=protected-access
-    handle._handle_data = resource_variable_ops.get_resource_handle_data(h)
+    if ops._USE_C_SHAPES:
+      handle._handle_data = resource_variable_ops.get_resource_handle_data(h)
+    else:
+      if h._handle_data is None:
+        ops.set_shape_and_handle_data_for_outputs(h.op)
+      handle._handle_data = h._handle_data
     # pylint: enable=protected-access
   # Clean up op->graph->op reference cycles.
   ops.dismantle_graph(graph)

@@ -87,19 +87,6 @@ REGISTER_KERNEL_BUILDER(Name("XRTReadLiteral")
                             .HostMemory("literal"),
                         XRTReadLiteralOp<false, XRTGenericDeviceAccessor>);
 
-REGISTER_KERNEL_BUILDER(Name("XRTWriteLiteral")
-                            .Device(DEVICE_XLA_GPU)
-                            .HostMemory("handle")
-                            .HostMemory("literal")
-                            .HostMemory("output_handle"),
-                        XRTWriteLiteralOp<XRTGenericDeviceAccessor>);
-REGISTER_KERNEL_BUILDER(Name("XRTWriteLiteral")
-                            .Device(DEVICE_XLA_CPU)
-                            .HostMemory("handle")
-                            .HostMemory("literal")
-                            .HostMemory("output_handle"),
-                        XRTWriteLiteralOp<XRTGenericDeviceAccessor>);
-
 REGISTER_KERNEL_BUILDER(Name("XRTReadLiteralAndRelease")
                             .Device(DEVICE_XLA_GPU)
                             .HostMemory("handle")
@@ -119,10 +106,5 @@ REGISTER_KERNEL_BUILDER(Name("XRTReleaseAllocationHandle")
                             .Device(DEVICE_XLA_CPU)
                             .HostMemory("handle"),
                         XRTReleaseAllocationOp<XRTGenericDeviceAccessor>);
-
-REGISTER_KERNEL_BUILDER(Name("XRTReleaseAllAllocations").Device(DEVICE_XLA_GPU),
-                        XRTReleaseAllAllocationsOp<XRTGenericDeviceAccessor>);
-REGISTER_KERNEL_BUILDER(Name("XRTReleaseAllAllocations").Device(DEVICE_XLA_CPU),
-                        XRTReleaseAllAllocationsOp<XRTGenericDeviceAccessor>);
 
 }  // namespace tensorflow

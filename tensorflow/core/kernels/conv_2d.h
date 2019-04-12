@@ -51,47 +51,42 @@ struct InflatePadAndShuffle {
   }
 };
 
-template <typename Device, typename Input, typename Filter, typename Output,
-          typename OutputKernel>
+template <typename Device, typename Input, typename Filter, typename Output>
 void SpatialConvolutionFunc(const Device& d, Output output, Input input,
                             Filter filter, int row_stride, int col_stride,
                             int row_dilation, int col_dilation,
-                            const Eigen::PaddingType& padding,
-                            const OutputKernel& output_kernel) {
+                            const Eigen::PaddingType& padding) {
   // Need to swap row/col when calling Eigen.
   output.device(d) =
       Eigen::SpatialConvolution(input, filter, col_stride, row_stride, padding,
-                                col_dilation, row_dilation, output_kernel);
+                                col_dilation, row_dilation);
 }
 
-template <typename Device, typename T,
-          typename OutputKernel = const Eigen::NoOpOutputKernel>
+template <typename Device, typename T>
 struct SpatialConvolution {
   void operator()(const Device& d, typename TTypes<T, 4>::Tensor output,
                   typename TTypes<T, 4>::ConstTensor input,
                   typename TTypes<T, 4>::ConstTensor filter, int row_stride,
                   int col_stride, int row_dilation, int col_dilation,
-                  const Eigen::PaddingType& padding,
-                  const OutputKernel& output_kernel = OutputKernel()) {
+                  const Eigen::PaddingType& padding) {
     SpatialConvolutionFunc(d, output, input, filter, row_stride, col_stride,
-                           row_dilation, col_dilation, padding, output_kernel);
+                           row_dilation, col_dilation, padding);
   }
 };
 
-template <typename Device, typename OutputKernel>
-struct SpatialConvolution<Device, Eigen::half, OutputKernel> {
+template <typename Device>
+struct SpatialConvolution<Device, Eigen::half> {
   void operator()(const Device& d,
                   typename TTypes<Eigen::half, 4>::Tensor output,
                   typename TTypes<Eigen::half, 4>::ConstTensor input,
                   typename TTypes<Eigen::half, 4>::ConstTensor filter,
                   int row_stride, int col_stride, int row_dilation,
-                  int col_dilation, const Eigen::PaddingType& padding,
-                  const OutputKernel& output_kernel = OutputKernel()) {
+                  int col_dilation, const Eigen::PaddingType& padding) {
     output.device(d) =
         Eigen::SpatialConvolution(input.cast<float>(), filter.cast<float>(),
                                   col_stride, row_stride, padding, col_dilation,
-                                  row_dilation, output_kernel)
-            .template cast<Eigen::half>();
+                                  row_dilation)
+            .cast<Eigen::half>();
   }
 };
 
@@ -129,8 +124,7 @@ struct SpatialConvolutionBackwardFilter {
 // TODO(vrv): Figure out how to use the MatMulFunctor in matmul_op.h.
 // My initial attempt to do this compiled but failed in the pytest
 // due to a swigdeps error.
-template <typename Device, typename T,
-          typename OutputKernel = const Eigen::NoOpOutputKernel>
+template <typename Device, typename T>
 struct MatMulConvFunctor {
   // Computes on device "d": out = in0 * in1, where * is matrix
   // multiplication.
@@ -138,9 +132,8 @@ struct MatMulConvFunctor {
       const Device& d, typename TTypes<T, 2>::Tensor out,
       typename TTypes<T, 2>::ConstTensor in0,
       typename TTypes<T, 2>::ConstTensor in1,
-      const Eigen::array<Eigen::IndexPair<Eigen::DenseIndex>, 1>& dim_pair,
-      const OutputKernel& output_kernel = OutputKernel()) {
-    out.device(d) = in0.contract(in1, dim_pair, output_kernel);
+      const Eigen::array<Eigen::IndexPair<Eigen::DenseIndex>, 1>& dim_pair) {
+    out.device(d) = in0.contract(in1, dim_pair);
   }
 };
 
@@ -162,7 +155,7 @@ struct TransformFilter {
     merged_dims[1] = in.dimension(NDIMS - 2);  // input filters
     merged_dims[2] = in.dimension(NDIMS - 1);  // output filters
 
-    DCHECK(dst_filter_format == FORMAT_OIHW)
+    CHECK(dst_filter_format == FORMAT_OIHW)
         << "Unsupported destination filter format: "
         << ToString(dst_filter_format);
     // Source filter format is FORMAT_HWIO and spatial dimensions HW are merged

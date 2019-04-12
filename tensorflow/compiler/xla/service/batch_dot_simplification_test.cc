@@ -17,13 +17,14 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/hlo_matchers.h"
 #include "tensorflow/compiler/xla/test.h"
 #include "tensorflow/compiler/xla/tests/hlo_test_base.h"
+#include "tensorflow/compiler/xla/tests/hlo_verified_test_base.h"
 
 namespace xla {
 namespace {
 
 namespace op = xla::testing::opcode_matchers;
 
-class BatchDotSimplificationTest : public HloTestBase {};
+class BatchDotSimplificationTest : public HloVerifiedTestBase {};
 
 TEST_F(BatchDotSimplificationTest,
        ElideSingleDegenerateBatchDotDim_VectorVector) {
@@ -37,12 +38,11 @@ main {
 }
 )";
 
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> m,
-                          ParseAndReturnVerifiedModule(hlo_text));
+  ParseAndVerifyModule(hlo_text);
   BatchDotSimplification pass;
-  ASSERT_TRUE(pass.Run(m.get()).ValueOrDie());
+  ASSERT_TRUE(pass.Run(&module()).ValueOrDie());
 
-  HloInstruction* root = m->entry_computation()->root_instruction();
+  HloInstruction* root = module().entry_computation()->root_instruction();
   EXPECT_THAT(root,
               op::Reshape(op::Dot(
                   op::Reshape(op::Parameter(0)), op::Reshape(op::Parameter(1)),
@@ -61,12 +61,11 @@ main {
 }
 )";
 
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> m,
-                          ParseAndReturnVerifiedModule(hlo_text));
+  ParseAndVerifyModule(hlo_text);
   BatchDotSimplification pass;
-  ASSERT_TRUE(pass.Run(m.get()).ValueOrDie());
+  ASSERT_TRUE(pass.Run(&module()).ValueOrDie());
 
-  HloInstruction* root = m->entry_computation()->root_instruction();
+  HloInstruction* root = module().entry_computation()->root_instruction();
   EXPECT_THAT(root,
               op::Reshape(op::Dot(
                   op::Reshape(op::Parameter(0)), op::Reshape(op::Parameter(1)),
@@ -85,12 +84,11 @@ main {
 }
 )";
 
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> m,
-                          ParseAndReturnVerifiedModule(hlo_text));
+  ParseAndVerifyModule(hlo_text);
   BatchDotSimplification pass;
-  ASSERT_TRUE(pass.Run(m.get()).ValueOrDie());
+  ASSERT_TRUE(pass.Run(&module()).ValueOrDie());
 
-  HloInstruction* root = m->entry_computation()->root_instruction();
+  HloInstruction* root = module().entry_computation()->root_instruction();
   EXPECT_THAT(root,
               op::Reshape(op::Dot(
                   op::Reshape(op::Parameter(0)), op::Reshape(op::Parameter(1)),
@@ -109,12 +107,11 @@ main {
 }
 )";
 
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> m,
-                          ParseAndReturnVerifiedModule(hlo_text));
+  ParseAndVerifyModule(hlo_text);
   BatchDotSimplification pass;
-  ASSERT_TRUE(pass.Run(m.get()).ValueOrDie());
+  ASSERT_TRUE(pass.Run(&module()).ValueOrDie());
 
-  HloInstruction* root = m->entry_computation()->root_instruction();
+  HloInstruction* root = module().entry_computation()->root_instruction();
   EXPECT_THAT(root,
               op::Reshape(op::Dot(
                   op::Reshape(op::Parameter(0)), op::Reshape(op::Parameter(1)),
@@ -133,12 +130,11 @@ main {
 }
 )";
 
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> m,
-                          ParseAndReturnVerifiedModule(hlo_text));
+  ParseAndVerifyModule(hlo_text);
   BatchDotSimplification pass;
-  ASSERT_TRUE(pass.Run(m.get()).ValueOrDie());
+  ASSERT_TRUE(pass.Run(&module()).ValueOrDie());
 
-  HloInstruction* root = m->entry_computation()->root_instruction();
+  HloInstruction* root = module().entry_computation()->root_instruction();
   EXPECT_THAT(root,
               op::Reshape(op::Dot(
                   op::Reshape(op::Parameter(0)), op::Reshape(op::Parameter(1)),
@@ -157,12 +153,11 @@ main {
 }
 )";
 
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> m,
-                          ParseAndReturnVerifiedModule(hlo_text));
+  ParseAndVerifyModule(hlo_text);
   BatchDotSimplification pass;
-  ASSERT_TRUE(pass.Run(m.get()).ValueOrDie());
+  ASSERT_TRUE(pass.Run(&module()).ValueOrDie());
 
-  HloInstruction* root = m->entry_computation()->root_instruction();
+  HloInstruction* root = module().entry_computation()->root_instruction();
   EXPECT_THAT(root,
               op::Reshape(op::Dot(
                   op::Reshape(op::Parameter(0)), op::Reshape(op::Parameter(1)),

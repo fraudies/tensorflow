@@ -43,7 +43,7 @@ __all__ = [
 ]
 
 
-@tf_export(v1=["distributions.StudentT"])
+@tf_export("distributions.StudentT")
 class StudentT(distribution.Distribution):
   """Student's t-distribution.
 

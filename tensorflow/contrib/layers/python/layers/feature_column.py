@@ -194,7 +194,6 @@ class _DeepEmbeddingLookupArguments(
   pass
 
 
-@six.add_metaclass(abc.ABCMeta)
 class _FeatureColumn(object):
   """Represents a feature column abstraction.
 
@@ -206,6 +205,7 @@ class _FeatureColumn(object):
   Following classes (_SparseColumn, _RealValuedColumn, ...) are concrete
   instances.
   """
+  __metaclass__ = abc.ABCMeta
 
   @abc.abstractproperty
   @deprecation.deprecated(
@@ -1015,7 +1015,8 @@ class _OneHotColumn(
         dense_id_tensor, depth=self.length, on_value=1.0, off_value=0.0)
 
     # Reduce to get a multi-hot per example.
-    return math_ops.reduce_sum(one_hot_id_tensor, axis=[output_rank - 1])
+    return math_ops.reduce_sum(
+        one_hot_id_tensor, reduction_indices=[output_rank - 1])
 
   @property
   def _variable_shape(self):

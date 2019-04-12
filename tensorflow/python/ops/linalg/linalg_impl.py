@@ -44,14 +44,12 @@ einsum = special_math_ops.einsum
 eye = linalg_ops.eye
 inv = linalg_ops.matrix_inverse
 logm = gen_linalg_ops.matrix_logarithm
-lu = gen_linalg_ops.lu
 tf_export('linalg.logm')(logm)
 lstsq = linalg_ops.matrix_solve_ls
 norm = linalg_ops.norm
 qr = linalg_ops.qr
 set_diag = array_ops.matrix_set_diag
 solve = linalg_ops.matrix_solve
-sqrtm = linalg_ops.matrix_square_root
 svd = linalg_ops.svd
 tensordot = math_ops.tensordot
 trace = math_ops.trace
@@ -89,7 +87,7 @@ def logdet(matrix, name=None):
     chol = gen_linalg_ops.cholesky(matrix)
     return 2.0 * math_ops.reduce_sum(
         math_ops.log(math_ops.real(array_ops.matrix_diag_part(chol))),
-        axis=[-1])
+        reduction_indices=[-1])
 
 
 @tf_export('linalg.adjoint')

@@ -62,7 +62,6 @@ class LatestCheckpointWithRelativePaths(test.TestCase):
     finally:
       shutil.rmtree(tempdir)
 
-  @test_util.run_deprecated_v1
   def testNameCollision(self):
     # Make sure we have a clean directory to work in.
     with self.tempDir() as tempdir:
@@ -100,7 +99,6 @@ class LatestCheckpointWithRelativePaths(test.TestCase):
           self.assertIsNotNone(
               checkpoint_management.latest_checkpoint(traindir))
 
-  @test_util.run_deprecated_v1
   def testRelativePath(self):
     # Make sure we have a clean directory to work in.
     with self.tempDir() as tempdir:
@@ -125,9 +123,9 @@ class LatestCheckpointWithRelativePaths(test.TestCase):
           # Record a short training history.
           variables.global_variables_initializer().run()
           save.save(sess, filepath, global_step=0)
-          self.evaluate(inc)
+          inc.eval()
           save.save(sess, filepath, global_step=1)
-          self.evaluate(inc)
+          inc.eval()
           save.save(sess, filepath, global_step=2)
 
         with self.cached_session() as sess:
@@ -272,7 +270,6 @@ class SaverUtilsTest(test.TestCase):
   def tearDown(self):
     gfile.DeleteRecursively(self._base_dir)
 
-  @test_util.run_deprecated_v1
   def testCheckpointExists(self):
     for sharded in (False, True):
       for version in (saver_pb2.SaverDef.V2, saver_pb2.SaverDef.V1):
@@ -291,7 +288,6 @@ class SaverUtilsTest(test.TestCase):
           ckpt_prefix = checkpoint_management.latest_checkpoint(self._base_dir)
           self.assertTrue(checkpoint_management.checkpoint_exists(ckpt_prefix))
 
-  @test_util.run_deprecated_v1
   def testGetCheckpointMtimes(self):
     prefixes = []
     for version in (saver_pb2.SaverDef.V2, saver_pb2.SaverDef.V1):
@@ -306,7 +302,6 @@ class SaverUtilsTest(test.TestCase):
     self.assertEqual(2, len(mtimes))
     self.assertTrue(mtimes[1] >= mtimes[0])
 
-  @test_util.run_deprecated_v1
   def testRemoveCheckpoint(self):
     for sharded in (False, True):
       for version in (saver_pb2.SaverDef.V2, saver_pb2.SaverDef.V1):

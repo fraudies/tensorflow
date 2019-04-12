@@ -222,8 +222,10 @@ def sequence_categorical_column_with_identity(
     ValueError: if `default_value` is not in range `[0, num_buckets)`.
   """
   return fc._SequenceCategoricalColumn(
-      fc._categorical_column_with_identity(
-          key=key, num_buckets=num_buckets, default_value=default_value))
+      fc.categorical_column_with_identity(
+          key=key,
+          num_buckets=num_buckets,
+          default_value=default_value))
 
 
 def sequence_categorical_column_with_hash_bucket(
@@ -263,8 +265,10 @@ def sequence_categorical_column_with_hash_bucket(
     ValueError: `dtype` is neither string nor integer.
   """
   return fc._SequenceCategoricalColumn(
-      fc._categorical_column_with_hash_bucket(
-          key=key, hash_bucket_size=hash_bucket_size, dtype=dtype))
+      fc.categorical_column_with_hash_bucket(
+          key=key,
+          hash_bucket_size=hash_bucket_size,
+          dtype=dtype))
 
 
 def sequence_categorical_column_with_vocabulary_file(
@@ -320,7 +324,7 @@ def sequence_categorical_column_with_vocabulary_file(
     ValueError: `dtype` is neither string nor integer.
   """
   return fc._SequenceCategoricalColumn(
-      fc._categorical_column_with_vocabulary_file(
+      fc.categorical_column_with_vocabulary_file(
           key=key,
           vocabulary_file=vocabulary_file,
           vocabulary_size=vocabulary_size,
@@ -380,7 +384,7 @@ def sequence_categorical_column_with_vocabulary_list(
     ValueError: if `dtype` is not integer or string.
   """
   return fc._SequenceCategoricalColumn(
-      fc._categorical_column_with_vocabulary_list(
+      fc.categorical_column_with_vocabulary_list(
           key=key,
           vocabulary_list=vocabulary_list,
           dtype=dtype,

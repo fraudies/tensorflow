@@ -17,16 +17,13 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from tensorflow.python.compat import compat
 from tensorflow.python.data.ops import dataset_ops
 from tensorflow.python.data.util import convert
-from tensorflow.python.data.util import structure
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import gen_dataset_ops
-from tensorflow.python.ops import gen_experimental_dataset_ops as ged_ops
 from tensorflow.python.util.tf_export import tf_export
 
 
@@ -34,8 +31,8 @@ from tensorflow.python.util.tf_export import tf_export
 _DEFAULT_READER_BUFFER_SIZE_BYTES = 256 * 1024  # 256 KB
 
 
-@tf_export("data.TextLineDataset", v1=[])
-class TextLineDatasetV2(dataset_ops.DatasetSource):
+@tf_export("data.TextLineDataset")
+class TextLineDataset(dataset_ops.Dataset):
   """A `Dataset` comprising lines from one or more text files."""
 
   def __init__(self, filenames, compression_type=None, buffer_size=None):
@@ -49,7 +46,7 @@ class TextLineDatasetV2(dataset_ops.DatasetSource):
         to buffer. A value of 0 results in the default buffering values chosen
         based on the compression type.
     """
-    super(TextLineDatasetV2, self).__init__()
+    super(TextLineDataset, self).__init__()
     self._filenames = ops.convert_to_tensor(
         filenames, dtype=dtypes.string, name="filenames")
     self._compression_type = convert.optional_param_to_tensor(
@@ -64,30 +61,23 @@ class TextLineDatasetV2(dataset_ops.DatasetSource):
     return gen_dataset_ops.text_line_dataset(
         self._filenames, self._compression_type, self._buffer_size)
 
-  @property
-  def _element_structure(self):
-    return structure.TensorStructure(dtypes.string, [])
-
-
-@tf_export(v1=["data.TextLineDataset"])
-class TextLineDatasetV1(dataset_ops.DatasetV1Adapter):
-  """A `Dataset` comprising lines from one or more text files."""
-
-  def __init__(self, filenames, compression_type=None, buffer_size=None):
-    wrapped = TextLineDatasetV2(filenames, compression_type, buffer_size)
-    super(TextLineDatasetV1, self).__init__(wrapped)
-  __init__.__doc__ = TextLineDatasetV2.__init__.__doc__
+  def _inputs(self):
+    return []
 
   @property
-  def _filenames(self):
-    return self._dataset._filenames  # pylint: disable=protected-access
+  def output_classes(self):
+    return ops.Tensor
 
-  @_filenames.setter
-  def _filenames(self, value):
-    self._dataset._filenames = value  # pylint: disable=protected-access
+  @property
+  def output_shapes(self):
+    return tensor_shape.scalar()
+
+  @property
+  def output_types(self):
+    return dtypes.string
 
 
-class _TFRecordDataset(dataset_ops.DatasetSource):
+class _TFRecordDataset(dataset_ops.Dataset):
   """A `Dataset` comprising records from one or more TFRecord files."""
 
   def __init__(self, filenames, compression_type=None, buffer_size=None):
@@ -118,9 +108,20 @@ class _TFRecordDataset(dataset_ops.DatasetSource):
     return gen_dataset_ops.tf_record_dataset(
         self._filenames, self._compression_type, self._buffer_size)
 
+  def _inputs(self):
+    return []
+
   @property
-  def _element_structure(self):
-    return structure.TensorStructure(dtypes.string, [])
+  def output_classes(self):
+    return ops.Tensor
+
+  @property
+  def output_shapes(self):
+    return tensor_shape.TensorShape([])
+
+  @property
+  def output_types(self):
+    return dtypes.string
 
 
 class ParallelInterleaveDataset(dataset_ops.InterleaveDataset):
@@ -144,15 +145,15 @@ class ParallelInterleaveDataset(dataset_ops.InterleaveDataset):
 
   def _as_variant_tensor(self):
     # pylint: disable=protected-access
-    return ged_ops.experimental_parallel_interleave_dataset(
+    return gen_dataset_ops.parallel_interleave_dataset(
         self._input_dataset._as_variant_tensor(),
-        self._map_func.function.captured_inputs,
+        self._map_func.captured_inputs,
         self._cycle_length,
         self._block_length,
         self._sloppy,
         self._buffer_output_elements,
         self._prefetch_input_elements,
-        f=self._map_func.function,
+        f=self._map_func,
         **dataset_ops.flat_structure(self))
     # pylint: enable=protected-access
 
@@ -160,13 +161,13 @@ class ParallelInterleaveDataset(dataset_ops.InterleaveDataset):
     return "tf.data.experimental.parallel_interleave()"
 
 
-@tf_export("data.TFRecordDataset", v1=[])
-class TFRecordDatasetV2(dataset_ops.DatasetV2):
+@tf_export("data.TFRecordDataset")
+class TFRecordDataset(dataset_ops.Dataset):
   """A `Dataset` comprising records from one or more TFRecord files."""
 
   def __init__(self, filenames, compression_type=None, buffer_size=None,
                num_parallel_reads=None):
-    """Creates a `TFRecordDataset` to read one or more TFRecord files.
+    """Creates a `TFRecordDataset` to read for one or more TFRecord files.
 
     NOTE: The `num_parallel_reads` argument can be used to improve performance
     when reading from a remote filesystem.
@@ -186,8 +187,8 @@ class TFRecordDatasetV2(dataset_ops.DatasetV2):
       TypeError: If any argument does not have the expected type.
       ValueError: If any argument does not have the expected shape.
     """
-    super(TFRecordDatasetV2, self).__init__()
-    if isinstance(filenames, dataset_ops.DatasetV2):
+    super(TFRecordDataset, self).__init__()
+    if isinstance(filenames, dataset_ops.Dataset):
       if filenames.output_types != dtypes.string:
         raise TypeError(
             "`filenames` must be a `tf.data.Dataset` of `tf.string` elements.")
@@ -198,7 +199,7 @@ class TFRecordDatasetV2(dataset_ops.DatasetV2):
     else:
       filenames = ops.convert_to_tensor(filenames, dtype=dtypes.string)
       filenames = array_ops.reshape(filenames, [-1], name="flat_filenames")
-      filenames = dataset_ops.DatasetV2.from_tensor_slices(filenames)
+      filenames = dataset_ops.Dataset.from_tensor_slices(filenames)
 
     self._filenames = filenames
     self._compression_type = compression_type
@@ -221,10 +222,10 @@ class TFRecordDatasetV2(dataset_ops.DatasetV2):
              compression_type=None,
              buffer_size=None,
              num_parallel_reads=None):
-    return TFRecordDatasetV2(filenames or self._filenames,
-                             compression_type or self._compression_type,
-                             buffer_size or self._buffer_size,
-                             num_parallel_reads or self._num_parallel_reads)
+    return TFRecordDataset(filenames or self._filenames,
+                           compression_type or self._compression_type,
+                           buffer_size or self._buffer_size,
+                           num_parallel_reads or self._num_parallel_reads)
 
   def _as_variant_tensor(self):
     return self._impl._as_variant_tensor()  # pylint: disable=protected-access
@@ -233,44 +234,20 @@ class TFRecordDatasetV2(dataset_ops.DatasetV2):
     return self._impl._inputs()  # pylint: disable=protected-access
 
   @property
-  def _element_structure(self):
-    return structure.TensorStructure(dtypes.string, [])
-
-
-@tf_export(v1=["data.TFRecordDataset"])
-class TFRecordDatasetV1(dataset_ops.DatasetV1Adapter):
-  """A `Dataset` comprising records from one or more TFRecord files."""
-
-  def __init__(self, filenames, compression_type=None, buffer_size=None,
-               num_parallel_reads=None):
-    wrapped = TFRecordDatasetV2(
-        filenames, compression_type, buffer_size, num_parallel_reads)
-    super(TFRecordDatasetV1, self).__init__(wrapped)
-  __init__.__doc__ = TFRecordDatasetV2.__init__.__doc__
-
-  def _clone(self,
-             filenames=None,
-             compression_type=None,
-             buffer_size=None,
-             num_parallel_reads=None):
-    # pylint: disable=protected-access
-    return TFRecordDatasetV1(
-        filenames or self._dataset._filenames,
-        compression_type or self._dataset._compression_type,
-        buffer_size or self._dataset._buffer_size,
-        num_parallel_reads or self._dataset._num_parallel_reads)
+  def output_classes(self):
+    return self._impl.output_classes
 
   @property
-  def _filenames(self):
-    return self._dataset._filenames  # pylint: disable=protected-access
+  def output_shapes(self):
+    return self._impl.output_shapes
 
-  @_filenames.setter
-  def _filenames(self, value):
-    self._dataset._filenames = value  # pylint: disable=protected-access
+  @property
+  def output_types(self):
+    return self._impl.output_types
 
 
-@tf_export("data.FixedLengthRecordDataset", v1=[])
-class FixedLengthRecordDatasetV2(dataset_ops.DatasetSource):
+@tf_export("data.FixedLengthRecordDataset")
+class FixedLengthRecordDataset(dataset_ops.Dataset):
   """A `Dataset` of fixed-length records from one or more binary files."""
 
   def __init__(self,
@@ -278,8 +255,7 @@ class FixedLengthRecordDatasetV2(dataset_ops.DatasetSource):
                record_bytes,
                header_bytes=None,
                footer_bytes=None,
-               buffer_size=None,
-               compression_type=None):
+               buffer_size=None):
     """Creates a `FixedLengthRecordDataset`.
 
     Args:
@@ -292,10 +268,8 @@ class FixedLengthRecordDatasetV2(dataset_ops.DatasetSource):
         bytes to ignore at the end of a file.
       buffer_size: (Optional.) A `tf.int64` scalar representing the number of
         bytes to buffer when reading.
-      compression_type: (Optional.) A `tf.string` scalar evaluating to one of
-        `""` (no compression), `"ZLIB"`, or `"GZIP"`.
     """
-    super(FixedLengthRecordDatasetV2, self).__init__()
+    super(FixedLengthRecordDataset, self).__init__()
     self._filenames = ops.convert_to_tensor(
         filenames, dtype=dtypes.string, name="filenames")
     self._record_bytes = ops.convert_to_tensor(
@@ -307,56 +281,23 @@ class FixedLengthRecordDatasetV2(dataset_ops.DatasetSource):
         "footer_bytes", footer_bytes)
     self._buffer_size = convert.optional_param_to_tensor(
         "buffer_size", buffer_size, _DEFAULT_READER_BUFFER_SIZE_BYTES)
-    self._compression_type = convert.optional_param_to_tensor(
-        "compression_type",
-        compression_type,
-        argument_default="",
-        argument_dtype=dtypes.string)
 
   def _as_variant_tensor(self):
-    if (self._compression_type is not None or
-        compat.forward_compatible(2018, 11, 30)):
-      return gen_dataset_ops.fixed_length_record_dataset_v2(
-          self._filenames, self._header_bytes, self._record_bytes,
-          self._footer_bytes, self._buffer_size, self._compression_type)
-    else:
-      return gen_dataset_ops.fixed_length_record_dataset(
-          self._filenames, self._header_bytes, self._record_bytes,
-          self._footer_bytes, self._buffer_size)
+    return gen_dataset_ops.fixed_length_record_dataset(
+        self._filenames, self._header_bytes, self._record_bytes,
+        self._footer_bytes, self._buffer_size)
+
+  def _inputs(self):
+    return []
 
   @property
-  def _element_structure(self):
-    return structure.TensorStructure(dtypes.string, [])
-
-
-@tf_export(v1=["data.FixedLengthRecordDataset"])
-class FixedLengthRecordDatasetV1(dataset_ops.DatasetV1Adapter):
-  """A `Dataset` of fixed-length records from one or more binary files."""
-
-  def __init__(self,
-               filenames,
-               record_bytes,
-               header_bytes=None,
-               footer_bytes=None,
-               buffer_size=None,
-               compression_type=None):
-    wrapped = FixedLengthRecordDatasetV2(
-        filenames, record_bytes, header_bytes, footer_bytes, buffer_size,
-        compression_type)
-    super(FixedLengthRecordDatasetV1, self).__init__(wrapped)
-  __init__.__doc__ = FixedLengthRecordDatasetV2.__init__.__doc__
+  def output_classes(self):
+    return ops.Tensor
 
   @property
-  def _filenames(self):
-    return self._dataset._filenames  # pylint: disable=protected-access
+  def output_shapes(self):
+    return tensor_shape.scalar()
 
-  @_filenames.setter
-  def _filenames(self, value):
-    self._dataset._filenames = value  # pylint: disable=protected-access
-
-
-# TODO(b/119044825): Until all `tf.data` unit tests are converted to V2, keep
-# these aliases in place.
-FixedLengthRecordDataset = FixedLengthRecordDatasetV1
-TFRecordDataset = TFRecordDatasetV1
-TextLineDataset = TextLineDatasetV1
+  @property
+  def output_types(self):
+    return dtypes.string

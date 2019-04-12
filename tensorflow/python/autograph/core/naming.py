@@ -18,7 +18,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from tensorflow.python.autograph.pyct import inspect_utils
 from tensorflow.python.autograph.pyct import qual_names
 
 
@@ -75,9 +74,6 @@ class Namer(object):
     """See call_trees.FunctionNamer.compiled_function_name."""
 
     if not self.recursive:
-      return None, False
-
-    if (live_entity is not None and inspect_utils.islambda(live_entity)):
       return None, False
 
     if owner_type is not None and owner_type not in self.partial_types:

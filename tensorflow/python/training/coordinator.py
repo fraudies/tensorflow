@@ -408,7 +408,7 @@ class Coordinator(object):
 
 
 # Threads for the standard services.
-@tf_export(v1=["train.LooperThread"])
+@tf_export("train.LooperThread")
 class LooperThread(threading.Thread):
   """A thread that runs code repeatedly, optionally on a timer.
 

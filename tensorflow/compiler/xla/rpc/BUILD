@@ -16,6 +16,7 @@ xla_proto_library(
     use_grpc_plugin = True,
     visibility = ["//visibility:public"],
     deps = [
+        "//tensorflow/compiler/xla:xla_data_proto",
         "//tensorflow/compiler/xla:xla_proto",
     ],
 )

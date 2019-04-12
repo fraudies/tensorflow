@@ -84,7 +84,8 @@ def bow_encoder(ids,
       if isinstance(ids, sparse_tensor.SparseTensor):
         raise TypeError('ids are expected to be dense Tensor, got: %s', ids)
       return math_ops.reduce_mean(
-          embedding_ops.embedding_lookup(embeddings, ids), axis=1)
+          embedding_ops.embedding_lookup(embeddings, ids),
+          reduction_indices=1)
 
 
 def embed_sequence(ids,

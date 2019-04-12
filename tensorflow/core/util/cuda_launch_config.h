@@ -21,6 +21,7 @@ limitations under the License.
 #include <algorithm>
 
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
+#include "cuda/include/cuda.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/stream_executor.h"
@@ -127,12 +128,12 @@ inline CudaLaunchConfig GetCudaLaunchConfig(int work_element_count,
   CudaLaunchConfig config;
   const int virtual_thread_count = work_element_count;
   const int physical_thread_count = std::min(
-      d.getNumGpuMultiProcessors() * d.maxGpuThreadsPerMultiProcessor(),
+      d.getNumCudaMultiProcessors() * d.maxCudaThreadsPerMultiProcessor(),
       virtual_thread_count);
-  const int thread_per_block = std::min(1024, d.maxGpuThreadsPerBlock());
+  const int thread_per_block = std::min(1024, d.maxCudaThreadsPerBlock());
   const int block_count =
       std::min(DivUp(physical_thread_count, thread_per_block),
-               d.getNumGpuMultiProcessors());
+               d.getNumCudaMultiProcessors());
 
   config.virtual_thread_count = virtual_thread_count;
   config.thread_per_block = thread_per_block;
@@ -183,7 +184,7 @@ inline CudaLaunchConfig GetCudaLaunchConfigFixedBlockSize(
   cudaError_t err = cudaOccupancyMaxActiveBlocksPerMultiprocessor(
       &block_count, func, fixed_block_size, dynamic_shared_memory_size);
   CHECK_EQ(err, cudaSuccess);
-  block_count = std::min(block_count * d.getNumGpuMultiProcessors(),
+  block_count = std::min(block_count * d.getNumCudaMultiProcessors(),
                          DivUp(work_element_count, fixed_block_size));
 
   config.virtual_thread_count = work_element_count;
@@ -212,7 +213,7 @@ inline Cuda2DLaunchConfig GetCuda2DLaunchConfig(int xdim, int ydim,
   int block_rows = std::max(kThreadsPerBlock / block_cols, 1);
 
   const int physical_thread_count =
-      d.getNumGpuMultiProcessors() * d.maxGpuThreadsPerMultiProcessor();
+      d.getNumCudaMultiProcessors() * d.maxCudaThreadsPerMultiProcessor();
 
   const int max_blocks = std::max(physical_thread_count / kThreadsPerBlock, 1);
 

@@ -5,6 +5,6 @@ op {
   }
   endpoint {
     name: "squared_difference"
-    deprecation_version: 2
+    deprecated: true
   }
 }

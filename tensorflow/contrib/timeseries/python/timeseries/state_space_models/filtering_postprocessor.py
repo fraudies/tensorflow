@@ -20,8 +20,6 @@ from __future__ import print_function
 
 import abc
 
-import six
-
 from tensorflow.contrib import distributions
 
 from tensorflow.contrib.timeseries.python.timeseries import math_utils
@@ -34,9 +32,10 @@ from tensorflow.python.ops import math_ops
 from tensorflow.python.util import nest
 
 
-@six.add_metaclass(abc.ABCMeta)
 class FilteringStepPostprocessor(object):
   """Base class for processors that are applied after each filter step."""
+
+  __metaclass__ = abc.ABCMeta
 
   @abc.abstractmethod
   def process_filtering_step(self, current_times, current_values,

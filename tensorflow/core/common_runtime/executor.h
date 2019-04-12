@@ -173,38 +173,21 @@ class ExecutorBarrier {
   int pending_ GUARDED_BY(mu_) = 0;
   Status status_ GUARDED_BY(mu_);
 
-  void MergeStatusLocked(const Status& s) EXCLUSIVE_LOCKS_REQUIRED(mu_) {
-    if (s.ok()) {
-      return;
-    }
-
-    // Prefer primary failures over cancellations.  A cancellation may finish
-    // _before_ the original status is propagated; we override it in this case.
-    if (status_.ok() ||
-        str_util::StrContains(status_.error_message(), "[CHILD]")) {
-      status_ = s;
-    }
-  }
-
   void WhenDone(const Status& s) {
+    bool error = false;
     Rendezvous* error_rendez = nullptr;
     StatusCallback done = nullptr;
     Status status;
-
     {
       mutex_lock l(mu_);
-
-      // If we are the first error encountered, trigger an abort of the
-      // Rendezvous object by this thread only.
+      // If we are the first error encountered, mark the status
+      // appropriately and later trigger an abort of the Rendezvous
+      // object by this thread only.
       if (status_.ok() && !s.ok()) {
+        error = true;
         error_rendez = rendez_;
         error_rendez->Ref();
-      }
-
-      MergeStatusLocked(s);
-
-      if (!status_.ok()) {
-        status = status_;
+        status_ = s;
       }
 
       // If this is the last call to WhenDone, call the final callback
@@ -213,13 +196,16 @@ class ExecutorBarrier {
         CHECK(done_cb_ != nullptr);
         std::swap(done, done_cb_);
       }
+
+      if (!status_.ok()) {
+        status = status_;
+      }
     }
 
-    if (error_rendez != nullptr) {
+    if (error) {
       error_rendez->StartAbort(status);
       error_rendez->Unref();
     }
-
     if (done != nullptr) {
       delete this;
       done(status);

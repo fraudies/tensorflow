@@ -416,12 +416,6 @@ class GradientsTest(test.TestCase):
       self.assertAllClose(ans, pfor_value)
       self.assertAllClose(ans, while_value)
 
-  def test_jacobian_parallel_iterations(self):
-    x = constant_op.constant([[1., 2], [3, 4]])
-    y = math_ops.matmul(x, x)
-    self.assertAllClose(gradients.jacobian(y, x, parallel_iterations=2),
-                        gradients.jacobian(y, x, parallel_iterations=3))
-
   def test_batch_jacobian_bad_shapes(self):
     x = random_ops.random_uniform([2, 2])
     y = random_ops.random_uniform([3, 2])
@@ -465,13 +459,6 @@ class GradientsTest(test.TestCase):
       self.assertAllClose(ans, pfor_value)
       self.assertAllClose(ans, while_value)
 
-  def test_batch_jacobian_parallel_iterations(self):
-    x = constant_op.constant([[1., 2], [3, 4]])
-    w = constant_op.constant([[1., 2, 3, 4], [5, 6, 7, 8]])
-    y = math_ops.matmul(x, w)
-    self.assertAllClose(gradients.batch_jacobian(y, x, parallel_iterations=2),
-                        gradients.batch_jacobian(y, x, parallel_iterations=3))
-
   def test_fc_batch_jacobian(self):
     pfor_jacobian, while_jacobian = create_fc_batch_jacobian(8, 4, 2)
     self.run_and_assert_equal(pfor_jacobian, while_jacobian)
@@ -484,8 +471,8 @@ class GradientsTest(test.TestCase):
     pfor_jacobian, while_gradients = create_dynamic_lstm_batch_jacobian(8, 4, 3)
     with session.Session() as sess:
       init = variables.global_variables_initializer()
-      self.evaluate(init)
-      pfor = self.evaluate(pfor_jacobian)
+      sess.run(init)
+      pfor = sess.run(pfor_jacobian)
       for i in range(4):
         while_i = sess.run(while_gradients[i])
         self.assertAllClose(while_i, pfor[:, i, ...])
@@ -560,11 +547,11 @@ class GradientsBenchmarks(test.Benchmark):
     sess = session.Session()
     with sess:
       init = variables.global_variables_initializer()
-      self.evaluate(init)
-      self.evaluate(targets)
+      sess.run(init)
+      sess.run(targets)
       begin = time.time()
       for _ in range(iters):
-        self.evaluate(targets)
+        sess.run(targets)
       end = time.time()
     avg_time_ms = 1000 * (end - begin) / iters
     self.report_benchmark(iters=iters, wall_time=avg_time_ms, name=name)

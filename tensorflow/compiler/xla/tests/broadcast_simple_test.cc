@@ -161,7 +161,8 @@ XLA_TEST_F(BroadcastSimpleTest, 1DTo2D) {
 
 XLA_TEST_F(BroadcastSimpleTest, 1DTo2D_WithDimsUsual) {
   XlaBuilder b(TestName());
-  BroadcastInDim(ConstantR1<float>(&b, {1, 2}), {2, 2}, {1});
+  BroadcastInDim(ConstantR1<float>(&b, {1, 2}),
+                 ShapeUtil::MakeShape(F32, {2, 2}), {1});
 
   Array2D<float> expected(2, 2);
   expected(0, 0) = 1;
@@ -174,7 +175,8 @@ XLA_TEST_F(BroadcastSimpleTest, 1DTo2D_WithDimsUsual) {
 
 XLA_TEST_F(BroadcastSimpleTest, 1DTo2D_WithDimsTranspose) {
   XlaBuilder b(TestName());
-  BroadcastInDim(ConstantR1<float>(&b, {1, 2}), {2, 2}, {0});
+  BroadcastInDim(ConstantR1<float>(&b, {1, 2}),
+                 ShapeUtil::MakeShape(F32, {2, 2}), {0});
 
   Array2D<float> expected(2, 2);
   expected(0, 0) = 1;
@@ -187,8 +189,8 @@ XLA_TEST_F(BroadcastSimpleTest, 1DTo2D_WithDimsTranspose) {
 
 XLA_TEST_F(BroadcastSimpleTest, 2DTo3D_WithDims) {
   XlaBuilder b(TestName());
-  BroadcastInDim(ConstantR2<float>(&b, {{1.0, 5.0}, {2.0, 6.0}}), {2, 2, 2},
-                 {0, 1});
+  BroadcastInDim(ConstantR2<float>(&b, {{1.0, 5.0}, {2.0, 6.0}}),
+                 ShapeUtil::MakeShape(F32, {2, 2, 2}), {0, 1});
 
   Array3D<float> expected(2, 2, 2);
   expected(0, 0, 0) = 1.0;
@@ -205,8 +207,8 @@ XLA_TEST_F(BroadcastSimpleTest, 2DTo3D_WithDims) {
 
 XLA_TEST_F(BroadcastSimpleTest, 2DTo3D_WithDimsNotPossibleWithBroadCast) {
   XlaBuilder b(TestName());
-  BroadcastInDim(ConstantR2<float>(&b, {{1.0, 5.0}, {2.0, 6.0}}), {2, 2, 2},
-                 {0, 2});
+  BroadcastInDim(ConstantR2<float>(&b, {{1.0, 5.0}, {2.0, 6.0}}),
+                 ShapeUtil::MakeShape(F32, {2, 2, 2}), {0, 2});
 
   Array3D<float> expected(2, 2, 2);
   expected(0, 0, 0) = 1.0;
@@ -223,7 +225,8 @@ XLA_TEST_F(BroadcastSimpleTest, 2DTo3D_WithDimsNotPossibleWithBroadCast) {
 
 XLA_TEST_F(BroadcastSimpleTest, 1DTo2D_WithDimsNotPossibleWithBroadCast) {
   XlaBuilder b(TestName());
-  BroadcastInDim(ConstantR1<float>(&b, {1, 2}), {3, 2}, {1});
+  BroadcastInDim(ConstantR1<float>(&b, {1, 2}),
+                 ShapeUtil::MakeShape(F32, {3, 2}), {1});
 
   Array2D<float> expected(3, 2);
   expected(0, 0) = 1;

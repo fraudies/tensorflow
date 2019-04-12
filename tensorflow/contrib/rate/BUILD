@@ -34,11 +34,6 @@ py_test(
     name = "rate_test",
     size = "small",
     srcs = ["rate_test.py"],
-    tags = [
-        "manual",  # TODO(b/120555555)
-        "no_oss",  # TODO(b/120555555)
-        "notap",  # TODO(b/120555555)
-    ],
     deps = [
         ":rate",
         "//tensorflow/python:array_ops",

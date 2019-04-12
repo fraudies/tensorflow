@@ -5,6 +5,6 @@ op {
   }
   endpoint {
     name: "dequantize"
-    deprecation_version: 2
+    deprecated: true
   }
 }

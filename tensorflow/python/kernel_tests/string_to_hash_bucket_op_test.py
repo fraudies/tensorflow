@@ -19,7 +19,6 @@ from __future__ import print_function
 
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
-from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import string_ops
 from tensorflow.python.platform import test
@@ -27,7 +26,6 @@ from tensorflow.python.platform import test
 
 class StringToHashBucketOpTest(test.TestCase):
 
-  @test_util.run_deprecated_v1
   def testStringToOneHashBucketFast(self):
     with self.cached_session():
       input_string = array_ops.placeholder(dtypes.string)
@@ -36,7 +34,6 @@ class StringToHashBucketOpTest(test.TestCase):
 
       self.assertAllEqual([0, 0, 0], result)
 
-  @test_util.run_deprecated_v1
   def testStringToHashBucketsFast(self):
     with self.cached_session():
       input_string = array_ops.placeholder(dtypes.string)
@@ -49,7 +46,6 @@ class StringToHashBucketOpTest(test.TestCase):
       # Fingerprint64('d') -> 4470636696479570465 -> mod 10 -> 5
       self.assertAllEqual([9, 2, 2, 5], result)
 
-  @test_util.run_deprecated_v1
   def testStringToOneHashBucketLegacyHash(self):
     with self.cached_session():
       input_string = array_ops.placeholder(dtypes.string)
@@ -58,7 +54,6 @@ class StringToHashBucketOpTest(test.TestCase):
 
       self.assertAllEqual([0, 0, 0], result)
 
-  @test_util.run_deprecated_v1
   def testStringToHashBucketsLegacyHash(self):
     with self.cached_session():
       input_string = array_ops.placeholder(dtypes.string)
@@ -75,7 +70,7 @@ class StringToHashBucketOpTest(test.TestCase):
       input_string = constant_op.constant(['a', 'b', 'c'])
       output = string_ops.string_to_hash_bucket_strong(
           input_string, 1, key=[123, 345])
-      self.assertAllEqual([0, 0, 0], self.evaluate(output))
+      self.assertAllEqual([0, 0, 0], output.eval())
 
   def testStringToHashBucketsStrong(self):
     with self.cached_session():
@@ -86,7 +81,7 @@ class StringToHashBucketOpTest(test.TestCase):
       # StrongKeyedHash(key, 'a') -> 7157389809176466784 -> mod 10 -> 4
       # StrongKeyedHash(key, 'b') -> 15805638358933211562 -> mod 10 -> 2
       # StrongKeyedHash(key, 'c') -> 18100027895074076528 -> mod 10 -> 8
-      self.assertAllEqual([4, 2, 8], self.evaluate(output))
+      self.assertAllEqual([4, 2, 8], output.eval())
 
   def testStringToHashBucketsStrongInvalidKey(self):
     with self.cached_session():

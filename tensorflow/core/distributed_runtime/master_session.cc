@@ -15,7 +15,6 @@ limitations under the License.
 
 #include "tensorflow/core/distributed_runtime/master_session.h"
 
-#include <memory>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -65,33 +64,27 @@ namespace tensorflow {
 class MasterSession::ReffedClientGraph : public core::RefCounted {
  public:
   ReffedClientGraph(const string& handle, const BuildGraphOptions& bopts,
-                    std::unique_ptr<ClientGraph> client_graph,
+                    std::unique_ptr<ClientGraph> cg,
                     const SessionOptions& session_opts,
                     const StatsPublisherFactory& stats_publisher_factory,
                     bool is_partial, WorkerCacheInterface* worker_cache,
                     bool should_deregister)
       : session_handle_(handle),
         bg_opts_(bopts),
-        client_graph_before_register_(std::move(client_graph)),
+        client_graph_(std::move(cg)),
         session_opts_(session_opts),
         is_partial_(is_partial),
         callable_opts_(bopts.callable_options),
         worker_cache_(worker_cache),
-        should_deregister_(should_deregister),
-        collective_graph_key_(
-            client_graph_before_register_->collective_graph_key) {
+        should_deregister_(should_deregister) {
     VLOG(1) << "Created ReffedClientGraph for node with "
-            << client_graph_before_register_->graph.num_node_ids();
+            << client_graph()->graph.num_node_ids();
 
     stats_publisher_ = stats_publisher_factory(handle, bopts, session_opts);
 
     // Initialize a name to node map for processing device stats.
-    for (Node* n : client_graph_before_register_->graph.nodes()) {
-      name_to_node_details_.emplace(
-          n->name(),
-          NodeDetails(n->type_string(),
-                      strings::StrCat(
-                          "(", str_util::Join(n->requested_inputs(), ", "))));
+    for (Node* n : client_graph_->graph.nodes()) {
+      name_to_node_.insert({n->name(), n});
     }
   }
 
@@ -105,11 +98,11 @@ class MasterSession::ReffedClientGraph : public core::RefCounted {
     }
   }
 
+  const ClientGraph* client_graph() { return client_graph_.get(); }
+
   const CallableOptions& callable_options() { return callable_opts_; }
 
   const BuildGraphOptions& build_graph_options() { return bg_opts_; }
-
-  int64 collective_graph_key() { return collective_graph_key_; }
 
   std::unique_ptr<ProfileHandler> GetProfileHandler(uint64 step,
                                                     int64 execution_count,
@@ -194,7 +187,7 @@ class MasterSession::ReffedClientGraph : public core::RefCounted {
 
   // Partitions the graph into subgraphs and registers them on
   // workers.
-  Status RegisterPartitions(PartitionOptions popts);
+  Status RegisterPartitions(const PartitionOptions& popts);
 
   // Runs one step of all partitions.
   Status RunPartitions(const MasterEnv* env, int64 step_id,
@@ -221,28 +214,29 @@ class MasterSession::ReffedClientGraph : public core::RefCounted {
                       const RunState* run_state,
                       GraphExecutionState* execution_state);
 
+  string DetailText(const Node& node, const NodeExecStats& ns) {
+    int64 tot = 0;
+    for (auto& no : ns.output()) {
+      tot += no.tensor_description().allocation_description().requested_bytes();
+    }
+    string bytes;
+    if (tot >= 0.1 * 1048576.0) {
+      bytes = strings::Printf("[%.1fMB] ", tot / 1048576.0);
+    }
+    return strings::StrCat(bytes, node.name(), " = ", node.type_string(), "(",
+                           str_util::Join(node.requested_inputs(), ", "), ")");
+  }
+
  private:
   const string session_handle_;
   const BuildGraphOptions bg_opts_;
-
-  // NOTE(mrry): This pointer will be null after `RegisterPartitions()` returns.
-  std::unique_ptr<ClientGraph> client_graph_before_register_ GUARDED_BY(mu_);
+  const std::unique_ptr<ClientGraph> client_graph_;
   const SessionOptions session_opts_;
   const bool is_partial_;
   const CallableOptions callable_opts_;
   WorkerCacheInterface* const worker_cache_;  // Not owned.
-
-  struct NodeDetails {
-    explicit NodeDetails(string type_string, string detail_text)
-        : type_string(std::move(type_string)),
-          detail_text(std::move(detail_text)) {}
-    const string type_string;
-    const string detail_text;
-  };
-  std::unordered_map<string, NodeDetails> name_to_node_details_;
-
+  std::unordered_map<StringPiece, Node*, StringPieceHasher> name_to_node_;
   const bool should_deregister_;
-  const int64 collective_graph_key_;
   std::atomic<int64> execution_count_ = {0};
 
   // Graph partitioned into per-location subgraphs.
@@ -274,27 +268,15 @@ class MasterSession::ReffedClientGraph : public core::RefCounted {
   mutable mutex mu_;
 
   // Partition initialization and registration only needs to happen
-  // once. `!client_graph_before_register_ && !init_done_.HasBeenNotified()`
-  // indicates the initialization is ongoing.
+  // once. init_started_ && !init_done_ indicates the initialization
+  // is on going.
+  bool init_started_ GUARDED_BY(mu_) = false;
   Notification init_done_;
 
   // init_result_ remembers the initialization error if any.
   Status init_result_ GUARDED_BY(mu_);
 
   std::unique_ptr<StatsPublisherInterface> stats_publisher_;
-
-  string DetailText(const NodeDetails& details, const NodeExecStats& stats) {
-    int64 tot = 0;
-    for (auto& no : stats.output()) {
-      tot += no.tensor_description().allocation_description().requested_bytes();
-    }
-    string bytes;
-    if (tot >= 0.1 * 1048576.0) {
-      bytes = strings::Printf("[%.1fMB] ", tot / 1048576.0);
-    }
-    return strings::StrCat(bytes, stats.node_name(), " = ",
-                           details.type_string, details.detail_text);
-  }
 
   // Send/Recv nodes that are the result of client-added
   // feeds and fetches must be tracked so that the tensors
@@ -304,7 +286,7 @@ class MasterSession::ReffedClientGraph : public core::RefCounted {
 
   // The actual graph partitioning and registration implementation.
   Status DoBuildPartitions(
-      PartitionOptions popts, ClientGraph* client_graph,
+      PartitionOptions pots,
       std::unordered_map<string, GraphDef>* out_partitions);
   Status DoRegisterPartitions(
       const PartitionOptions& popts,
@@ -329,20 +311,14 @@ class MasterSession::ReffedClientGraph : public core::RefCounted {
 };
 
 Status MasterSession::ReffedClientGraph::RegisterPartitions(
-    PartitionOptions popts) {
+    const PartitionOptions& popts) {
   {  // Ensure register once.
     mu_.lock();
-    if (client_graph_before_register_) {
-      // The `ClientGraph` is no longer needed after partitions are registered.
-      // Since it can account for a large amount of memory, we consume it here,
-      // and it will be freed after concluding with registration.
-
-      std::unique_ptr<ClientGraph> client_graph;
-      std::swap(client_graph_before_register_, client_graph);
+    if (!init_started_) {
+      init_started_ = true;
       mu_.unlock();
       std::unordered_map<string, GraphDef> graph_defs;
-      popts.flib_def = client_graph->flib_def.get();
-      Status s = DoBuildPartitions(popts, client_graph.get(), &graph_defs);
+      Status s = DoBuildPartitions(popts, &graph_defs);
       if (s.ok()) {
         // NOTE(mrry): The pointers in `graph_defs_for_publishing` do not remain
         // valid after the call to DoRegisterPartitions begins, so
@@ -418,19 +394,19 @@ void MasterSession::ReffedClientGraph::TrackFeedsAndFetches(
 }
 
 Status MasterSession::ReffedClientGraph::DoBuildPartitions(
-    PartitionOptions popts, ClientGraph* client_graph,
+    PartitionOptions popts,
     std::unordered_map<string, GraphDef>* out_partitions) {
   if (popts.need_to_record_start_times) {
     CostModel cost_model(true);
-    cost_model.InitFromGraph(client_graph->graph);
+    cost_model.InitFromGraph(client_graph()->graph);
     // TODO(yuanbyu): Use the real cost model.
     // execution_state_->MergeFromGlobal(&cost_model);
-    SlackAnalysis sa(&client_graph->graph, &cost_model);
+    SlackAnalysis sa(&client_graph()->graph, &cost_model);
     sa.ComputeAsap(&popts.start_times);
   }
 
   // Partition the graph.
-  return Partition(popts, &client_graph->graph, out_partitions);
+  return Partition(popts, &client_graph_->graph, out_partitions);
 }
 
 Status MasterSession::ReffedClientGraph::DoRegisterPartitions(
@@ -439,7 +415,7 @@ Status MasterSession::ReffedClientGraph::DoRegisterPartitions(
   partitions_.reserve(graph_partitions.size());
   Status s;
   for (auto& name_def : graph_partitions) {
-    partitions_.emplace_back();
+    partitions_.resize(partitions_.size() + 1);
     Part* part = &partitions_.back();
     part->name = name_def.first;
     TrackFeedsAndFetches(part, name_def.second, popts);
@@ -473,7 +449,7 @@ Status MasterSession::ReffedClientGraph::DoRegisterPartitions(
     *c->req.mutable_graph_options() = session_opts_.config.graph_options();
     *c->req.mutable_debug_options() =
         callable_opts_.run_options().debug_options();
-    c->req.set_collective_graph_key(collective_graph_key_);
+    c->req.set_collective_graph_key(client_graph()->collective_graph_key);
     VLOG(2) << "Register " << c->req.graph_def().DebugString();
     auto cb = [c, &done](const Status& s) {
       c->status = s;
@@ -512,18 +488,18 @@ class RunManyGraphs {
     if (resp->status_code() != error::Code::OK) {
       // resp->status_code will only be non-OK if s.ok().
       mutex_lock l(mu_);
-      ReportBadStatus(
+      UpdateStatusLocked(
           Status(resp->status_code(), resp->status_error_message()));
     } else if (!s.ok()) {
       mutex_lock l(mu_);
-      ReportBadStatus(s);
+      UpdateStatusLocked(s);
     }
     pending_.DecrementCount();
   }
 
   void StartCancel() {
     mutex_lock l(mu_);
-    ReportBadStatus(errors::Cancelled("RunManyGraphs"));
+    UpdateStatusLocked(errors::Cancelled("RunManyGraphs"));
   }
 
   void Wait() { pending_.Wait(); }
@@ -540,19 +516,12 @@ class RunManyGraphs {
   mutable mutex mu_;
   Status status_ GUARDED_BY(mu_);
 
-  void ReportBadStatus(const Status& s) EXCLUSIVE_LOCKS_REQUIRED(mu_) {
-    // Start cancellation if we aren't already in an error state.
+  void UpdateStatusLocked(const Status& s) EXCLUSIVE_LOCKS_REQUIRED(mu_) {
     if (status_.ok()) {
+      status_ = s;
       for (Call& call : calls_) {
         call.opts.StartCancel();
       }
-    }
-
-    // Prefer primary failures over cancellations.  A cancellation may finish
-    // _before_ the original status is propagated; we override it in this case.
-    if (status_.ok() ||
-        str_util::StrContains(status_.error_message(), "[CHILD]")) {
-      status_ = s;
     }
   }
 
@@ -946,8 +915,8 @@ void MasterSession::ReffedClientGraph::ProcessDeviceStats(
       ph->RecordOneOp(dev_name, ns, true /*is_copy*/, "", ns.node_name(),
                       ns.timeline_label());
     } else {
-      auto iter = name_to_node_details_.find(ns.node_name());
-      const bool found_node_in_graph = iter != name_to_node_details_.end();
+      const Node* node = name_to_node_[ns.node_name()];
+      const bool found_node_in_graph = node != nullptr;
       if (!found_node_in_graph && ns.timeline_label().empty()) {
         // The counter incrementing is not thread-safe. But we don't really
         // care.
@@ -961,13 +930,13 @@ void MasterSession::ReffedClientGraph::ProcessDeviceStats(
         }
         continue;
       }
-      const string& optype =
-          found_node_in_graph ? iter->second.type_string : ns.node_name();
+      string optype =
+          found_node_in_graph ? node->type_string() : ns.node_name();
       string details;
       if (!ns.timeline_label().empty()) {
         details = ns.timeline_label();
       } else if (found_node_in_graph) {
-        details = DetailText(iter->second, ns);
+        details = DetailText(*node, ns);
       } else {
         // Leave details string empty
       }
@@ -1359,9 +1328,7 @@ Status MasterSession::DeleteWorkerSessions() {
         &workers[i].call_opts, &workers[i].request, &workers[i].response, cb);
   }
 
-  if (!done.WaitFor(std::chrono::milliseconds(10000))) {
-    LOG(WARNING) << "Timeout for closing worker session";
-  }
+  done.Wait();
   for (size_t i = 0; i < workers.size(); ++i) {
     status.Update(workers[i].status);
   }
@@ -1578,13 +1545,14 @@ Status MasterSession::BuildAndRegisterPartitions(ReffedClientGraph* rcg) {
   // Registers subgraphs if haven't done so.
   PartitionOptions popts;
   popts.node_to_loc = SplitByWorker;
-  // The closures popts.{new_name,get_incarnation} are called synchronously in
+  // The closures potps.{new_name,get_incarnation} are called synchronously in
   // RegisterPartitions() below, so do not need a Ref()/Unref() pair to keep
   // "this" alive during the closure.
   popts.new_name = [this](const string& prefix) {
     mutex_lock l(mu_);
     return strings::StrCat(prefix, "_S", next_node_id_++);
   };
+  popts.flib_def = rcg->client_graph()->flib_def.get();
   popts.get_incarnation = [this](const string& name) -> int64 {
     Device* d = devices_->FindDeviceByName(name);
     if (d == nullptr) {
@@ -1612,7 +1580,7 @@ Status MasterSession::BuildAndRegisterPartitions(ReffedClientGraph* rcg) {
     popts.need_to_record_start_times = true;
   }
 
-  TF_RETURN_IF_ERROR(rcg->RegisterPartitions(std::move(popts)));
+  TF_RETURN_IF_ERROR(rcg->RegisterPartitions(popts));
 
   return Status::OK();
 }
@@ -1816,10 +1784,10 @@ Status MasterSession::PostRunCleanup(MasterSession::ReffedClientGraph* rcg,
   Status s = run_status;
   if (s.ok()) {
     pss->end_micros = Env::Default()->NowMicros();
-    if (rcg->collective_graph_key() !=
+    if (rcg->client_graph()->collective_graph_key !=
         BuildGraphOptions::kNoCollectiveGraphKey) {
-      env_->collective_executor_mgr->RetireStepId(rcg->collective_graph_key(),
-                                                  step_id);
+      env_->collective_executor_mgr->RetireStepId(
+          rcg->client_graph()->collective_graph_key, step_id);
     }
     // Schedule post-processing and cleanup to be done asynchronously.
     rcg->ProcessStats(step_id, pss, ph.get(), run_options, out_run_metadata);
@@ -1878,7 +1846,7 @@ Status MasterSession::DoRunWithLocalExecution(
 
   // Keeps the highest 8 bits 0x01: we reserve some bits of the
   // step_id for future use.
-  uint64 step_id = NewStepId(rcg->collective_graph_key());
+  uint64 step_id = NewStepId(rcg->client_graph()->collective_graph_key);
   TRACEPRINTF("stepid %llu", step_id);
 
   std::unique_ptr<ProfileHandler> ph;
@@ -1886,7 +1854,6 @@ Status MasterSession::DoRunWithLocalExecution(
 
   Status s = rcg->RunPartitions(env_, step_id, count, &pss, opts, req, resp,
                                 &cancellation_manager_, false);
-
   cleanup.release();  // MarkRunCompletion called in PostRunCleanup().
   return PostRunCleanup(rcg, step_id, req.options(), &pss, ph, s,
                         resp->mutable_metadata());
@@ -1943,7 +1910,7 @@ Status MasterSession::DoRunCallable(CallOptions* opts, ReffedClientGraph* rcg,
   // Prepare.
   int64 count = rcg->get_and_increment_execution_count();
 
-  const uint64 step_id = NewStepId(rcg->collective_graph_key());
+  const uint64 step_id = NewStepId(rcg->client_graph()->collective_graph_key);
   TRACEPRINTF("stepid %llu", step_id);
 
   const RunOptions& run_options = rcg->callable_options().run_options();

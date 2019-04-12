@@ -104,7 +104,9 @@ AnalyticalCostEstimator::AnalyticalCostEstimator(Cluster* cluster,
                                                  bool use_static_shapes)
     : AnalyticalCostEstimator(
           cluster, absl::make_unique<OpLevelCostEstimator>(),
-          ReadyNodeManagerFactory("FirstReady"), use_static_shapes, nullptr) {}
+          std::unique_ptr<ReadyNodeManager>(
+              VirtualScheduler::ReadyNodeManagerFactory("FirstReady")),
+          use_static_shapes, nullptr) {}
 
 AnalyticalCostEstimator::AnalyticalCostEstimator(
     Cluster* cluster, std::unique_ptr<OpLevelCostEstimator> node_estimator,

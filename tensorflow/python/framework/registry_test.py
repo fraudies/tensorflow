@@ -45,9 +45,7 @@ class RegistryTest(test.TestCase):
   def testDuplicate(self):
     myreg = registry.Registry('testbar')
     myreg.register(bar, 'Bar')
-    with self.assertRaisesRegexp(
-        KeyError, r'Registering two testbar with name \'Bar\'! '
-        r'\(Previous registration was in [^ ]+ .*.py:[0-9]+\)'):
+    with self.assertRaises(KeyError):
       myreg.register(bar, 'Bar')
 
 

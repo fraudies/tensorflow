@@ -91,7 +91,6 @@ class GrpcDebugServerTest(test_util.TensorFlowTestCase):
     server.stop_server().wait()
 
 
-@test_util.run_v1_only("b/120545219")
 class SessionDebugGrpcTest(session_debug_testlib.SessionDebugTestBase):
 
   @classmethod
@@ -354,7 +353,6 @@ class SessionDebugConcurrentTest(
     return urls
 
 
-@test_util.run_v1_only("b/120545219")
 class SessionDebugGrpcGatingTest(test_util.TensorFlowTestCase):
   """Test server gating of debug ops."""
 
@@ -732,7 +730,6 @@ class SessionDebugGrpcGatingTest(test_util.TensorFlowTestCase):
       self.assertEqual("DebugNumericSummary", debug_watch.debug_op)
 
 
-@test_util.run_v1_only("b/120545219")
 class DelayedDebugServerTest(test_util.TensorFlowTestCase):
 
   def testDebuggedSessionRunWorksWithDelayedDebugServerStartup(self):

@@ -104,16 +104,10 @@ def GetTempDir():
   """Return a temporary directory for tests to use."""
   global _googletest_temp_dir
   if not _googletest_temp_dir:
-    if os.environ.get('TEST_TMPDIR'):
-      temp_dir = tempfile.mkdtemp(prefix=os.environ['TEST_TMPDIR'])
-    else:
-      first_frame = tf_inspect.stack()[-1][0]
-      temp_dir = os.path.join(tempfile.gettempdir(),
-                              os.path.basename(tf_inspect.getfile(first_frame)))
-      temp_dir = tempfile.mkdtemp(prefix=temp_dir.rstrip('.py'))
-
-    # Make sure we have the correct path separators.
-    temp_dir = temp_dir.replace('/', os.sep)
+    first_frame = tf_inspect.stack()[-1][0]
+    temp_dir = os.path.join(tempfile.gettempdir(),
+                            os.path.basename(tf_inspect.getfile(first_frame)))
+    temp_dir = tempfile.mkdtemp(prefix=temp_dir.rstrip('.py'))
 
     def delete_temp_dir(dirname=temp_dir):
       try:
@@ -122,7 +116,6 @@ def GetTempDir():
         logging.error('Error removing %s: %s', dirname, e)
 
     atexit.register(delete_temp_dir)
-
     _googletest_temp_dir = temp_dir
 
   return _googletest_temp_dir
@@ -146,7 +139,7 @@ def StatefulSessionAvailable():
   return False
 
 
-@tf_export(v1=['test.StubOutForTesting'])
+@tf_export('test.StubOutForTesting')
 class StubOutForTesting(object):
   """Support class for stubbing methods out for unit testing.
 

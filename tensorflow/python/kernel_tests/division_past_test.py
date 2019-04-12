@@ -64,7 +64,7 @@ class DivisionTestCase(test.TestCase):
                 tf_floordiv = tf_x // tf_y
                 check(floordiv, tf_floordiv)
       # Do only one sess.run for speed
-      for f, (x, y) in zip(checks, self.evaluate(tensors)):
+      for f, (x, y) in zip(checks, sess.run(tensors)):
         f(x, y)
 
 

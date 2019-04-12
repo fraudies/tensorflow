@@ -43,7 +43,7 @@ __all__ = [
 ]
 
 
-@tf_export(v1=["distributions.Gamma"])
+@tf_export("distributions.Gamma")
 class Gamma(distribution.Distribution):
   """Gamma distribution.
 

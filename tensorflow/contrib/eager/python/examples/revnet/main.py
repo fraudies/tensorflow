@@ -72,11 +72,14 @@ def main(_):
     train_one_iter(model, x, y, optimizer, global_step=global_step)
 
     if global_step.numpy() % config.log_every == 0:
-      acc_test, loss_test = evaluate(model, ds_test)
+      it_test = ds_test.make_one_shot_iterator()
+      acc_test, loss_test = evaluate(model, it_test)
 
       if FLAGS.validate:
-        acc_train, loss_train = evaluate(model, ds_train_one_shot)
-        acc_validation, loss_validation = evaluate(model, ds_validation)
+        it_train = ds_train_one_shot.make_one_shot_iterator()
+        it_validation = ds_validation.make_one_shot_iterator()
+        acc_train, loss_train = evaluate(model, it_train)
+        acc_validation, loss_validation = evaluate(model, it_validation)
         print("Iter {}, "
               "training set accuracy {:.4f}, loss {:.4f}; "
               "validation set accuracy {:.4f}, loss {:.4f}; "
@@ -215,11 +218,11 @@ def train_one_iter(model, inputs, labels, optimizer, global_step=None):
   return logits, loss
 
 
-def evaluate(model, dataset):
+def evaluate(model, iterator):
   """Compute accuracy with the given dataset iterator."""
   mean_loss = tfe.metrics.Mean()
   accuracy = tfe.metrics.Accuracy()
-  for x, y in dataset:
+  for x, y in iterator:
     logits, _ = model(x, training=False)
     loss = model.compute_loss(logits=logits, labels=y)
     accuracy(

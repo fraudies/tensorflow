@@ -33,7 +33,6 @@ limitations under the License.
 #include "tensorflow/core/distributed_runtime/eager/eager_client.h"
 #include "tensorflow/core/distributed_runtime/server_lib.h"
 #endif
-#include "tensorflow/core/framework/collective.h"
 #include "tensorflow/core/framework/log_memory.h"
 #include "tensorflow/core/framework/rendezvous.h"
 #include "tensorflow/core/lib/core/stringpiece.h"
@@ -132,8 +131,6 @@ class EagerContext {
 
   Device* HostCPU() { return devices_[0]; }
 
-  GraphCollector* GetGraphCollector() { return &graph_collector_; }
-
   uint64 NextId() { return executor_.NextId(); }
 
   void ExecutorAdd(EagerNode* node) { executor_.Add(node); }
@@ -148,11 +145,6 @@ class EagerContext {
   bool LogMemory() { return log_memory_; }
 
   Rendezvous* GetRendezvous() { return rendezvous_; }
-  std::unique_ptr<CollectiveExecutor::Handle> GetCollectiveExecutorHandle() {
-    return std::unique_ptr<CollectiveExecutor::Handle>(
-        new CollectiveExecutor::Handle(
-            collective_executor_mgr_->FindOrCreate(0), true /*inherit_ref*/));
-  }
 
   const tensorflow::DeviceMgr* local_device_mgr() const {
     return (local_device_manager_ != nullptr) ? local_device_manager_.get()
@@ -212,8 +204,6 @@ class EagerContext {
   bool UseSendTensorRPC() { return use_send_tensor_rpc_; }
   bool PinSmallOpsToCPU() { return pin_small_ops_to_cpu_; }
 
-  tensorflow::Env* TFEnv() const { return env_; }
-
  private:
   void InitDeviceMapAndAsync();
   Status MaybeRegisterFunctionRemotely(const FunctionDef& fdef);
@@ -259,7 +249,6 @@ class EagerContext {
   std::atomic<bool> should_store_metadata_{false};
   mutex metadata_mu_;
   RunMetadata run_metadata_ GUARDED_BY(metadata_mu_);
-  GraphCollector graph_collector_;
   const bool log_device_placement_;
   // EagerExecutor for async execution.
   EagerExecutor executor_;
@@ -278,8 +267,6 @@ class EagerContext {
   const bool log_memory_;
 
   Env* const env_;
-
-  std::unique_ptr<CollectiveExecutorMgrInterface> collective_executor_mgr_;
 
 #ifndef __ANDROID__
   void CloseRemoteContexts();

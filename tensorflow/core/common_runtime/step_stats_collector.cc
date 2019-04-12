@@ -139,7 +139,7 @@ void NodeExecStatsWrapper::SetScheduled(int64 nanos) {
 }
 
 void NodeExecStatsWrapper::SetMemory(OpKernelContext* ctx) {
-  for (const auto& allocator_pair : ctx->ConsumeWrappedAllocators()) {
+  for (const auto& allocator_pair : ctx->wrapped_allocators()) {
     AddAllocation(allocator_pair.first, allocator_pair.second);
   }
   auto* ms = stats_->mutable_memory_stats();

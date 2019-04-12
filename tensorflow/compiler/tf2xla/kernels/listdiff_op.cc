@@ -115,8 +115,8 @@ class ListDiffOp : public XlaOpKernel {
 
 REGISTER_XLA_OP(Name("ListDiff")
                     .TypeConstraint("T", kListDiffTypes)
-                    .CompileTimeConstantInput("x")
-                    .CompileTimeConstantInput("y"),
+                    .CompileTimeConstInput("x")
+                    .CompileTimeConstInput("y"),
                 ListDiffOp);
 
 }  // namespace

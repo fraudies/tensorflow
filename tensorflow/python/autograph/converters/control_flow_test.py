@@ -23,7 +23,6 @@ from tensorflow.python.autograph.core import converter_testing
 from tensorflow.python.autograph.pyct import transformer
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
-from tensorflow.python.framework import test_util
 from tensorflow.python.platform import test
 
 
@@ -37,7 +36,6 @@ class ControlFlowTest(converter_testing.TestCase):
       with self.cached_session() as sess:
         self.assertEqual(sess.run(result.test_fn(*inputs)), expected)
 
-  @test_util.run_deprecated_v1
   def test_while_basic(self):
 
     def test_fn(n):
@@ -50,7 +48,6 @@ class ControlFlowTest(converter_testing.TestCase):
 
     self.assertTransformedResult(test_fn, constant_op.constant(5), (10, 5, 5))
 
-  @test_util.run_deprecated_v1
   def test_while_nested(self):
 
     def test_fn(n):
@@ -69,7 +66,6 @@ class ControlFlowTest(converter_testing.TestCase):
     self.assertTransformedResult(test_fn, constant_op.constant(5),
                                  (25, 5, 0, 5))
 
-  @test_util.run_deprecated_v1
   def test_while_single_output(self):
 
     def test_fn(n):
@@ -90,7 +86,6 @@ class ControlFlowTest(converter_testing.TestCase):
     with self.assertRaises(NameError):
       control_flow.transform(node, ctx)
 
-  @test_util.run_deprecated_v1
   def test_if_basic(self):
 
     def test_fn(n):
@@ -105,7 +100,6 @@ class ControlFlowTest(converter_testing.TestCase):
     self.assertTransformedResult(test_fn, constant_op.constant(1), (-1, 0))
     self.assertTransformedResult(test_fn, constant_op.constant(-1), (0, -2))
 
-  @test_util.run_deprecated_v1
   def test_if_complex_outputs(self):
 
     class TestClass(object):
@@ -130,7 +124,6 @@ class ControlFlowTest(converter_testing.TestCase):
         res_obj = result.test_fn(constant_op.constant(-1), TestClass(0, 0))
         self.assertEqual(sess.run((res_obj.a, res_obj.b)), (0, -2))
 
-  @test_util.run_deprecated_v1
   def test_if_single_output(self):
 
     def test_fn(n):
@@ -140,7 +133,6 @@ class ControlFlowTest(converter_testing.TestCase):
 
     self.assertTransformedResult(test_fn, constant_op.constant(1), -1)
 
-  @test_util.run_deprecated_v1
   def test_if_semi(self):
 
     def test_fn(n):
@@ -151,7 +143,6 @@ class ControlFlowTest(converter_testing.TestCase):
     self.assertTransformedResult(test_fn, constant_op.constant(2), 3)
     self.assertTransformedResult(test_fn, constant_op.constant(-3), -3)
 
-  @test_util.run_deprecated_v1
   def test_if_local_var(self):
 
     def test_fn(n):
@@ -163,7 +154,6 @@ class ControlFlowTest(converter_testing.TestCase):
     self.assertTransformedResult(test_fn, constant_op.constant(1), 5)
     self.assertTransformedResult(test_fn, constant_op.constant(-1), -1)
 
-  @test_util.run_deprecated_v1
   def test_if_no_outputs(self):
 
     def test_fn(n):
@@ -187,7 +177,6 @@ class ControlFlowTest(converter_testing.TestCase):
     with self.assertRaises(transformer.AutographParseError):
       control_flow.transform(node, ctx)
 
-  @test_util.run_deprecated_v1
   def test_simple_for(self):
 
     def test_fn(l):
@@ -202,7 +191,6 @@ class ControlFlowTest(converter_testing.TestCase):
     empty_vector = constant_op.constant([], shape=(0,), dtype=dtypes.int32)
     self.assertTransformedResult(test_fn, empty_vector, (0, 0))
 
-  @test_util.run_deprecated_v1
   def test_for_single_output(self):
 
     def test_fn(l):
@@ -247,7 +235,6 @@ class ControlFlowTest(converter_testing.TestCase):
     with self.assertRaises(NameError):
       control_flow.transform(node, ctx)
 
-  @test_util.run_deprecated_v1
   def test_for_tuple_unpacking(self):
     def test_fn(x_list):
       z = tf.constant(0)  # pylint:disable=undefined-variable

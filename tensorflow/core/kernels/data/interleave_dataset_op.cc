@@ -13,10 +13,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 #include "tensorflow/core/common_runtime/function.h"
-#include "tensorflow/core/framework/dataset.h"
 #include "tensorflow/core/framework/partial_tensor_shape.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/kernels/data/captured_function.h"
+#include "tensorflow/core/kernels/data/dataset.h"
 #include "tensorflow/core/kernels/data/dataset_utils.h"
 #include "tensorflow/core/lib/random/random.h"
 
@@ -149,8 +149,7 @@ class InterleaveDatasetOp : public UnaryDatasetOpKernel {
       Status Initialize(IteratorContext* ctx) override {
         TF_RETURN_IF_ERROR(
             dataset()->input_->MakeIterator(ctx, prefix(), &input_impl_));
-        return dataset()->captured_func_->Instantiate(
-            ctx, &instantiated_captured_func_);
+        return dataset()->captured_func_->Instantiate(ctx);
       }
 
       void AdvanceToNextInCycle() EXCLUSIVE_LOCKS_REQUIRED(mu_) {
@@ -196,7 +195,7 @@ class InterleaveDatasetOp : public UnaryDatasetOpKernel {
             if (!end_of_input_) {
               TF_RETURN_IF_ERROR(MakeIteratorFromInputElement(
                   ctx, args_list_[cycle_index_], cycle_index_,
-                  *instantiated_captured_func_, prefix(),
+                  dataset()->captured_func_.get(), prefix(),
                   &current_elements_[cycle_index_]));
               ++num_open_;
             }
@@ -210,11 +209,6 @@ class InterleaveDatasetOp : public UnaryDatasetOpKernel {
       }
 
      protected:
-      std::shared_ptr<model::Node> CreateNode(
-          IteratorContext* ctx, model::Node::Args args) const override {
-        return model::MakeInterleaveManyNode(std::move(args));
-      }
-
       Status SaveInternal(IteratorStateWriter* writer) override {
         mutex_lock l(mu_);
         TF_RETURN_IF_ERROR(SaveInput(writer, input_impl_));
@@ -287,7 +281,7 @@ class InterleaveDatasetOp : public UnaryDatasetOpKernel {
                   &args_list_[idx][i]));
             }
             TF_RETURN_IF_ERROR(MakeIteratorFromInputElement(
-                ctx, args_list_[idx], idx, *instantiated_captured_func_,
+                ctx, args_list_[idx], idx, dataset()->captured_func_.get(),
                 prefix(), &current_elements_[idx]));
             TF_RETURN_IF_ERROR(
                 RestoreInput(ctx, reader, current_elements_[idx]));
@@ -307,7 +301,6 @@ class InterleaveDatasetOp : public UnaryDatasetOpKernel {
       int64 block_index_ GUARDED_BY(mu_) = 0;
       bool end_of_input_ GUARDED_BY(mu_) = false;
       size_t num_open_ GUARDED_BY(mu_) = 0;
-      std::unique_ptr<InstantiatedCapturedFunction> instantiated_captured_func_;
     };
 
     const DatasetBase* const input_;

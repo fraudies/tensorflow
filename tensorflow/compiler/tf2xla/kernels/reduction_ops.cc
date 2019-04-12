@@ -41,8 +41,7 @@ class SumOp : public XlaReductionOp {
   }
 };
 
-REGISTER_XLA_OP(Name("Sum").CompileTimeConstantInput("reduction_indices"),
-                SumOp);
+REGISTER_XLA_OP(Name("Sum").CompileTimeConstInput("reduction_indices"), SumOp);
 
 class ProdOp : public XlaReductionOp {
  public:
@@ -60,7 +59,7 @@ class ProdOp : public XlaReductionOp {
   }
 };
 
-REGISTER_XLA_OP(Name("Prod").CompileTimeConstantInput("reduction_indices"),
+REGISTER_XLA_OP(Name("Prod").CompileTimeConstInput("reduction_indices"),
                 ProdOp);
 
 class MinOp : public XlaReductionOp {
@@ -78,8 +77,7 @@ class MinOp : public XlaReductionOp {
   }
 };
 
-REGISTER_XLA_OP(Name("Min").CompileTimeConstantInput("reduction_indices"),
-                MinOp);
+REGISTER_XLA_OP(Name("Min").CompileTimeConstInput("reduction_indices"), MinOp);
 
 class MaxOp : public XlaReductionOp {
  public:
@@ -96,8 +94,7 @@ class MaxOp : public XlaReductionOp {
   }
 };
 
-REGISTER_XLA_OP(Name("Max").CompileTimeConstantInput("reduction_indices"),
-                MaxOp);
+REGISTER_XLA_OP(Name("Max").CompileTimeConstInput("reduction_indices"), MaxOp);
 
 class MeanOp : public XlaReductionOp {
  public:
@@ -113,25 +110,16 @@ class MeanOp : public XlaReductionOp {
     xla::Add(scalar_lhs, scalar_rhs);
   }
 
-  xla::XlaOp BuildFinalizer(
-      xla::XlaBuilder* /*builder*/, const xla::XlaOp& input,
-      const xla::XlaOp& reduce_output,
-      const std::vector<int64>& dimensions_to_reduce) override {
-    if (dimensions_to_reduce.empty()) {
-      return reduce_output;
-    }
-    auto divisor = xla::GetDimensionSize(input, dimensions_to_reduce[0]);
-    for (int i = 1; i < dimensions_to_reduce.size(); i++) {
-      auto size = xla::GetDimensionSize(input, dimensions_to_reduce[i]);
-      divisor = xla::Mul(divisor, size);
-    }
-    divisor = xla::ConvertElementType(divisor, xla_reduction_type_);
-    return XlaHelpers::ConvertElementType(reduce_output / divisor,
-                                          input_type(0));
+  xla::XlaOp BuildFinalizer(xla::XlaBuilder* builder,
+                            const xla::XlaOp& reduce_output,
+                            int64 num_elements_reduced) override {
+    auto divisor = XlaHelpers::IntegerLiteral(builder, input_type(0),
+                                              num_elements_reduced);
+    return reduce_output / divisor;
   }
 };
 
-REGISTER_XLA_OP(Name("Mean").CompileTimeConstantInput("reduction_indices"),
+REGISTER_XLA_OP(Name("Mean").CompileTimeConstInput("reduction_indices"),
                 MeanOp);
 
 class AllOp : public XlaReductionOp {
@@ -149,8 +137,7 @@ class AllOp : public XlaReductionOp {
   }
 };
 
-REGISTER_XLA_OP(Name("All").CompileTimeConstantInput("reduction_indices"),
-                AllOp);
+REGISTER_XLA_OP(Name("All").CompileTimeConstInput("reduction_indices"), AllOp);
 
 class AnyOp : public XlaReductionOp {
  public:
@@ -167,8 +154,7 @@ class AnyOp : public XlaReductionOp {
   }
 };
 
-REGISTER_XLA_OP(Name("Any").CompileTimeConstantInput("reduction_indices"),
-                AnyOp);
+REGISTER_XLA_OP(Name("Any").CompileTimeConstInput("reduction_indices"), AnyOp);
 
 }  // namespace
 }  // namespace tensorflow

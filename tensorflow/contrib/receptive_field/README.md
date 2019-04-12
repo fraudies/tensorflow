@@ -185,4 +185,5 @@ Effective padding (vertical) = 1482
 
 ## Authors
 
-Andr&eacute; Araujo (@andrefaraujo) and Mark Sandler (@marksandler)
+Andr&eacute; Araujo (github id: andrefaraujo) and Mark Sandler (github id:
+marksandler)

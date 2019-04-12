@@ -5,6 +5,6 @@ op {
   }
   endpoint {
     name: "rsqrt"
-    deprecation_version: 2
+    deprecated: true
   }
 }

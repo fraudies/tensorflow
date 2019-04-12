@@ -89,9 +89,12 @@ handle training:
 
         dataset = tf.data.TFRecordDataset(
             filename, buffer_size=FLAGS.dataset_reader_buffer_size)
-        dataset = dataset.map(parser).cache().repeat().batch(
-            batch_size, drop_remainder=True)
-        return dataset
+        dataset = dataset.map(parser).cache().repeat().batch(batch_size)
+        images, labels = dataset.make_one_shot_iterator().get_next()
+        # set_shape to give inputs statically known shapes.
+        images.set_shape([batch_size, 28 * 28])
+        labels.set_shape([batch_size])
+        return images, labels
       return input_fn
 
 

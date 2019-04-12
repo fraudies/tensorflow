@@ -42,6 +42,7 @@ from tensorflow.python.ops.lookup_ops import TextFileIndex
 from tensorflow.python.ops.lookup_ops import TextFileInitializer
 from tensorflow.python.ops.lookup_ops import TextFileStringTableInitializer
 # pylint: enable=unused-import
+from tensorflow.python.training.checkpointable import base as checkpointable
 from tensorflow.python.training.saver import BaseSaverBuilder
 from tensorflow.python.util.deprecation import deprecated
 
@@ -91,7 +92,7 @@ def index_table_from_tensor(mapping,
   The bucket ID range is `[mapping size, mapping size + num_oov_buckets - 1]`.
 
   The underlying table must be initialized by calling
-  `session.run(tf.tables_initializer)` or `session.run(table.init)` once.
+  `tf.tables_initializer.run()` or `table.init.run()` once.
 
   Elements in `mapping` cannot have duplicates, otherwise when executing the
   table initializer op, it will throw a `FailedPreconditionError`.
@@ -158,7 +159,7 @@ def string_to_index(tensor, mapping, default_value=-1, name=None):
   will throw a FailedPreconditionError.
 
   The underlying table must be initialized by calling
-  `session.run(tf.tables_initializer)` once.
+  `tf.tables_initializer.run()` once.
 
   For example:
 
@@ -202,7 +203,7 @@ def index_to_string_table_from_tensor(mapping, default_value="UNK", name=None):
   (an out-of-vocabulary entry) is assigned the `default_value`
 
   The underlying table must be initialized by calling
-  `session.run(tf.tables_initializer)` or `session.run(table.init)` once.
+  `tf.tables_initializer.run()` or `table.init.run()` once.
 
   Elements in `mapping` cannot have duplicates, otherwise when executing the
   table initializer op, it will throw a `FailedPreconditionError`.
@@ -257,7 +258,7 @@ def index_to_string(tensor, mapping, default_value="UNK", name=None):
   (an out-of-vocabulary entry) is assigned the `default_value`
 
   The underlying table must be initialized by calling
-  `session.run(tf.tables_initializer)` once.
+  `tf.tables_initializer.run()` once.
 
   For example:
 
@@ -288,7 +289,7 @@ def index_to_string(tensor, mapping, default_value="UNK", name=None):
   return table.lookup(tensor)
 
 
-class MutableHashTable(LookupInterface):
+class MutableHashTable(LookupInterface, checkpointable.CheckpointableBase):
   """A generic mutable hash table implementation.
 
   Data can be inserted by calling the insert method and removed by calling the
@@ -338,56 +339,43 @@ class MutableHashTable(LookupInterface):
     self._default_value = ops.convert_to_tensor(default_value,
                                                 dtype=value_dtype)
     self._value_shape = self._default_value.get_shape()
-    self._checkpoint = checkpoint
-    self._key_dtype = key_dtype
-    self._value_dtype = value_dtype
-    self._name = name
 
-    if context.executing_eagerly() and shared_name is None:
+    executing_eagerly = context.executing_eagerly()
+    if executing_eagerly and shared_name is None:
       # TODO(allenl): This will leak memory due to kernel caching by the
       # shared_name attribute value (but is better than the alternative of
       # sharing everything by default when executing eagerly; hopefully creating
       # tables in a loop is uncommon).
       shared_name = "table_%d" % (ops.uid(),)
-    self._shared_name = shared_name
-    super(MutableHashTable, self).__init__(key_dtype, value_dtype)
-
-    self._resource_handle = self.create_resource()
-    if checkpoint:
-      saveable = MutableHashTable._Saveable(self, name)
-      if not context.executing_eagerly():
-        ops.add_to_collection(ops.GraphKeys.SAVEABLE_OBJECTS, saveable)
-
-  def create_resource(self):
     # The table must be shared if checkpointing is requested for multi-worker
     # training to work correctly. Use the node name if no shared_name has been
     # explicitly specified.
-    use_node_name_sharing = self._checkpoint and self._shared_name is None
+    use_node_name_sharing = checkpoint and shared_name is None
     if self._default_value.get_shape().ndims == 0:
-      table_ref = gen_lookup_ops.mutable_hash_table_v2(
-          shared_name=self._shared_name,
+      self._table_ref = gen_lookup_ops.mutable_hash_table_v2(
+          shared_name=shared_name,
           use_node_name_sharing=use_node_name_sharing,
-          key_dtype=self._key_dtype,
-          value_dtype=self._value_dtype,
-          name=self._name)
+          key_dtype=key_dtype,
+          value_dtype=value_dtype,
+          name=name)
     else:
-      table_ref = gen_lookup_ops.mutable_hash_table_of_tensors_v2(
-          shared_name=self._shared_name,
+      self._table_ref = gen_lookup_ops.mutable_hash_table_of_tensors_v2(
+          shared_name=shared_name,
           use_node_name_sharing=use_node_name_sharing,
-          key_dtype=self._key_dtype,
-          value_dtype=self._value_dtype,
+          key_dtype=key_dtype,
+          value_dtype=value_dtype,
           value_shape=self._default_value.get_shape(),
-          name=self._name)
-
-    if context.executing_eagerly():
-      self._table_name = None
+          name=name)
+    if executing_eagerly:
+      op_name = None
     else:
-      self._table_name = table_ref.op.name.split("/")[-1]
-    return table_ref
+      op_name = self._table_ref.op.name.split("/")[-1]
+    super(MutableHashTable, self).__init__(key_dtype, value_dtype,
+                                           op_name)
 
-  @property
-  def name(self):
-    return self._table_name
+    if checkpoint:
+      saveable = MutableHashTable._Saveable(self, name)
+      ops.add_to_collection(ops.GraphKeys.SAVEABLE_OBJECTS, saveable)
 
   def size(self, name=None):
     """Compute the number of elements in this table.
@@ -398,11 +386,10 @@ class MutableHashTable(LookupInterface):
     Returns:
       A scalar tensor containing the number of elements in this table.
     """
-    with ops.name_scope(name, "%s_Size" % self.name,
-                        [self.resource_handle]) as name:
-      with ops.colocate_with(self.resource_handle):
-        return gen_lookup_ops.lookup_table_size_v2(
-            self.resource_handle, name=name)
+    with ops.name_scope(name, "%s_Size" % self._name,
+                        [self._table_ref]) as name:
+      with ops.colocate_with(self._table_ref):
+        return gen_lookup_ops.lookup_table_size_v2(self._table_ref, name=name)
 
   def remove(self, keys, name=None):
     """Removes `keys` and its associated values from the table.
@@ -424,12 +411,11 @@ class MutableHashTable(LookupInterface):
       raise TypeError("Signature mismatch. Keys must be dtype %s, got %s." %
                       (self._key_dtype, keys.dtype))
 
-    with ops.name_scope(
-        name, "%s_lookup_table_remove" % self.name,
-        (self.resource_handle, keys, self._default_value)) as name:
+    with ops.name_scope(name, "%s_lookup_table_remove" % self._name,
+                        (self._table_ref, keys, self._default_value)) as name:
       # pylint: disable=protected-access
       op = gen_lookup_ops.lookup_table_remove_v2(
-          self.resource_handle, keys, name=name)
+          self._table_ref, keys, name=name)
 
     return op
 
@@ -450,13 +436,12 @@ class MutableHashTable(LookupInterface):
     Raises:
       TypeError: when `keys` do not match the table data types.
     """
-    with ops.name_scope(
-        name, "%s_lookup_table_find" % self.name,
-        (self.resource_handle, keys, self._default_value)) as name:
+    with ops.name_scope(name, "%s_lookup_table_find" % self._name,
+                        (self._table_ref, keys, self._default_value)) as name:
       keys = ops.convert_to_tensor(keys, dtype=self._key_dtype, name="keys")
-      with ops.colocate_with(self.resource_handle):
+      with ops.colocate_with(self._table_ref):
         values = gen_lookup_ops.lookup_table_find_v2(
-            self.resource_handle, keys, self._default_value, name=name)
+            self._table_ref, keys, self._default_value, name=name)
     return values
 
   def insert(self, keys, values, name=None):
@@ -476,14 +461,14 @@ class MutableHashTable(LookupInterface):
       TypeError: when `keys` or `values` doesn't match the table data
         types.
     """
-    with ops.name_scope(name, "%s_lookup_table_insert" % self.name,
-                        [self.resource_handle, keys, values]) as name:
+    with ops.name_scope(name, "%s_lookup_table_insert" % self._name,
+                        [self._table_ref, keys, values]) as name:
       keys = ops.convert_to_tensor(keys, self._key_dtype, name="keys")
       values = ops.convert_to_tensor(values, self._value_dtype, name="values")
-      with ops.colocate_with(self.resource_handle):
+      with ops.colocate_with(self._table_ref):
         # pylint: disable=protected-access
         op = gen_lookup_ops.lookup_table_insert_v2(
-            self.resource_handle, keys, values, name=name)
+            self._table_ref, keys, values, name=name)
     return op
 
   def export(self, name=None):
@@ -496,11 +481,11 @@ class MutableHashTable(LookupInterface):
       A pair of tensors with the first tensor containing all keys and the
         second tensors containing all values in the table.
     """
-    with ops.name_scope(name, "%s_lookup_table_export_values" % self.name,
-                        [self.resource_handle]) as name:
-      with ops.colocate_with(self.resource_handle):
+    with ops.name_scope(name, "%s_lookup_table_export_values" % self._name,
+                        [self._table_ref]) as name:
+      with ops.colocate_with(self._table_ref):
         exported_keys, exported_values = gen_lookup_ops.lookup_table_export_v2(
-            self.resource_handle, self._key_dtype, self._value_dtype, name=name)
+            self._table_ref, self._key_dtype, self._value_dtype, name=name)
     return exported_keys, exported_values
 
   def _gather_saveables_for_checkpoint(self):
@@ -522,12 +507,12 @@ class MutableHashTable(LookupInterface):
     def restore(self, restored_tensors, restored_shapes):
       del restored_shapes  # unused
       # pylint: disable=protected-access
-      with ops.colocate_with(self.op.resource_handle):
+      with ops.colocate_with(self.op._table_ref):
         return gen_lookup_ops.lookup_table_import_v2(
-            self.op.resource_handle, restored_tensors[0], restored_tensors[1])
+            self.op._table_ref, restored_tensors[0], restored_tensors[1])
 
 
-class MutableDenseHashTable(LookupInterface):
+class MutableDenseHashTable(LookupInterface, checkpointable.CheckpointableBase):
   """A generic mutable hash table implementation using tensors as backing store.
 
   Data can be inserted by calling the insert method and removed by calling the
@@ -596,55 +581,42 @@ class MutableDenseHashTable(LookupInterface):
     """
     self._default_value = ops.convert_to_tensor(
         default_value, dtype=value_dtype, name="default_value")
-    self._key_dtype = key_dtype
-    self._value_dtype = value_dtype
-    self._initial_num_buckets = initial_num_buckets
     self._value_shape = self._default_value.get_shape()
-    self._checkpoint = checkpoint
-    self._name = name
 
-    self._empty_key = ops.convert_to_tensor(
+    # The table must be shared if checkpointing is requested for multi-worker
+    # training to work correctly. Use the node name if no shared_name has been
+    # explicitly specified.
+    use_node_name_sharing = checkpoint and shared_name is None
+    empty_key = ops.convert_to_tensor(
         empty_key, dtype=key_dtype, name="empty_key")
-    self._deleted_key = ops.convert_to_tensor(
+    deleted_key = ops.convert_to_tensor(
         deleted_key, dtype=key_dtype, name="deleted_key")
-    if context.executing_eagerly() and shared_name is None:
+    executing_eagerly = context.executing_eagerly()
+    if executing_eagerly and shared_name is None:
       # TODO(allenl): This will leak memory due to kernel caching by the
       # shared_name attribute value (but is better than the alternative of
       # sharing everything by default when executing eagerly; hopefully creating
       # tables in a loop is uncommon).
       shared_name = "table_%d" % (ops.uid(),)
-    self._shared_name = shared_name
-    super(MutableDenseHashTable, self).__init__(key_dtype, value_dtype)
+    self._table_ref = gen_lookup_ops.mutable_dense_hash_table_v2(
+        empty_key=empty_key,
+        deleted_key=deleted_key,
+        shared_name=shared_name,
+        use_node_name_sharing=use_node_name_sharing,
+        value_dtype=value_dtype,
+        value_shape=self._value_shape,
+        initial_num_buckets=initial_num_buckets,
+        name=name)
+    if executing_eagerly:
+      op_name = None
+    else:
+      op_name = self._table_ref.op.name.split("/")[-1]
+    super(MutableDenseHashTable, self).__init__(
+        key_dtype, value_dtype, op_name)
 
-    self._resource_handle = self.create_resource()
     if checkpoint:
       saveable = MutableDenseHashTable._Saveable(self, name)
-      if not context.executing_eagerly():
-        ops.add_to_collection(ops.GraphKeys.SAVEABLE_OBJECTS, saveable)
-
-  def create_resource(self):
-    # The table must be shared if checkpointing is requested for multi-worker
-    # training to work correctly. Use the node name if no shared_name has been
-    # explicitly specified.
-    use_node_name_sharing = self._checkpoint and self._shared_name is None
-    table_ref = gen_lookup_ops.mutable_dense_hash_table_v2(
-        empty_key=self._empty_key,
-        deleted_key=self._deleted_key,
-        shared_name=self._shared_name,
-        use_node_name_sharing=use_node_name_sharing,
-        value_dtype=self._value_dtype,
-        value_shape=self._value_shape,
-        initial_num_buckets=self._initial_num_buckets,
-        name=self._name)
-    if context.executing_eagerly():
-      self._table_name = None
-    else:
-      self._table_name = table_ref.op.name.split("/")[-1]
-    return table_ref
-
-  @property
-  def name(self):
-    return self._table_name
+      ops.add_to_collection(ops.GraphKeys.SAVEABLE_OBJECTS, saveable)
 
   def size(self, name=None):
     """Compute the number of elements in this table.
@@ -655,11 +627,10 @@ class MutableDenseHashTable(LookupInterface):
     Returns:
       A scalar tensor containing the number of elements in this table.
     """
-    with ops.name_scope(name, "%s_Size" % self.name,
-                        [self.resource_handle]) as name:
-      with ops.colocate_with(self.resource_handle):
-        return gen_lookup_ops.lookup_table_size_v2(
-            self.resource_handle, name=name)
+    with ops.name_scope(name, "%s_Size" % self._name,
+                        [self._table_ref]) as name:
+      with ops.colocate_with(self._table_ref):
+        return gen_lookup_ops.lookup_table_size_v2(self._table_ref, name=name)
 
   def lookup(self, keys, name=None):
     """Looks up `keys` in a table, outputs the corresponding values.
@@ -678,12 +649,12 @@ class MutableDenseHashTable(LookupInterface):
     Raises:
       TypeError: when `keys` do not match the table data types.
     """
-    with ops.name_scope(name, "%s_lookup_table_find" % self.name,
-                        [self.resource_handle, keys]) as name:
+    with ops.name_scope(name, "%s_lookup_table_find" % self._name,
+                        [self._table_ref, keys]) as name:
       keys = ops.convert_to_tensor(keys, dtype=self._key_dtype, name="keys")
-      with ops.colocate_with(self.resource_handle):
+      with ops.colocate_with(self._table_ref):
         values = gen_lookup_ops.lookup_table_find_v2(
-            self.resource_handle, keys, self._default_value, name=name)
+            self._table_ref, keys, self._default_value, name=name)
 
     return values
 
@@ -704,14 +675,14 @@ class MutableDenseHashTable(LookupInterface):
       TypeError: when `keys` or `values` doesn't match the table data
         types.
     """
-    with ops.name_scope(name, "%s_lookup_table_insert" % self.name,
-                        [self.resource_handle, keys, values]) as name:
+    with ops.name_scope(name, "%s_lookup_table_insert" % self._name,
+                        [self._table_ref, keys, values]) as name:
       keys = ops.convert_to_tensor(keys, dtype=self._key_dtype, name="keys")
       values = ops.convert_to_tensor(
           values, dtype=self._value_dtype, name="values")
-      with ops.colocate_with(self.resource_handle):
+      with ops.colocate_with(self._table_ref):
         op = gen_lookup_ops.lookup_table_insert_v2(
-            self.resource_handle, keys, values, name=name)
+            self._table_ref, keys, values, name=name)
       return op
 
   def remove(self, keys, name=None):
@@ -734,12 +705,11 @@ class MutableDenseHashTable(LookupInterface):
       raise TypeError("Signature mismatch. Keys must be dtype %s, got %s." %
                       (self._key_dtype, keys.dtype))
 
-    with ops.name_scope(
-        name, "%s_lookup_table_remove" % self.name,
-        (self.resource_handle, keys, self._default_value)) as name:
+    with ops.name_scope(name, "%s_lookup_table_remove" % self._name,
+                        (self._table_ref, keys, self._default_value)) as name:
       # pylint: disable=protected-access
       op = gen_lookup_ops.lookup_table_remove_v2(
-          self.resource_handle, keys, name=name)
+          self._table_ref, keys, name=name)
 
     return op
 
@@ -753,11 +723,11 @@ class MutableDenseHashTable(LookupInterface):
       A pair of tensors with the first tensor containing all keys and the
         second tensors containing all values in the table.
     """
-    with ops.name_scope(name, "%s_lookup_table_export_values" % self.name,
-                        [self.resource_handle]) as name:
-      with ops.colocate_with(self.resource_handle):
+    with ops.name_scope(name, "%s_lookup_table_export_values" % self._name,
+                        [self._table_ref]) as name:
+      with ops.colocate_with(self._table_ref):
         exported_keys, exported_values = gen_lookup_ops.lookup_table_export_v2(
-            self.resource_handle, self._key_dtype, self._value_dtype, name=name)
+            self._table_ref, self._key_dtype, self._value_dtype, name=name)
 
     return exported_keys, exported_values
 
@@ -781,6 +751,6 @@ class MutableDenseHashTable(LookupInterface):
     def restore(self, restored_tensors, restored_shapes):
       del restored_shapes  # unused
       # pylint: disable=protected-access
-      with ops.colocate_with(self.op.resource_handle):
+      with ops.colocate_with(self.op._table_ref):
         return gen_lookup_ops.lookup_table_import_v2(
-            self.op.resource_handle, restored_tensors[0], restored_tensors[1])
+            self.op._table_ref, restored_tensors[0], restored_tensors[1])

@@ -125,7 +125,6 @@ py_test(
         "//tensorflow/python:variables",
         "//tensorflow/python/eager:backprop",
         "//tensorflow/python/eager:context",
-        "//third_party/py/numpy",
     ],
 )
 
@@ -133,7 +132,6 @@ py_test(
     name = "feature_column_v2_test",
     srcs = ["feature_column_v2_test.py"],
     data = [":vocabulary_testdata"],
-    shard_count = 5,
     srcs_version = "PY2AND3",
     tags = [
         "no_cuda_on_cpu_tap",
@@ -161,7 +159,7 @@ py_test(
         "//tensorflow/python:variables",
         "//tensorflow/python/eager:backprop",
         "//tensorflow/python/eager:context",
-        "//tensorflow/python/estimator:estimator_py",
+        "//tensorflow/python/estimator:numpy_io",
         "//third_party/py/numpy",
     ],
 )

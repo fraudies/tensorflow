@@ -29,6 +29,8 @@ namespace xla {
 /* static */ int64 IndexUtil::MultidimensionalIndexToLinearIndex(
     const Shape& shape, absl::Span<const int64> multi_index) {
   DCHECK_EQ(shape.dimensions_size(), multi_index.size());
+  // Padding and nested layouts not supported yet.
+  DCHECK_EQ(0, shape.layout().padded_dimensions_size());
 
   for (size_t i = 0; i < multi_index.size(); ++i) {
     DCHECK_GE(multi_index[i], 0);
@@ -92,6 +94,8 @@ namespace xla {
 
 /* static */ std::vector<int64> IndexUtil::LinearIndexToMultidimensionalIndex(
     const Shape& shape, int64 linear_index) {
+  // Padding and nested layouts not supported yet.
+  DCHECK_EQ(0, shape.layout().padded_dimensions_size());
   DCHECK_GE(linear_index, 0);
   DCHECK_LT(linear_index, ShapeUtil::ElementsIn(shape));
 
@@ -129,12 +133,18 @@ namespace xla {
 
 /* static */ int64 IndexUtil::GetDimensionStride(const Shape& shape,
                                                  int64 dimension) {
+  int64 pdim_size = LayoutUtil::PaddedDimensions(shape).size();
   int64 stride = 1;
+  DCHECK(pdim_size == 0 || pdim_size == shape.dimensions_size());
   for (auto dim : LayoutUtil::MinorToMajor(shape)) {
     if (dim == dimension) {
       break;
     }
-    stride *= shape.dimensions()[dim];
+    if (pdim_size == 0) {
+      stride *= shape.dimensions(dim);
+    } else {
+      stride *= LayoutUtil::PaddedDimension(shape, dim);
+    }
   }
   return stride;
 }

@@ -69,7 +69,6 @@ class AsyncCheckpointSaverHook(basic_session_run_hooks.CheckpointSaverHook):
       raise ValueError("You cannot provide both saver and scaffold.")
     self._saver = saver
     self._save_thread = None
-    self._write_graph_thread = None
     self._checkpoint_dir = checkpoint_dir
     self._save_path = os.path.join(checkpoint_dir, checkpoint_basename)
     self._scaffold = scaffold
@@ -79,8 +78,6 @@ class AsyncCheckpointSaverHook(basic_session_run_hooks.CheckpointSaverHook):
     self._steps_per_run = 1
     self._summary_writer = None
     self._global_step_tensor = None
-
-    self._last_checkpoint_step = None
 
   def _set_steps_per_run(self, steps_per_run):
     self._steps_per_run = steps_per_run
@@ -100,14 +97,9 @@ class AsyncCheckpointSaverHook(basic_session_run_hooks.CheckpointSaverHook):
     # We do write graph and saver_def at the first call of before_run.
     # We cannot do this in begin, since we let other hooks to change graph and
     # add variables in begin. Graph is finalized after all begin calls.
-    def _write_graph_fn(self):
-      training_util.write_graph(
-          ops.get_default_graph().as_graph_def(add_shapes=True),
-          self._checkpoint_dir, "graph.pbtxt")
-    self._write_graph_thread = threading.Thread(target=_write_graph_fn,
-                                                args=[self])
-    self._write_graph_thread.start()
-
+    training_util.write_graph(
+        ops.get_default_graph().as_graph_def(add_shapes=True),
+        self._checkpoint_dir, "graph.pbtxt")
     saver_def = self._get_saver().saver_def if self._get_saver() else None
     graph = ops.get_default_graph()
     meta_graph_def = meta_graph.create_meta_graph_def(
@@ -122,24 +114,25 @@ class AsyncCheckpointSaverHook(basic_session_run_hooks.CheckpointSaverHook):
     return SessionRunArgs(self._global_step_tensor)
 
   def after_run(self, run_context, run_values):
-    global_step = run_context.session.run(self._global_step_tensor)
-    if self._timer.should_trigger_for_step(global_step):
-      self._timer.update_last_triggered_step(global_step)
-      logging.info("Triggering checkpoint. %s", global_step)
-      if self._save(run_context.session, global_step):
-        run_context.request_stop()
+    stale_global_step = run_values.results
+    if self._timer.should_trigger_for_step(stale_global_step +
+                                           self._steps_per_run):
+      # get the real value after train op.
+      global_step = run_context.session.run(self._global_step_tensor)
+      if self._timer.should_trigger_for_step(global_step):
+        self._timer.update_last_triggered_step(global_step)
+        if self._save(run_context.session, global_step):
+          run_context.request_stop()
 
   def end(self, session):
     if self._save_thread:
       logging.info("Waiting for any pending checkpoints to finish.")
       self._save_thread.join()
-    if self._write_graph_thread:
-      logging.info("Waiting for any pending write_graph to finish.")
-      self._write_graph_thread.join()
 
     last_step = session.run(self._global_step_tensor)
 
-    if self._last_checkpoint_step != last_step:
+    # Save the last checkpoint synchronously if needed.
+    if last_step != self._timer.last_triggered_step():
       self._save(session, last_step, asynchronous=False)
 
     for l in self._listeners:
@@ -165,17 +158,15 @@ class AsyncCheckpointSaverHook(basic_session_run_hooks.CheckpointSaverHook):
           SessionLog(
               status=SessionLog.CHECKPOINT, checkpoint_path=self._save_path),
           step)
-
-      for l in self._listeners:
-        l.after_save(session, step)
-
       end_time = time.time()
       logging.info("Checkpoint actual writing time: (%.3f sec)",
                    end_time - start_time)
       logging.info("Checkpoint finished for %d into %s.", step, self._save_path)
 
+    for l in self._listeners:
+      l.before_save(session, step)
+
     if not asynchronous:
-      self._last_checkpoint_step = step
       _save_fn()
       return
 
@@ -185,7 +176,6 @@ class AsyncCheckpointSaverHook(basic_session_run_hooks.CheckpointSaverHook):
         logging.info("Saver thread still in progress, skipping checkpoint.")
         return
 
-    self._last_checkpoint_step = step
     self._save_thread = threading.Thread(target=_save_fn)
     self._save_thread.start()
 

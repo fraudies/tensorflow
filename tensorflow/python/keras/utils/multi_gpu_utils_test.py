@@ -158,7 +158,7 @@ class TestMultiGPUModel(test.TestCase):
       dataset = data.Dataset.from_tensor_slices((x_train, y_train))
       dataset = dataset.repeat()
       dataset = dataset.batch(4)
-      iterator = data.make_one_shot_iterator(dataset)
+      iterator = dataset.make_one_shot_iterator()
 
       inputs, targets = iterator.get_next()
 

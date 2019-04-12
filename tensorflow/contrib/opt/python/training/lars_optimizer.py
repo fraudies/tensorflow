@@ -18,7 +18,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from tensorflow.python.framework import ops
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import linalg_ops
 from tensorflow.python.ops import math_ops
@@ -163,14 +162,3 @@ class LARSOptimizer(optimizer.Optimizer):
         math_ops.cast(self._momentum_tensor, grad.dtype),
         use_locking=self._use_locking,
         use_nesterov=self._use_nesterov)
-
-  def _prepare(self):
-    learning_rate = self._learning_rate
-    if callable(learning_rate):
-      learning_rate = learning_rate()
-    self._learning_rate_tensor = ops.convert_to_tensor(
-        learning_rate, name="learning_rate")
-    momentum = self._momentum
-    if callable(momentum):
-      momentum = momentum()
-    self._momentum_tensor = ops.convert_to_tensor(momentum, name="momentum")

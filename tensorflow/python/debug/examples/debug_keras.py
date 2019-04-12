@@ -86,5 +86,4 @@ if __name__ == "__main__":
       default=2,
       help="Number of epochs to train the model for.")
   FLAGS, unparsed = parser.parse_known_args()
-  with tf.Graph().as_default():
-    tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
+  tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)

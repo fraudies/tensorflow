@@ -18,13 +18,10 @@ limitations under the License.
 
 #include <stack>
 
-#include "absl/types/span.h"
 #include "tensorflow/compiler/tf2xla/host_compute_metadata.pb.h"
 #include "tensorflow/compiler/tf2xla/xla_compilation_device.h"
-#include "tensorflow/compiler/tf2xla/xla_expression.h"
 #include "tensorflow/compiler/tf2xla/xla_op_registry.h"
 #include "tensorflow/compiler/xla/client/local_client.h"
-#include "tensorflow/compiler/xla/client/xla_builder.h"
 #include "tensorflow/compiler/xla/client/xla_computation.h"
 #include "tensorflow/compiler/xla/status_macros.h"
 #include "tensorflow/core/common_runtime/device.h"
@@ -121,7 +118,7 @@ class XlaCompiler {
 
     // The type of the argument. If the argument is a resource, this
     // is the type of the variable's value, not DT_RESOURCE.
-    DataType type = DT_INVALID;
+    DataType type;
 
     // The shape of the argument. For:
     // * a parameter: the shape of the parameter.
@@ -150,7 +147,7 @@ class XlaCompiler {
 
     // For a TensorArray or Stack resource, what is the array's declared size?
     // (Used for lazy initialization.)
-    int64 max_array_size = -1;
+    int64 tensor_array_size = -1;
 
     // TensorArray resource parameters are passed as (array, gradient array 0,
     // ..., gradient array k), where the gradient arrays are in the same order
@@ -158,9 +155,6 @@ class XlaCompiler {
     std::set<string> tensor_array_gradients;
 
     bool operator==(const Argument& other) const;
-
-    // Returns a human-readable summary of the argument.
-    string HumanString() const;
   };
 
   // Options pertaining to an individual call to CompileGraph() or
@@ -265,7 +259,8 @@ class XlaCompiler {
     std::shared_ptr<xla::XlaComputation> computation;
   };
 
-  typedef std::function<xla::StatusOr<xla::Shape>(const TensorShape&, DataType)>
+  typedef std::function<xla::StatusOr<TensorShape>(const TensorShape&,
+                                                   DataType)>
       ShapeRepresentationFn;
   struct Options {
     // Name of the compilation device to use. It must be set by the caller.
@@ -321,23 +316,22 @@ class XlaCompiler {
 
   Status CompileFunction(const CompileOptions& options,
                          const NameAttrList& fn_name_attrs,
-                         absl::Span<const Argument> args,
-                         CompilationResult* result);
+                         std::vector<Argument> args, CompilationResult* result);
 
   // Compiles a tensorflow::Graph into an xla::XlaComputation.
   // Similar to CompileFunction, but takes a Graph as input rather than a
   // function.
   Status CompileGraph(const CompileOptions& options, string const& name,
                       std::unique_ptr<Graph> graph,
-                      absl::Span<const Argument> args,
+                      const std::vector<Argument>& args,
                       CompilationResult* result);
 
-  // Compiles a single Op, given by `node_def`, into an
+  // Compiles a single Op, given by an OpKernelContext, into an
   // xla::XlaComputation. Similar to CompileFunction but takes a single Op as
   // input.
-  Status CompileSingleOp(const CompileOptions& options, const NodeDef& node_def,
-                         absl::Span<const Argument> args,
-                         absl::Span<const DataType> result_types,
+  Status CompileSingleOp(const CompileOptions& options, string const& name,
+                         OpKernelContext* ctx,
+                         const std::vector<Argument>& args,
                          CompilationResult* result);
 
   // Returns the shape of the XLA parameter for an argument 'arg'.
@@ -417,8 +411,7 @@ class XlaCompiler {
   Status BuildArguments(const Graph& graph,
                         const std::vector<XlaCompiler::Argument>& args,
                         bool use_tuple_arg, xla::XlaBuilder* builder,
-                        XlaContext* context,
-                        const std::map<int, int>& arg_cores,
+                        XlaContext* context, std::vector<int>* arg_cores,
                         std::vector<XlaExpression>* arg_expressions,
                         std::vector<int>* input_mapping,
                         std::vector<xla::Shape>* input_shapes,

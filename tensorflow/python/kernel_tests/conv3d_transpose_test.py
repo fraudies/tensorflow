@@ -23,7 +23,6 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
-from tensorflow.python.framework import test_util
 from tensorflow.python.ops import gradient_checker
 from tensorflow.python.ops import nn_ops
 import tensorflow.python.ops.nn_grad  # pylint: disable=unused-import
@@ -49,7 +48,7 @@ class Conv3DTransposeTest(test.TestCase):
           1.0, shape=f_shape, name="filter", dtype=dtypes.float32)
       output = nn_ops.conv3d_transpose(
           x, f, y_shape, strides=strides, padding="SAME")
-      value = self.evaluate(output)
+      value = output.eval()
 
       # We count the number of cells being added at the locations in the output.
       # At the center, #cells = kernel_depth * kernel_height * kernel_width
@@ -99,7 +98,7 @@ class Conv3DTransposeTest(test.TestCase):
           1.0, shape=f_shape, name="filter", dtype=dtypes.float32)
       output = nn_ops.conv3d_transpose(
           x, f, y_shape, strides=strides, padding="SAME")
-      value = self.evaluate(output)
+      value = output.eval()
 
       for n in xrange(x_shape[0]):
         for k in xrange(f_shape[3]):
@@ -120,7 +119,6 @@ class Conv3DTransposeTest(test.TestCase):
                   target = 3.0
                 self.assertAllClose(target, value[n, d, h, w, k])
 
-  @test_util.run_deprecated_v1
   def testConv3DTransposeShapeMismatch(self):
     # Test case for GitHub issue 18460
     x_shape = [2, 2, 3, 4, 3]
@@ -148,7 +146,7 @@ class Conv3DTransposeTest(test.TestCase):
         output = nn_ops.conv3d_transpose(
             x_value, f_value, constant_op.constant(y_shape, dtype=dtype),
             strides=strides, padding="SAME")
-        self.evaluate(output)
+        output.eval()
 
   def testConv3DTransposeValid(self):
     with self.cached_session():
@@ -167,7 +165,7 @@ class Conv3DTransposeTest(test.TestCase):
           1.0, shape=f_shape, name="filter", dtype=dtypes.float32)
       output = nn_ops.conv3d_transpose(
           x, f, y_shape, strides=strides, padding="VALID")
-      value = self.evaluate(output)
+      value = output.eval()
 
       cache_values = np.zeros(y_shape, dtype=np.float32)
 
@@ -203,7 +201,6 @@ class Conv3DTransposeTest(test.TestCase):
 
     self.assertAllClose(cache_values, value)
 
-  @test_util.run_deprecated_v1
   def testGradient(self):
     x_shape = [2, 3, 4, 3, 2]
     f_shape = [3, 3, 3, 2, 2]

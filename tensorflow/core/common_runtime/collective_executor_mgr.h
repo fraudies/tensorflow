@@ -62,7 +62,8 @@ class CollectiveExecutorMgr : public CollectiveExecutorMgrInterface {
   const DeviceMgr* dev_mgr_;
   std::unique_ptr<DeviceResolverInterface> dev_resolver_;
   std::unique_ptr<ParamResolverInterface> param_resolver_;
-  string gpu_ring_order_;
+  CollectiveRemoteAccess* remote_access_;
+  string task_name_;
 
  private:
   mutex exec_mu_;

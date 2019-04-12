@@ -823,7 +823,6 @@ cc_library(
     ]),
     copts = llvm_copts + ["-Iexternal/llvm/lib/Target/ARM"],
     deps = [
-        ":arm_asm_printer",
         ":arm_desc",
         ":arm_info",
         ":arm_utils",
@@ -2142,7 +2141,6 @@ cc_library(
         ":core",
         ":global_i_sel",
         ":mc",
-        ":profile_data",
         ":selection_dag",
         ":support",
         ":target",
@@ -2241,6 +2239,7 @@ cc_library(
     deps = [
         ":code_gen",
         ":config",
+        ":core",
         ":support",
     ],
 )

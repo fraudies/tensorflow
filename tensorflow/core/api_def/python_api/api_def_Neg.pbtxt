@@ -1,9 +1,4 @@
 op {
   graph_op_name: "Neg"
-  endpoint {
-    name: "math.negative"
-  }
-  endpoint {
-    name: "negative"
-  }
+  visibility: HIDDEN
 }

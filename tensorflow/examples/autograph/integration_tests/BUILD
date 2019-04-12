@@ -17,11 +17,27 @@ filegroup(
 )
 
 py_test(
+    name = "errors_test",
+    srcs = [
+        "errors_test.py",
+    ],
+    srcs_version = "PY2AND3",
+    tags = [
+        "no_oss",
+        "no_windows",
+    ],
+    deps = [
+        "//tensorflow:tensorflow_py",
+    ],
+)
+
+py_test(
     name = "keras_test",
     srcs = [
         "keras_test.py",
     ],
     srcs_version = "PY2AND3",
+    tags = ["no_windows"],
     deps = [
         "//tensorflow:tensorflow_py",
     ],
@@ -33,6 +49,7 @@ py_test(
         "list_literals_test.py",
     ],
     srcs_version = "PY2AND3",
+    tags = ["no_windows"],
     deps = [
         "//tensorflow:tensorflow_py",
     ],

@@ -122,7 +122,7 @@ def _build_advisor_options(options):
   return opts
 
 
-@tf_export(v1=['profiler.Profiler'])
+@tf_export('profiler.Profiler')
 class Profiler(object):
   """TensorFlow multi-step profiler.
 
@@ -306,7 +306,7 @@ class Profiler(object):
     print_mdl.WriteProfile(filename)
 
 
-@tf_export(v1=['profiler.profile'])
+@tf_export('profiler.profile')
 def profile(graph=None,
             run_meta=None,
             op_log=None,
@@ -381,7 +381,7 @@ def profile(graph=None,
   return tfprof_node
 
 
-@tf_export(v1=['profiler.advise'])
+@tf_export('profiler.advise')
 def advise(graph=None, run_meta=None, options=_DEFAULT_ADVISE_OPTIONS):
   """Auto profile and advise.
 
@@ -398,7 +398,7 @@ def advise(graph=None, run_meta=None, options=_DEFAULT_ADVISE_OPTIONS):
   Returns:
     Returns AdviceProto proto
   """
-  if not graph and not context.executing_eagerly():
+  if not graph and context.in_eager_execution():
     graph = ops.get_default_graph()
 
   if options == _DEFAULT_ADVISE_OPTIONS:

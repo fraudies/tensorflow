@@ -15,12 +15,14 @@ limitations under the License.
 
 // Native XLA implementations of XLA Relu Ops
 
+#include "tensorflow/compiler/tf2xla/kernels/cwise_ops.h"
 #include "tensorflow/compiler/tf2xla/xla_helpers.h"
-#include "tensorflow/compiler/tf2xla/xla_op_kernel.h"
 #include "tensorflow/compiler/tf2xla/xla_op_registry.h"
-#include "tensorflow/compiler/xla/client/lib/constants.h"
 #include "tensorflow/compiler/xla/client/xla_builder.h"
 #include "tensorflow/compiler/xla/literal.h"
+#include "tensorflow/core/framework/kernel_def_builder.h"
+#include "tensorflow/core/framework/types.h"
+#include "tensorflow/core/kernels/no_op.h"
 
 namespace tensorflow {
 namespace {
@@ -35,7 +37,6 @@ class ReluOp : public XlaOpKernel {
     ctx->SetOutput(0, xla::Max(zero, ctx->Input(0)));
   }
 };
-REGISTER_XLA_OP(Name("Relu"), ReluOp);
 
 class Relu6Op : public XlaOpKernel {
  public:
@@ -48,22 +49,6 @@ class Relu6Op : public XlaOpKernel {
     ctx->SetOutput(0, xla::Clamp(zero, ctx->Input(0), six));
   }
 };
-REGISTER_XLA_OP(Name("Relu6"), Relu6Op);
-
-class LeakyReluOp : public XlaOpKernel {
- public:
-  explicit LeakyReluOp(OpKernelConstruction* ctx) : XlaOpKernel(ctx) {
-    OP_REQUIRES_OK(ctx, ctx->GetAttr("alpha", &alpha_));
-  }
-  void Compile(XlaOpKernelContext* ctx) override {
-    auto features = ctx->Input("features");
-    auto output =
-        xla::Max(features, features * xla::ScalarLike(features, alpha_));
-    ctx->SetOutput(0, output);
-  }
-  float alpha_;
-};
-REGISTER_XLA_OP(Name("LeakyRelu"), LeakyReluOp);
 
 class ReluGradOp : public XlaOpKernel {
  public:
@@ -79,7 +64,6 @@ class ReluGradOp : public XlaOpKernel {
     ctx->SetOutput(0, xla::Select(pred, ctx->Input(0), zero));
   }
 };
-REGISTER_XLA_OP(Name("ReluGrad"), ReluGradOp);
 
 class Relu6GradOp : public XlaOpKernel {
  public:
@@ -99,24 +83,11 @@ class Relu6GradOp : public XlaOpKernel {
     ctx->SetOutput(0, out);
   }
 };
-REGISTER_XLA_OP(Name("Relu6Grad"), Relu6GradOp);
 
-class LeakyReluGradOp : public XlaOpKernel {
- public:
-  explicit LeakyReluGradOp(OpKernelConstruction* ctx) : XlaOpKernel(ctx) {
-    OP_REQUIRES_OK(ctx, ctx->GetAttr("alpha", &alpha_));
-  }
-  void Compile(XlaOpKernelContext* ctx) override {
-    auto gradients = ctx->Input("gradients");
-    auto features = ctx->Input("features");
-    auto output =
-        xla::Select(xla::Gt(features, xla::ScalarLike(features, 0)), gradients,
-                    gradients * xla::ScalarLike(gradients, alpha_));
-    ctx->SetOutput(0, output);
-  }
-  float alpha_;
-};
-REGISTER_XLA_OP(Name("LeakyReluGrad"), LeakyReluGradOp);
+REGISTER_XLA_OP(Name("Relu"), ReluOp);
+REGISTER_XLA_OP(Name("Relu6"), Relu6Op);
+REGISTER_XLA_OP(Name("ReluGrad"), ReluGradOp);
+REGISTER_XLA_OP(Name("Relu6Grad"), Relu6GradOp);
 
 }  // namespace
 }  // namespace tensorflow

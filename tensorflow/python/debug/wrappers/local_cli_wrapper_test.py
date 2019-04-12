@@ -127,7 +127,6 @@ class LocalCLIDebuggerWrapperSessionForTest(
         return e.exit_token
 
 
-@test_util.run_v1_only("b/120545219")
 class LocalCLIDebugWrapperSessionTest(test_util.TensorFlowTestCase):
 
   def setUp(self):

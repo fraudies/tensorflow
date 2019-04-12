@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 #include "tensorflow/core/kernels/eigen_pooling.h"
+#include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/platform/test.h"
 
 namespace Eigen {

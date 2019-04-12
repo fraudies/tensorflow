@@ -37,12 +37,12 @@ class DepthToSpaceTest(test.TestCase):
 
   def _testOne(self, inputs, block_size, outputs, dtype=dtypes.float32):
     input_nhwc = math_ops.cast(inputs, dtype)
-    with self.cached_session(use_gpu=False):
+    with self.test_session(use_gpu=False):
       # test NHWC (default) on CPU
       x_tf = array_ops.depth_to_space(input_nhwc, block_size)
       self.assertAllEqual(x_tf.eval(), outputs)
     if test.is_gpu_available():
-      with self.cached_session(use_gpu=True):
+      with self.test_session(use_gpu=True):
         # test NHWC (default) on GPU
         x_tf = array_ops.depth_to_space(input_nhwc, block_size)
         self.assertAllEqual(x_tf.eval(), outputs)
@@ -53,14 +53,12 @@ class DepthToSpaceTest(test.TestCase):
         output_nhwc = test_util.NCHWToNHWC(output_nchw)
         self.assertAllEqual(output_nhwc.eval(), outputs)
 
-  @test_util.run_deprecated_v1
   def testBasic(self):
     x_np = [[[[1, 2, 3, 4]]]]
     block_size = 2
     x_out = [[[[1], [2]], [[3], [4]]]]
     self._testOne(x_np, block_size, x_out)
 
-  @test_util.run_deprecated_v1
   def testBasicFloat16(self):
     x_np = [[[[1, 2, 3, 4]]]]
     block_size = 2
@@ -69,7 +67,6 @@ class DepthToSpaceTest(test.TestCase):
 
   # Tests for larger input dimensions. To make sure elements are
   # correctly ordered spatially.
-  @test_util.run_deprecated_v1
   def testBlockSize2(self):
     x_np = [[[[1, 2, 3, 4],
               [5, 6, 7, 8]],
@@ -82,7 +79,6 @@ class DepthToSpaceTest(test.TestCase):
               [[11], [12], [15], [16]]]]
     self._testOne(x_np, block_size, x_out)
 
-  @test_util.run_deprecated_v1
   def testBlockSize2Batch10(self):
     block_size = 2
     def batch_input_elt(i):
@@ -106,20 +102,19 @@ class DepthToSpaceTest(test.TestCase):
     input_nhwc = array_ops.ones([batch_size, 2, 3, 12])
     x_out = array_ops.ones([batch_size, 4, 6, 3])
 
-    with self.cached_session(use_gpu=False):
+    with self.test_session(use_gpu=False):
       # test NHWC (default) on CPU
       x_tf = array_ops.depth_to_space(input_nhwc, block_size)
       self.assertAllEqual(x_tf.shape, x_out.shape)
-      self.evaluate(x_tf)
+      x_tf.eval()
     if test.is_gpu_available():
-      with self.cached_session(use_gpu=True):
+      with self.test_session(use_gpu=True):
         # test NHWC (default) on GPU
         x_tf = array_ops.depth_to_space(input_nhwc, block_size)
         self.assertAllEqual(x_tf.shape, x_out.shape)
-        self.evaluate(x_tf)
+        x_tf.eval()
 
   # Tests for different width and height.
-  @test_util.run_deprecated_v1
   def testNonSquare(self):
     x_np = [[[[1, 10, 2, 20, 3, 30, 4, 40]],
              [[5, 50, 6, 60, 7, 70, 8, 80]],
@@ -135,7 +130,6 @@ class DepthToSpaceTest(test.TestCase):
 
   # Tests for larger input dimensions. To make sure elements are
   # correctly ordered spatially.
-  @test_util.run_deprecated_v1
   def testBlockSize4FlatInput(self):
     x_np = [[[[1, 2, 5, 6, 3, 4, 7, 8, 9, 10, 13, 14, 11, 12, 15, 16]]]]
     block_size = 4
@@ -147,7 +141,6 @@ class DepthToSpaceTest(test.TestCase):
 
   # Tests for larger input depths.
   # To make sure elements are properly interleaved in depth.
-  @test_util.run_deprecated_v1
   def testDepthInterleaved(self):
     x_np = [[[[1, 10, 2, 20, 3, 30, 4, 40]]]]
     block_size = 2
@@ -157,7 +150,6 @@ class DepthToSpaceTest(test.TestCase):
 
   # Tests for larger input depths. Here an odd depth.
   # To make sure elements are properly interleaved in depth.
-  @test_util.run_deprecated_v1
   def testDepthInterleavedDepth3(self):
     x_np = [[[[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]]]]
     block_size = 2
@@ -167,7 +159,6 @@ class DepthToSpaceTest(test.TestCase):
 
   # Tests for larger input depths.
   # To make sure elements are properly interleaved in depth.
-  @test_util.run_deprecated_v1
   def testDepthInterleavedLarger(self):
     x_np = [[[[1, 10, 2, 20, 3, 30, 4, 40],
               [5, 50, 6, 60, 7, 70, 8, 80]],
@@ -184,7 +175,6 @@ class DepthToSpaceTest(test.TestCase):
 
   # Tests for a block larger for the depth. In this case should raise an
   # exception.
-  @test_util.run_deprecated_v1
   def testBlockSizeTooLarge(self):
     x_np = [[[[1, 2, 3, 4],
               [5, 6, 7, 8]],
@@ -195,20 +185,18 @@ class DepthToSpaceTest(test.TestCase):
     # divisible by 16.
     with self.assertRaises(ValueError):
       out_tf = array_ops.depth_to_space(x_np, block_size)
-      self.evaluate(out_tf)
+      out_tf.eval()
 
   # Test when the block size is 0.
-  @test_util.run_deprecated_v1
   def testBlockSize0(self):
     x_np = [[[[1], [2]],
              [[3], [4]]]]
     block_size = 0
     with self.assertRaises(ValueError):
       out_tf = array_ops.depth_to_space(x_np, block_size)
-      self.evaluate(out_tf)
+      out_tf.eval()
 
   # Test when the block size is 1. The block size should be > 1.
-  @test_util.run_deprecated_v1
   def testBlockSizeOne(self):
     x_np = [[[[1, 1, 1, 1],
               [2, 2, 2, 2]],
@@ -217,9 +205,8 @@ class DepthToSpaceTest(test.TestCase):
     block_size = 1
     with self.assertRaises(ValueError):
       out_tf = array_ops.depth_to_space(x_np, block_size)
-      self.evaluate(out_tf)
+      out_tf.eval()
 
-  @test_util.run_deprecated_v1
   def testBlockSizeLargerThanInput(self):
     # The block size is too large for this input.
     x_np = [[[[1], [2]],
@@ -227,9 +214,8 @@ class DepthToSpaceTest(test.TestCase):
     block_size = 10
     with self.assertRaises(ValueError):
       out_tf = array_ops.space_to_depth(x_np, block_size)
-      self.evaluate(out_tf)
+      out_tf.eval()
 
-  @test_util.run_deprecated_v1
   def testBlockSizeNotDivisibleDepth(self):
     # The depth is not divisible by the square of the block size.
     x_np = [[[[1, 1, 1, 1],
@@ -240,7 +226,6 @@ class DepthToSpaceTest(test.TestCase):
     with self.assertRaises(ValueError):
       _ = array_ops.space_to_depth(x_np, block_size)
 
-  @test_util.run_deprecated_v1
   def testUnknownShape(self):
     t = array_ops.depth_to_space(
         array_ops.placeholder(dtypes.float32), block_size=4)
@@ -291,8 +276,8 @@ class DepthToSpaceTest(test.TestCase):
       expected = self.depthToSpaceUsingTranspose(t, block_size, data_format)
       actual = array_ops.depth_to_space(t, block_size, data_format=data_format)
 
-    with self.session(use_gpu=use_gpu) as sess:
-      actual_vals, expected_vals = self.evaluate([actual, expected])
+    with self.test_session(use_gpu=use_gpu) as sess:
+      actual_vals, expected_vals = sess.run([actual, expected])
       self.assertTrue(np.array_equal(actual_vals, expected_vals))
 
   def testAgainstTranspose(self):
@@ -329,7 +314,7 @@ class DepthToSpaceGradientTest(test.TestCase):
       return
 
     assert 4 == x.ndim
-    with self.cached_session(use_gpu=True):
+    with self.test_session(use_gpu=True):
       tf_x = ops.convert_to_tensor(x)
       tf_y = array_ops.depth_to_space(tf_x, block_size, data_format=data_format)
 
@@ -358,13 +343,11 @@ class DepthToSpaceGradientTest(test.TestCase):
 
   # Don't use very large numbers as dimensions here, as the result is tensor
   # with cartesian product of the dimensions.
-  @test_util.run_deprecated_v1
   def testSmall(self):
     block_size = 2
     self._compare(3, 2, 5, 3, block_size, "NHWC")
     self._compare(3, 2, 5, 3, block_size, "NCHW")
 
-  @test_util.run_deprecated_v1
   def testSmall2(self):
     block_size = 3
     self._compare(1, 2, 3, 2, block_size, "NHWC")

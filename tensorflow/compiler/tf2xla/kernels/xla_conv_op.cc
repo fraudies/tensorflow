@@ -90,11 +90,11 @@ class XlaConvOp : public XlaOpKernel {
 };
 
 REGISTER_XLA_OP(Name("XlaConv")
-                    .CompileTimeConstantInput("window_strides")
-                    .CompileTimeConstantInput("lhs_dilation")
-                    .CompileTimeConstantInput("rhs_dilation")
-                    .CompileTimeConstantInput("feature_group_count")
-                    .CompileTimeConstantInput("padding"),
+                    .CompileTimeConstInput("window_strides")
+                    .CompileTimeConstInput("lhs_dilation")
+                    .CompileTimeConstInput("rhs_dilation")
+                    .CompileTimeConstInput("feature_group_count")
+                    .CompileTimeConstInput("padding"),
                 XlaConvOp);
 
 }  // namespace

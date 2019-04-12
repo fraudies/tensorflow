@@ -21,7 +21,6 @@ limitations under the License.
 #include "tensorflow/core/framework/node_def_util.h"
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/framework/tensor_shape.pb.h"
-#include "tensorflow/core/framework/types.pb.h"
 #include "tensorflow/core/platform/test.h"
 
 namespace tensorflow {
@@ -38,11 +37,24 @@ TEST(PerformStaticShapeInferenceBeforeEncapsulationTest, Basic) {
   Graph g(OpRegistry::Global());
   TF_CHECK_OK(s.ToGraph(&g));
 
-  TF_CHECK_OK(PerformStaticShapeInferenceBeforeEncapsulation(&g));
-
-  // Check that "add" node now has _xla_inferred_shapes attr.
+  // "add" node is outside compilation node, "identity" node is XLA node.
   auto node_index = g.BuildNodeNameIndex();
-  Node *add_node = node_index["add"];
+  Node *add_node = node_index["add"], *identity_node = node_index["identity"];
+  add_node->AddAttr("_xla", "cluster");
+  add_node->AddAttr("_oc", "cluster");
+  identity_node->AddAttr("_xla", "cluster");
+  TF_CHECK_OK(
+      PerformStaticShapeInferenceBeforeEncapsulation(&g, "_xla", "_oc"));
+
+  // Check that only "add" node now has _xla_inferred_shapes attr.
+  std::vector<Node*> nodes_with_inferred_shape;
+  for (Node* n : g.nodes()) {
+    if (HasNodeAttr(n->def(), kXlaInferredShapesAttrName)) {
+      nodes_with_inferred_shape.push_back(n);
+    }
+  }
+  EXPECT_EQ(nodes_with_inferred_shape.size(), 1);
+  EXPECT_EQ(nodes_with_inferred_shape[0], add_node);
   std::vector<PartialTensorShape> output_shapes;
   TF_CHECK_OK(GetNodeAttr(add_node->attrs(), kXlaInferredShapesAttrName,
                           &output_shapes));

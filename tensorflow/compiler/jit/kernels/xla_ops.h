@@ -16,8 +16,6 @@ limitations under the License.
 #ifndef TENSORFLOW_COMPILER_JIT_KERNELS_XLA_OPS_H_
 #define TENSORFLOW_COMPILER_JIT_KERNELS_XLA_OPS_H_
 
-#include <atomic>
-
 #include "tensorflow/compiler/jit/xla_compilation_cache.h"
 #include "tensorflow/compiler/jit/xla_device.h"
 #include "tensorflow/compiler/jit/xla_launch_util.h"
@@ -35,7 +33,6 @@ namespace tensorflow {
 class XlaPlatformInfo {
  public:
   XlaPlatformInfo() : device_type_("") {}
-  XlaPlatformInfo(XlaPlatformInfo&&) = default;
   explicit XlaPlatformInfo(const DeviceType device_type,
                            se::Platform::Id platform_id,
                            const XlaDevice::Metadata* xla_device_metadata,
@@ -113,12 +110,12 @@ class XlaLocalLaunchBase : public OpKernel {
 
  protected:
   // Indexes of compile-time constant inputs
-  const std::vector<int> constants_;
+  std::vector<int> constants_;
   // Indexes of resource inputs
-  const std::vector<int> resources_;
+  std::vector<int> resources_;
 
-  const NameAttrList function_;
-  const XlaPlatformInfo platform_info_;
+  NameAttrList function_;
+  XlaPlatformInfo platform_info_;
 };
 
 // XlaLocalLaunchOp is used to replace a region of the TensorFlow graph
@@ -147,23 +144,15 @@ class XlaCompileOp : public OpKernel {
 
  private:
   // Indexes of compile-time constant inputs
-  const std::vector<int> constants_;
+  std::vector<int> constants_;
   // Indexes of resource inputs
-  const std::vector<int> resources_;
+  std::vector<int> resources_;
 
-  const NameAttrList function_;
+  NameAttrList function_;
 
   XlaPlatformInfo platform_info_;
 
-  const bool must_compile_;
-
-  // cannot_compile_cluster_ is set to true if XLA returns an Unimplemented
-  // error when compiling the cluster this _XlaCompile is supposed to compile.
-  // If `cannot_compile_cluster_` is true then we avoid compiling this cluster
-  // on any future calls to _XlaCompile.
-  bool cannot_compile_cluster_ GUARDED_BY(cannot_compile_cluster_mu_) = false;
-
-  mutex cannot_compile_cluster_mu_;
+  bool must_compile_;
 };
 
 class XlaRunOp : public OpKernel {
@@ -173,7 +162,7 @@ class XlaRunOp : public OpKernel {
   void Compute(OpKernelContext* ctx) override;
 
  private:
-  const XlaPlatformInfo platform_info_;
+  XlaPlatformInfo platform_info_;
 };
 
 }  // namespace tensorflow

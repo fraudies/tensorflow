@@ -22,7 +22,6 @@ import numpy as np
 
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import sparse_tensor as sparse_tensor_lib
-from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import sparse_ops
 from tensorflow.python.platform import test
@@ -69,12 +68,12 @@ class SerializeSparseTest(test.TestCase):
                                       serialize_fn,
                                       deserialize_fn,
                                       out_type=dtypes.string):
-    with self.cached_session(use_gpu=False) as sess:
+    with self.test_session(use_gpu=False) as sess:
       sp_input = self._SparseTensorValue_5x6(np.arange(6))
       serialized = serialize_fn(sp_input, out_type=out_type)
       sp_deserialized = deserialize_fn(serialized, dtype=dtypes.int32)
 
-      indices, values, shape = self.evaluate(sp_deserialized)
+      indices, values, shape = sess.run(sp_deserialized)
 
       self.assertAllEqual(indices, sp_input[0])
       self.assertAllEqual(values, sp_input[1])
@@ -93,7 +92,7 @@ class SerializeSparseTest(test.TestCase):
                                            serialize_fn,
                                            deserialize_fn,
                                            out_type=dtypes.string):
-    with self.cached_session(use_gpu=False) as sess:
+    with self.test_session(use_gpu=False) as sess:
       sp_input = self._SparseTensorValue_5x6(np.arange(6))
       serialized = serialize_fn(sp_input, out_type=out_type)
       serialized = array_ops.stack([serialized, serialized])
@@ -111,17 +110,14 @@ class SerializeSparseTest(test.TestCase):
       self.assertAllEqual(combined_values[6:], sp_input[1])
       self.assertAllEqual(combined_shape, [2, 5, 6])
 
-  @test_util.run_deprecated_v1
   def testSerializeDeserializeBatch(self):
     self._testSerializeDeserializeBatchHelper(sparse_ops.serialize_sparse,
                                               sparse_ops.deserialize_sparse)
 
-  @test_util.run_deprecated_v1
   def testSerializeDeserializeManyBatch(self):
     self._testSerializeDeserializeBatchHelper(
         sparse_ops.serialize_sparse, sparse_ops.deserialize_many_sparse)
 
-  @test_util.run_deprecated_v1
   def testVariantSerializeDeserializeBatch(self):
     self._testSerializeDeserializeBatchHelper(sparse_ops.serialize_sparse,
                                               sparse_ops.deserialize_sparse,
@@ -129,7 +125,7 @@ class SerializeSparseTest(test.TestCase):
 
   def _testSerializeDeserializeBatchInconsistentShapeHelper(
       self, serialize_fn, deserialize_fn, out_type=dtypes.string):
-    with self.cached_session(use_gpu=False) as sess:
+    with self.test_session(use_gpu=False) as sess:
       sp_input0 = self._SparseTensorValue_5x6(np.arange(6))
       sp_input1 = self._SparseTensorValue_3x4(np.arange(6))
       serialized0 = serialize_fn(sp_input0, out_type=out_type)
@@ -149,12 +145,10 @@ class SerializeSparseTest(test.TestCase):
       self.assertAllEqual(combined_values[6:], sp_input1[1])
       self.assertAllEqual(combined_shape, [2, 5, 6])
 
-  @test_util.run_deprecated_v1
   def testSerializeDeserializeBatchInconsistentShape(self):
     self._testSerializeDeserializeBatchInconsistentShapeHelper(
         sparse_ops.serialize_sparse, sparse_ops.deserialize_sparse)
 
-  @test_util.run_deprecated_v1
   def testVariantSerializeDeserializeBatchInconsistentShape(self):
     self._testSerializeDeserializeBatchInconsistentShapeHelper(
         sparse_ops.serialize_sparse, sparse_ops.deserialize_sparse,
@@ -164,7 +158,7 @@ class SerializeSparseTest(test.TestCase):
                                                  serialize_fn,
                                                  deserialize_fn,
                                                  out_type=dtypes.string):
-    with self.cached_session(use_gpu=False) as sess:
+    with self.test_session(use_gpu=False) as sess:
       sp_input = self._SparseTensorValue_5x6(np.arange(6))
       serialized = serialize_fn(sp_input, out_type=out_type)
       serialized = array_ops.stack([serialized, serialized])
@@ -194,12 +188,10 @@ class SerializeSparseTest(test.TestCase):
 
       self.assertAllEqual(combined_shape, [2, 2, 5, 6])
 
-  @test_util.run_deprecated_v1
   def testSerializeDeserializeNestedBatch(self):
     self._testSerializeDeserializeNestedBatchHelper(
         sparse_ops.serialize_sparse, sparse_ops.deserialize_sparse)
 
-  @test_util.run_deprecated_v1
   def testVariantSerializeDeserializeNestedBatch(self):
     self._testSerializeDeserializeNestedBatchHelper(
         sparse_ops.serialize_sparse, sparse_ops.deserialize_sparse,
@@ -209,7 +201,7 @@ class SerializeSparseTest(test.TestCase):
                                                serialize_fn,
                                                deserialize_fn,
                                                out_type=dtypes.string):
-    with self.cached_session(use_gpu=False) as sess:
+    with self.test_session(use_gpu=False) as sess:
       sp_input0 = self._SparseTensorPlaceholder()
       sp_input1 = self._SparseTensorPlaceholder()
       input0_val = self._SparseTensorValue_5x6(np.arange(6))
@@ -232,17 +224,14 @@ class SerializeSparseTest(test.TestCase):
       self.assertAllEqual(combined_values[6:], input1_val[1])
       self.assertAllEqual(combined_shape, [2, 5, 6])
 
-  @test_util.run_deprecated_v1
   def testFeedSerializeDeserializeBatch(self):
     self._testFeedSerializeDeserializeBatchHelper(sparse_ops.serialize_sparse,
                                                   sparse_ops.deserialize_sparse)
 
-  @test_util.run_deprecated_v1
   def testFeedSerializeDeserializeManyBatch(self):
     self._testFeedSerializeDeserializeBatchHelper(
         sparse_ops.serialize_sparse, sparse_ops.deserialize_many_sparse)
 
-  @test_util.run_deprecated_v1
   def testFeedVariantSerializeDeserializeBatch(self):
     self._testFeedSerializeDeserializeBatchHelper(sparse_ops.serialize_sparse,
                                                   sparse_ops.deserialize_sparse,
@@ -251,7 +240,7 @@ class SerializeSparseTest(test.TestCase):
   def _testSerializeManyShapeHelper(self,
                                     serialize_many_fn,
                                     out_type=dtypes.string):
-    with self.cached_session(use_gpu=False) as sess:
+    with self.test_session(use_gpu=False) as sess:
       # N == 4 because shape_value == [4, 5]
       indices_value = np.array([[0, 0], [0, 1], [2, 0]], dtype=np.int64)
       values_value = np.array([b"a", b"b", b"c"])
@@ -267,7 +256,6 @@ class SerializeSparseTest(test.TestCase):
           })
       self.assertEqual(serialized_value.shape, (4, 3))
 
-  @test_util.run_deprecated_v1
   def testSerializeManyShape(self):
     self._testSerializeManyShapeHelper(sparse_ops.serialize_many_sparse)
 
@@ -280,7 +268,7 @@ class SerializeSparseTest(test.TestCase):
                                                serialize_many_fn,
                                                deserialize_fn,
                                                out_type=dtypes.string):
-    with self.cached_session(use_gpu=False) as sess:
+    with self.test_session(use_gpu=False) as sess:
       # N == 4 because shape_value == [4, 5]
       indices_value = np.array([[0, 0], [0, 1], [2, 0]], dtype=np.int64)
       values_value = np.array([b"a", b"b", b"c"])
@@ -299,25 +287,21 @@ class SerializeSparseTest(test.TestCase):
       self.assertAllEqual(deserialized_value.values, values_value)
       self.assertAllEqual(deserialized_value.dense_shape, shape_value)
 
-  @test_util.run_deprecated_v1
   def testSerializeManyDeserializeBatch(self):
     self._testSerializeManyDeserializeBatchHelper(
         sparse_ops.serialize_many_sparse, sparse_ops.deserialize_sparse)
 
-  @test_util.run_deprecated_v1
   def testSerializeManyDeserializeManyBatch(self):
     self._testSerializeManyDeserializeBatchHelper(
         sparse_ops.serialize_many_sparse, sparse_ops.deserialize_many_sparse)
 
-  @test_util.run_deprecated_v1
   def testVariantSerializeManyDeserializeBatch(self):
     self._testSerializeManyDeserializeBatchHelper(
         sparse_ops.serialize_many_sparse, sparse_ops.deserialize_sparse,
         dtypes.variant)
 
-  @test_util.run_deprecated_v1
   def testVariantSerializeDeserializeScalar(self):
-    with self.session(use_gpu=False) as sess:
+    with self.test_session(use_gpu=False) as sess:
       indices_value = np.array([[]], dtype=np.int64)
       values_value = np.array([37], dtype=np.int32)
       shape_value = np.array([], dtype=np.int64)
@@ -337,9 +321,8 @@ class SerializeSparseTest(test.TestCase):
       self.assertAllEqual(deserialized_value.values, values_value)
       self.assertAllEqual(deserialized_value.dense_shape, shape_value)
 
-  @test_util.run_deprecated_v1
   def testVariantSerializeDeserializeScalarBatch(self):
-    with self.session(use_gpu=False) as sess:
+    with self.test_session(use_gpu=False) as sess:
       indices_value = np.array([[]], dtype=np.int64)
       values_value = np.array([37], dtype=np.int32)
       shape_value = np.array([], dtype=np.int64)
@@ -366,7 +349,7 @@ class SerializeSparseTest(test.TestCase):
                                            serialize_fn,
                                            deserialize_fn,
                                            out_type=dtypes.string):
-    with self.cached_session(use_gpu=False) as sess:
+    with self.test_session(use_gpu=False) as sess:
       sp_input0 = self._SparseTensorPlaceholder()
       sp_input1 = self._SparseTensorPlaceholder()
       input0_val = self._SparseTensorValue_5x6(np.arange(6))
@@ -384,17 +367,14 @@ class SerializeSparseTest(test.TestCase):
                  {sp_input0: input0_val,
                   sp_input1: input1_val})
 
-  @test_util.run_deprecated_v1
   def testDeserializeFailsWrongType(self):
     self._testDeserializeFailsWrongTypeHelper(sparse_ops.serialize_sparse,
                                               sparse_ops.deserialize_sparse)
 
-  @test_util.run_deprecated_v1
   def testDeserializeManyFailsWrongType(self):
     self._testDeserializeFailsWrongTypeHelper(
         sparse_ops.serialize_sparse, sparse_ops.deserialize_many_sparse)
 
-  @test_util.run_deprecated_v1
   def testVariantDeserializeFailsWrongType(self):
     self._testDeserializeFailsWrongTypeHelper(sparse_ops.serialize_sparse,
                                               sparse_ops.deserialize_sparse,
@@ -404,7 +384,7 @@ class SerializeSparseTest(test.TestCase):
                                                   serialize_fn,
                                                   deserialize_fn,
                                                   out_type=dtypes.string):
-    with self.cached_session(use_gpu=False) as sess:
+    with self.test_session(use_gpu=False) as sess:
       sp_input0 = self._SparseTensorPlaceholder()
       sp_input1 = self._SparseTensorPlaceholder()
       input0_val = self._SparseTensorValue_5x6(np.arange(6))
@@ -422,17 +402,14 @@ class SerializeSparseTest(test.TestCase):
                  {sp_input0: input0_val,
                   sp_input1: input1_val})
 
-  @test_util.run_deprecated_v1
   def testDeserializeFailsInconsistentRank(self):
     self._testDeserializeFailsInconsistentRankHelper(
         sparse_ops.serialize_sparse, sparse_ops.deserialize_sparse)
 
-  @test_util.run_deprecated_v1
   def testDeserializeManyFailsInconsistentRank(self):
     self._testDeserializeFailsInconsistentRankHelper(
         sparse_ops.serialize_sparse, sparse_ops.deserialize_many_sparse)
 
-  @test_util.run_deprecated_v1
   def testVariantDeserializeFailsInconsistentRank(self):
     self._testDeserializeFailsInconsistentRankHelper(
         sparse_ops.serialize_sparse, sparse_ops.deserialize_sparse,
@@ -442,7 +419,7 @@ class SerializeSparseTest(test.TestCase):
                                               serialize_fn,
                                               deserialize_fn,
                                               out_type=dtypes.string):
-    with self.cached_session(use_gpu=False) as sess:
+    with self.test_session(use_gpu=False) as sess:
       sp_input0 = self._SparseTensorPlaceholder()
       input0_val = self._SparseTensorValue_5x6(np.arange(6))
       serialized0 = serialize_fn(sp_input0, out_type=out_type)
@@ -454,12 +431,10 @@ class SerializeSparseTest(test.TestCase):
       with self.assertRaisesOpError(r"Could not parse serialized proto"):
         sess.run(sp_deserialized, {sp_input0: input0_val})
 
-  @test_util.run_deprecated_v1
   def testDeserializeFailsInvalidProto(self):
     self._testDeserializeFailsInvalidProtoHelper(sparse_ops.serialize_sparse,
                                                  sparse_ops.deserialize_sparse)
 
-  @test_util.run_deprecated_v1
   def testDeserializeManyFailsInvalidProto(self):
     self._testDeserializeFailsInvalidProtoHelper(
         sparse_ops.serialize_sparse, sparse_ops.deserialize_many_sparse)

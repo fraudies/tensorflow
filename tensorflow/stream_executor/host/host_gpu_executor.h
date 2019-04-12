@@ -103,8 +103,7 @@ class HostExecutor : public internal::StreamExecutorInterface {
                                                const DeviceMemoryBase &gpu_src,
                                                uint64 size) override;
 
-  bool HostCallback(Stream *stream,
-                    std::function<port::Status()> callback) override;
+  bool HostCallback(Stream *stream, std::function<void()> callback) override;
 
   port::Status AllocateEvent(Event *event) override {
     return port::Status(port::error::UNIMPLEMENTED, "");

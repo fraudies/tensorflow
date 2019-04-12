@@ -1,6 +1,5 @@
 op {
   graph_op_name: "InterleaveDataset"
-  visibility: HIDDEN
   attr {
     name: "f"
     description: <<END

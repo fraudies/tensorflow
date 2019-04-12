@@ -1,6 +1,4 @@
 op {
   graph_op_name: "TruncateDiv"
-  endpoint {
-    name: "truncatediv"
-  }
+  visibility: HIDDEN
 }

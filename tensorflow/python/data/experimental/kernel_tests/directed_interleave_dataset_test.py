@@ -24,11 +24,9 @@ from tensorflow.python.data.kernel_tests import test_base
 from tensorflow.python.data.ops import dataset_ops
 from tensorflow.python.framework import errors
 from tensorflow.python.framework import random_seed
-from tensorflow.python.framework import test_util
 from tensorflow.python.platform import test
 
 
-@test_util.run_all_in_graph_and_eager_modes
 class DirectedInterleaveDatasetTest(test_base.DatasetTestBase):
 
   def testBasic(self):
@@ -38,13 +36,16 @@ class DirectedInterleaveDatasetTest(test_base.DatasetTestBase):
     ]
     dataset = interleave_ops._DirectedInterleaveDataset(selector_dataset,
                                                         input_datasets)
-    next_element = self.getNext(dataset)
+    iterator = dataset.make_initializable_iterator()
+    next_element = iterator.get_next()
 
-    for _ in range(100):
-      for i in range(10):
-        self.assertEqual(i, self.evaluate(next_element()))
-    with self.assertRaises(errors.OutOfRangeError):
-      self.evaluate(next_element())
+    with self.cached_session() as sess:
+      sess.run(iterator.initializer)
+      for _ in range(100):
+        for i in range(10):
+          self.assertEqual(i, sess.run(next_element))
+      with self.assertRaises(errors.OutOfRangeError):
+        sess.run(next_element)
 
   def _normalize(self, vec):
     return vec / vec.sum()
@@ -64,13 +65,15 @@ class DirectedInterleaveDatasetTest(test_base.DatasetTestBase):
         for i in range(num_datasets)
     ], weights)
     dataset = dataset.take(num_samples)
+    iterator = dataset.make_one_shot_iterator()
+    next_element = iterator.get_next()
 
-    next_element = self.getNext(dataset)
-    freqs = np.zeros([num_datasets])
-    for _ in range(num_samples):
-      freqs[self.evaluate(next_element())] += 1
-    with self.assertRaises(errors.OutOfRangeError):
-      self.evaluate(next_element())
+    with self.cached_session() as sess:
+      freqs = np.zeros([num_datasets])
+      for _ in range(num_samples):
+        freqs[sess.run(next_element)] += 1
+      with self.assertRaises(errors.OutOfRangeError):
+        sess.run(next_element)
 
     return freqs
 
@@ -99,11 +102,14 @@ class DirectedInterleaveDatasetTest(test_base.DatasetTestBase):
     choice_array = np.random.randint(3, size=(15,), dtype=np.int64)
     choice_dataset = dataset_ops.Dataset.from_tensor_slices(choice_array)
     dataset = interleave_ops.choose_from_datasets(datasets, choice_dataset)
-    next_element = self.getNext(dataset)
-    for i in choice_array:
-      self.assertEqual(words[i], self.evaluate(next_element()))
-    with self.assertRaises(errors.OutOfRangeError):
-      self.evaluate(next_element())
+    iterator = dataset.make_one_shot_iterator()
+    next_element = iterator.get_next()
+
+    with self.cached_session() as sess:
+      for i in choice_array:
+        self.assertEqual(words[i], sess.run(next_element))
+      with self.assertRaises(errors.OutOfRangeError):
+        sess.run(next_element)
 
   def testErrors(self):
     with self.assertRaisesRegexp(ValueError,

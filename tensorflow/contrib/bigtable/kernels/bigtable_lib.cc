@@ -29,7 +29,8 @@ Status GrpcStatusToTfStatus(const ::grpc::Status& status) {
   }
   return Status(static_cast<::tensorflow::error::Code>(status.error_code()),
                 strings::StrCat("Error reading from Cloud Bigtable: ",
-                                status.error_message()));
+                                status.error_message(),
+                                " (Details: ", status.error_details(), ")"));
 }
 
 string RegexFromStringSet(const std::vector<string>& strs) {

@@ -130,8 +130,7 @@ Status EmitDynamicUpdateSliceInPlace(absl::Span<const IrArray> operand_arrays,
 //
 // Emits a sequential loop if launch_dimensions is null.
 static Status EmitFusedDynamicUpdateSliceInPlaceImpl(
-    HloInstruction* fusion,
-    GeneratorForOperandIrArrays operand_arrays_generator,
+    HloInstruction* fusion, absl::Span<const IrArray> fusion_operand_arrays,
     const IrArray& fusion_output_array, ElementalIrEmitter* elemental_emitter,
     const gpu::LaunchDimensions* launch_dimensions, llvm::IRBuilder<>* b) {
   CHECK_EQ(fusion->opcode(), HloOpcode::kFusion);
@@ -161,8 +160,7 @@ static Status EmitFusedDynamicUpdateSliceInPlaceImpl(
       LayoutUtil::CopyLayoutBetweenShapes(fusion->shape(), &update_shape));
 
   // Create element generators for update and start_indices.
-  FusedIrEmitter fused_emitter(std::move(operand_arrays_generator),
-                               elemental_emitter);
+  FusedIrEmitter fused_emitter(fusion_operand_arrays, elemental_emitter);
   TF_RETURN_IF_ERROR(dynamic_update_slice->Accept(&fused_emitter));
   ElementGenerator update_array_generator = fused_emitter.GetGenerator(update);
   ElementGenerator start_indices_generator =
@@ -175,24 +173,21 @@ static Status EmitFusedDynamicUpdateSliceInPlaceImpl(
 }
 
 Status EmitFusedDynamicUpdateSliceInPlace(
-    HloInstruction* fusion,
-    GeneratorForOperandIrArrays operand_arrays_generator,
+    HloInstruction* fusion, absl::Span<const IrArray> fusion_operand_arrays,
     const IrArray& fusion_output_array, ElementalIrEmitter* elemental_emitter,
     llvm::IRBuilder<>* b) {
   return EmitFusedDynamicUpdateSliceInPlaceImpl(
-      fusion, std::move(operand_arrays_generator), fusion_output_array,
-      elemental_emitter,
+      fusion, fusion_operand_arrays, fusion_output_array, elemental_emitter,
       /*launch_dimensions=*/nullptr, b);
 }
 
 Status EmitParallelFusedDynamicUpdateSliceInPlace(
-    HloInstruction* fusion,
-    GeneratorForOperandIrArrays operand_arrays_generator,
+    HloInstruction* fusion, absl::Span<const IrArray> fusion_operand_arrays,
     const IrArray& fusion_output_array, ElementalIrEmitter* elemental_emitter,
     const gpu::LaunchDimensions& launch_dimensions, llvm::IRBuilder<>* b) {
   return EmitFusedDynamicUpdateSliceInPlaceImpl(
-      fusion, std::move(operand_arrays_generator), fusion_output_array,
-      elemental_emitter, &launch_dimensions, b);
+      fusion, fusion_operand_arrays, fusion_output_array, elemental_emitter,
+      &launch_dimensions, b);
 }
 
 }  // namespace llvm_ir

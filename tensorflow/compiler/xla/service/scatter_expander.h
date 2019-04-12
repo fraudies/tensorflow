@@ -25,7 +25,7 @@ class ScatterExpander : public HloModulePass {
   absl::string_view name() const override { return "scatter_expander"; }
   StatusOr<bool> Run(HloModule* module) override;
 
- protected:
+ private:
   StatusOr<HloInstruction*> ExpandScatter(HloInstruction* scatter);
 };
 

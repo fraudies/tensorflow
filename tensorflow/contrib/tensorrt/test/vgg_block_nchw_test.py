@@ -76,7 +76,7 @@ class VGGBlockNCHWTest(trt_test.TfTrtIntegrationTestBase):
 
   def ExpectedEnginesToBuild(self, run_params):
     """Return the expected engines to build."""
-    return ["TRTEngineOp_0"]
+    return ["my_trt_op_0"]
 
 
 if __name__ == "__main__":

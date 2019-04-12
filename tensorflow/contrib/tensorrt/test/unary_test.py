@@ -106,7 +106,10 @@ class UnaryTest(trt_test.TfTrtIntegrationTestBase):
 
   def ExpectedEnginesToBuild(self, run_params):
     """Return the expected engines to build."""
-    return ["TRTEngineOp_0"]
+    return [
+        "my_trt_op_0", "my_trt_op_1", "my_trt_op_2", "my_trt_op_3",
+        "my_trt_op_4"
+    ]
 
 
 if __name__ == "__main__":

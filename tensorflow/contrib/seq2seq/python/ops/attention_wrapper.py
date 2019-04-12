@@ -108,14 +108,13 @@ def _prepare_memory(memory, memory_sequence_length, check_inner_dims_defined):
         maxlen=array_ops.shape(nest.flatten(memory)[0])[1],
         dtype=nest.flatten(memory)[0].dtype)
     seq_len_batch_size = (
-        tensor_shape.dimension_value(memory_sequence_length.shape[0])
+        memory_sequence_length.shape[0].value
         or array_ops.shape(memory_sequence_length)[0])
   def _maybe_mask(m, seq_len_mask):
     rank = m.get_shape().ndims
     rank = rank if rank is not None else array_ops.rank(m)
     extra_ones = array_ops.ones(rank - 2, dtype=dtypes.int32)
-    m_batch_size = tensor_shape.dimension_value(
-        m.shape[0]) or array_ops.shape(m)[0]
+    m_batch_size = m.shape[0].value or array_ops.shape(m)[0]
     if memory_sequence_length is not None:
       message = ("memory_sequence_length and memory tensor batch sizes do not "
                  "match.")
@@ -216,10 +215,9 @@ class _BaseAttentionMechanism(AttentionMechanism):
           self.memory_layer(self._values) if self.memory_layer  # pylint: disable=not-callable
           else self._values)
       self._batch_size = (
-          tensor_shape.dimension_value(self._keys.shape[0]) or
-          array_ops.shape(self._keys)[0])
-      self._alignments_size = (tensor_shape.dimension_value(self._keys.shape[1])
-                               or array_ops.shape(self._keys)[1])
+          self._keys.shape[0].value or array_ops.shape(self._keys)[0])
+      self._alignments_size = (self._keys.shape[1].value or
+                               array_ops.shape(self._keys)[1])
 
   @property
   def memory_layer(self):
@@ -465,8 +463,7 @@ def _bahdanau_score(processed_query, keys, normalize):
   """
   dtype = processed_query.dtype
   # Get the number of hidden units from the trailing dimension of keys
-  num_units = tensor_shape.dimension_value(
-      keys.shape[2]) or array_ops.shape(keys)[2]
+  num_units = keys.shape[2].value or array_ops.shape(keys)[2]
   # Reshape from [batch_size, ...] to [batch_size, 1, ...] for broadcasting.
   processed_query = array_ops.expand_dims(processed_query, 1)
   v = variable_scope.get_variable(
@@ -652,9 +649,8 @@ def monotonic_attention(p_choose_i, previous_attention, mode):
   previous_attention = ops.convert_to_tensor(
       previous_attention, name="previous_attention")
   if mode == "recursive":
-    # Use .shape[0] when it's not None, or fall back on symbolic shape
-    batch_size = tensor_shape.dimension_value(
-        p_choose_i.shape[0]) or array_ops.shape(p_choose_i)[0]
+    # Use .shape[0].value when it's not None, or fall back on symbolic shape
+    batch_size = p_choose_i.shape[0].value or array_ops.shape(p_choose_i)[0]
     # Compute [1, 1 - p_choose_i[0], 1 - p_choose_i[1], ..., 1 - p_choose_i[-2]]
     shifted_1mp_choose_i = array_ops.concat(
         [array_ops.ones((batch_size, 1)), 1 - p_choose_i[:, :-1]], 1)
@@ -1039,8 +1035,8 @@ def hardmax(logits, name=None):
   """
   with ops.name_scope(name, "Hardmax", [logits]):
     logits = ops.convert_to_tensor(logits, name="logits")
-    if tensor_shape.dimension_value(logits.get_shape()[-1]) is not None:
-      depth = tensor_shape.dimension_value(logits.get_shape()[-1])
+    if logits.get_shape()[-1].value is not None:
+      depth = logits.get_shape()[-1].value
     else:
       depth = array_ops.shape(logits)[-1]
     return array_ops.one_hot(
@@ -1228,16 +1224,15 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
             "layer per attention_mechanism, saw: %d vs %d"
             % (len(self._attention_layers), len(attention_mechanisms)))
       self._attention_layer_size = sum(
-          tensor_shape.dimension_value(layer.compute_output_shape(
+          layer.compute_output_shape(
               [None,
-               cell.output_size + tensor_shape.dimension_value(
-                   mechanism.values.shape[-1])])[-1])
+               cell.output_size + mechanism.values.shape[-1].value])[-1].value
           for layer, mechanism in zip(
               self._attention_layers, attention_mechanisms))
     else:
       self._attention_layers = None
       self._attention_layer_size = sum(
-          tensor_shape.dimension_value(attention_mechanism.values.shape[-1])
+          attention_mechanism.values.get_shape()[-1].value
           for attention_mechanism in attention_mechanisms)
 
     self._cell = cell
@@ -1251,7 +1246,7 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
       else:
         final_state_tensor = nest.flatten(initial_cell_state)[-1]
         state_batch_size = (
-            tensor_shape.dimension_value(final_state_tensor.shape[0])
+            final_state_tensor.shape[0].value
             or array_ops.shape(final_state_tensor)[0])
         error_message = (
             "When constructing AttentionWrapper %s: " % self._base_name +
@@ -1417,8 +1412,7 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
     cell_output, next_cell_state = self._cell(cell_inputs, cell_state)
 
     cell_batch_size = (
-        tensor_shape.dimension_value(cell_output.shape[0]) or
-        array_ops.shape(cell_output)[0])
+        cell_output.shape[0].value or array_ops.shape(cell_output)[0])
     error_message = (
         "When applying AttentionWrapper %s: " % self.name +
         "Non-matching batch sizes between the memory "

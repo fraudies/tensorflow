@@ -138,7 +138,7 @@ def LastValueQuantize(inputs,
     if per_channel:
       if input_dim >= 2:
         batch_min = math_ops.reduce_min(
-            inputs, axis=reduce_dims, name='BatchMin')
+            inputs, reduction_indices=reduce_dims, name='BatchMin')
       else:
         batch_min = inputs
     else:
@@ -147,7 +147,7 @@ def LastValueQuantize(inputs,
     if per_channel:
       if input_dim >= 2:
         batch_max = math_ops.reduce_max(
-            inputs, axis=reduce_dims, name='BatchMax')
+            inputs, reduction_indices=reduce_dims, name='BatchMax')
       else:
         batch_max = inputs
     else:
@@ -263,7 +263,7 @@ def MovingAvgQuantize(inputs,
     if per_channel:
       if input_dim >= 2:
         batch_min = math_ops.reduce_min(
-            inputs, axis=reduce_dims, name='BatchMin')
+            inputs, reduction_indices=reduce_dims, name='BatchMin')
       else:
         batch_min = inputs
     else:
@@ -272,7 +272,7 @@ def MovingAvgQuantize(inputs,
     if per_channel:
       if input_dim >= 2:
         batch_max = math_ops.reduce_max(
-            inputs, axis=reduce_dims, name='BatchMax')
+            inputs, reduction_indices=reduce_dims, name='BatchMax')
       else:
         batch_max = inputs
     else:

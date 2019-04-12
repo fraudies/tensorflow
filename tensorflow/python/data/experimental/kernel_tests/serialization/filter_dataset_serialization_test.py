@@ -17,6 +17,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
+
 from tensorflow.python.data.experimental.kernel_tests.serialization import dataset_serialization_test_base
 from tensorflow.python.data.ops import dataset_ops
 from tensorflow.python.framework import sparse_tensor
@@ -33,7 +35,7 @@ class FilterDatasetSerializationTest(
 
   def testFilterCore(self):
     div = 3
-    num_outputs = sum(x % 3 != 2 for x in range(100))
+    num_outputs = np.sum([x % 3 != 2 for x in range(100)])
     self.run_core_tests(lambda: self._build_filter_range_graph(div),
                         lambda: self._build_filter_range_graph(div * 2),
                         num_outputs)
@@ -45,7 +47,7 @@ class FilterDatasetSerializationTest(
                 lambda d: d["foo"] + d["bar"])
 
   def testFilterDictCore(self):
-    num_outputs = sum((x**2) % 2 == 0 for x in range(10))
+    num_outputs = np.sum([(x**2) % 2 == 0 for x in range(10)])
     self.run_core_tests(self._build_filter_dict_graph, None, num_outputs)
 
   def _build_sparse_filter(self):

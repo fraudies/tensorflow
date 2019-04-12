@@ -64,10 +64,6 @@ def quick_execute(op_name, num_outputs, inputs, attrs, ctx, name=None):
     else:
       message = e.message
     six.raise_from(core._status_to_exception(e.code, message), None)
-  except TypeError as e:
-    if any(ops._is_keras_symbolic_tensor(x) for x in inputs):
-      raise core._SymbolicException
-    raise e
   # pylint: enable=protected-access
   return tensors
 
@@ -192,10 +188,7 @@ def args_to_matching_eager(l, ctx, default_dtype=None):
     ret = []
     for t in l:
       ret.append(internal_convert_to_tensor(
-          t, dtype,
-          preferred_dtype=default_dtype,
-          ctx=ctx,
-          accept_symbolic_tensors=False))
+          t, dtype, preferred_dtype=default_dtype, ctx=ctx))
       if dtype is None:
         dtype = ret[-1].dtype
   else:

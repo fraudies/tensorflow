@@ -54,7 +54,7 @@ _PREEMPTION_ERRORS = (errors.AbortedError, errors.UnavailableError)
 USE_DEFAULT = object()
 
 
-@tf_export(v1=['train.Scaffold'])
+@tf_export('train.Scaffold')
 class Scaffold(object):
   """Structure to create or gather pieces commonly needed to train a model.
 
@@ -346,7 +346,7 @@ def _create_monitored_session_with_worker_context(worker_context,  # pylint: dis
       stop_grace_period_secs=stop_grace_period_secs)
 
 
-@tf_export(v1=['train.MonitoredTrainingSession'])
+@tf_export('train.MonitoredTrainingSession')
 def MonitoredTrainingSession(master='',  # pylint: disable=invalid-name
                              is_chief=True,
                              checkpoint_dir=None,
@@ -508,8 +508,7 @@ def MonitoredTrainingSession(master='',  # pylint: disable=invalid-name
       stop_grace_period_secs=stop_grace_period_secs)
 
 
-@tf_export(v1=['train.SessionCreator'])
-@six.add_metaclass(abc.ABCMeta)
+@tf_export('train.SessionCreator')
 class SessionCreator(object):
   """A factory for tf.Session."""
 
@@ -519,7 +518,7 @@ class SessionCreator(object):
         'create_session is not implemented for {}.'.format(self))
 
 
-@tf_export(v1=['train.ChiefSessionCreator'])
+@tf_export('train.ChiefSessionCreator')
 class ChiefSessionCreator(SessionCreator):
   """Creates a tf.Session for a chief."""
 
@@ -571,7 +570,7 @@ class ChiefSessionCreator(SessionCreator):
         init_fn=self._scaffold.init_fn)
 
 
-@tf_export(v1=['train.WorkerSessionCreator'])
+@tf_export('train.WorkerSessionCreator')
 class WorkerSessionCreator(SessionCreator):
   """Creates a tf.Session for a worker."""
 
@@ -840,18 +839,10 @@ class _MonitoredSession(object):
     return self._coordinated_creator.tf_sess is None
 
   def _tf_sess(self):
-    """Return underlying tf.Session object.
-
-    Warning: accessing the returned object in user code is likely to cause races
-    or "flaky tests".
-
-    Returns:
-      A tf.Session object.
-    """
     return self._coordinated_creator.tf_sess
 
 
-@tf_export(v1=['train.MonitoredSession'])
+@tf_export('train.MonitoredSession')
 class MonitoredSession(_MonitoredSession):
   """Session-like object that handles initialization, recovery and hooks.
 
@@ -934,7 +925,7 @@ class MonitoredSession(_MonitoredSession):
         stop_grace_period_secs=stop_grace_period_secs)
 
 
-@tf_export(v1=['train.SingularMonitoredSession'])
+@tf_export('train.SingularMonitoredSession')
 class SingularMonitoredSession(_MonitoredSession):
   """Session-like object that handles initialization, restoring, and hooks.
 
@@ -1080,10 +1071,8 @@ class _WrappedSession(object):
     if self._sess:
       try:
         self._sess.close()
-      except _PREEMPTION_ERRORS as e:
-        logging.warning('An error occurred when attempting to close the '
-                        'session. This may be due to a preemption in a '
-                        'connected worker or parameter server. Error: %s', e)
+      except _PREEMPTION_ERRORS:
+        pass
       finally:
         self._sess = None
 

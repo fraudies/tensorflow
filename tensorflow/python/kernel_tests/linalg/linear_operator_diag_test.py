@@ -17,7 +17,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import linalg_ops
 from tensorflow.python.ops import math_ops
@@ -33,26 +32,17 @@ class LinearOperatorDiagTest(
     linear_operator_test_util.SquareLinearOperatorDerivedClassTest):
   """Most tests done in the base class LinearOperatorDerivedClassTest."""
 
-  def _operator_and_matrix(
-      self, build_info, dtype, use_placeholder,
-      ensure_self_adjoint_and_pd=False):
+  def _operator_and_matrix(self, build_info, dtype, use_placeholder):
     shape = list(build_info.shape)
     diag = linear_operator_test_util.random_sign_uniform(
         shape[:-1], minval=1., maxval=2., dtype=dtype)
-
-    if ensure_self_adjoint_and_pd:
-      # Abs on complex64 will result in a float32, so we cast back up.
-      diag = math_ops.cast(math_ops.abs(diag), dtype=dtype)
 
     lin_op_diag = diag
 
     if use_placeholder:
       lin_op_diag = array_ops.placeholder_with_default(diag, shape=None)
 
-    operator = linalg.LinearOperatorDiag(
-        lin_op_diag,
-        is_self_adjoint=True if ensure_self_adjoint_and_pd else None,
-        is_positive_definite=True if ensure_self_adjoint_and_pd else None)
+    operator = linalg.LinearOperatorDiag(lin_op_diag)
 
     matrix = array_ops.matrix_diag(diag)
 
@@ -81,7 +71,6 @@ class LinearOperatorDiagTest(
       with self.assertRaisesOpError("non-positive real.*not positive definite"):
         operator.assert_positive_definite().run()
 
-  @test_util.run_deprecated_v1
   def test_assert_positive_definite_does_not_raise_if_pd_and_complex(self):
     with self.cached_session():
       x = [1., 2.]
@@ -98,7 +87,6 @@ class LinearOperatorDiagTest(
       with self.assertRaisesOpError("Singular operator"):
         operator.assert_non_singular().run()
 
-  @test_util.run_deprecated_v1
   def test_assert_non_singular_does_not_raise_for_complex_nonsingular(self):
     with self.cached_session():
       x = [1., 0.]
@@ -116,7 +104,6 @@ class LinearOperatorDiagTest(
       with self.assertRaisesOpError("imaginary.*not self-adjoint"):
         operator.assert_self_adjoint().run()
 
-  @test_util.run_deprecated_v1
   def test_assert_self_adjoint_does_not_raise_for_diag_with_zero_imag(self):
     with self.cached_session():
       x = [1., 0.]
@@ -151,52 +138,12 @@ class LinearOperatorDiagTest(
       operator_matmul = operator.matmul(x)
       mat_matmul = math_ops.matmul(mat, x)
       self.assertAllEqual(operator_matmul.get_shape(), mat_matmul.get_shape())
-      self.assertAllClose(*self.evaluate([operator_matmul, mat_matmul]))
+      self.assertAllClose(*sess.run([operator_matmul, mat_matmul]))
 
       operator_solve = operator.solve(x)
       mat_solve = linalg_ops.matrix_solve(mat, x)
       self.assertAllEqual(operator_solve.get_shape(), mat_solve.get_shape())
-      self.assertAllClose(*self.evaluate([operator_solve, mat_solve]))
-
-  def test_diag_matmul(self):
-    operator1 = linalg_lib.LinearOperatorDiag([2., 3.])
-    operator2 = linalg_lib.LinearOperatorDiag([1., 2.])
-    operator3 = linalg_lib.LinearOperatorScaledIdentity(
-        num_rows=2, multiplier=3.)
-    operator_matmul = operator1.matmul(operator2)
-    self.assertTrue(isinstance(
-        operator_matmul,
-        linalg_lib.LinearOperatorDiag))
-    self.assertAllClose([2., 6.], self.evaluate(operator_matmul.diag))
-
-    operator_matmul = operator2.matmul(operator1)
-    self.assertTrue(isinstance(
-        operator_matmul,
-        linalg_lib.LinearOperatorDiag))
-    self.assertAllClose([2., 6.], self.evaluate(operator_matmul.diag))
-
-    operator_matmul = operator1.matmul(operator3)
-    self.assertTrue(isinstance(
-        operator_matmul,
-        linalg_lib.LinearOperatorDiag))
-    self.assertAllClose([6., 9.], self.evaluate(operator_matmul.diag))
-
-    operator_matmul = operator3.matmul(operator1)
-    self.assertTrue(isinstance(
-        operator_matmul,
-        linalg_lib.LinearOperatorDiag))
-    self.assertAllClose([6., 9.], self.evaluate(operator_matmul.diag))
-
-  def test_diag_cholesky_type(self):
-    diag = [1., 3., 5., 8.]
-    operator = linalg.LinearOperatorDiag(
-        diag,
-        is_positive_definite=True,
-        is_self_adjoint=True,
-    )
-    self.assertTrue(isinstance(
-        operator.cholesky(),
-        linalg.LinearOperatorDiag))
+      self.assertAllClose(*sess.run([operator_solve, mat_solve]))
 
 
 if __name__ == "__main__":

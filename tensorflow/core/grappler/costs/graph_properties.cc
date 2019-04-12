@@ -29,9 +29,8 @@ limitations under the License.
 #include "tensorflow/core/framework/types.pb.h"
 #include "tensorflow/core/framework/versions.pb.h"
 #include "tensorflow/core/graph/graph_constructor.h"
-#include "tensorflow/core/graph/tensor_id.h"
 #include "tensorflow/core/grappler/costs/utils.h"
-#include "tensorflow/core/grappler/mutable_graph_view.h"
+#include "tensorflow/core/grappler/graph_view.h"
 #include "tensorflow/core/grappler/op_types.h"
 #include "tensorflow/core/grappler/utils.h"
 #include "tensorflow/core/grappler/utils/functions.h"
@@ -291,9 +290,9 @@ bool HasAnyUnknownDimensions(const TensorShapeProto& proto) {
 // This really should be done in an external debugging tool
 void VerboseLogUnknownDimensionSources(
     const GraphDef& graph,
-    const std::unordered_map<string, std::vector<OpInfo::TensorProperties>>&
+    const std::map<string, std::vector<OpInfo::TensorProperties>>&
         input_properties_map,
-    const std::unordered_map<string, std::vector<OpInfo::TensorProperties>>&
+    const std::map<string, std::vector<OpInfo::TensorProperties>>&
         output_properties_map) {
   if (!VLOG_IS_ON(2)) {
     return;
@@ -457,10 +456,10 @@ class SymbolicShapeRefiner {
       const GraphView& graph,
       const std::unordered_map<string, std::unordered_set<int>>& fed_ports)
       : graph_(graph),
-        function_library_(OpRegistry::Global(), graph.graph()->library()),
+        function_library_(OpRegistry::Global(), graph.GetGraph()->library()),
         fed_ports_(fed_ports) {
-    graph_def_version_ = graph.graph()->versions().producer();
-    node_to_context_.reserve(graph.graph()->node_size());
+    graph_def_version_ = graph.GetGraph()->versions().producer();
+    node_to_context_.reserve(graph.GetGraph()->node_size());
   }
 
   const GraphView& graph() const { return graph_; }
@@ -513,7 +512,7 @@ class SymbolicShapeRefiner {
     // Placeholder with Const) don't affect one in
     // fun_to_grappler_function_item_.
     GrapplerFunctionItem grappler_function_item = it->second;
-    MutableGraphView gv(&grappler_function_item.graph);
+    GraphView gv(&grappler_function_item.graph);
 
     // Forward shapes from function input nodes to argument nodes.
     for (int i = 0; i < grappler_function_item.inputs().size(); ++i) {
@@ -525,26 +524,27 @@ class SymbolicShapeRefiner {
             "supported.");
       }
       NodeDef* fun_node = gv.GetNode(fun_input.input_name);
-      const TensorId input_tensor = ParseTensorName(function_node->input(i));
+      const string& input = function_node->input(i);
+      const string& node_name = NodeName(input);
 
-      if (IsControlInput(input_tensor)) {
+      if (IsControlInput(input)) {
         return errors::FailedPrecondition(
             "Function inputs should not contain control nodes.");
       }
 
-      const NodeDef* input_node = graph_.GetNode(input_tensor.node());
+      NodeDef* input_node = graph_.GetNode(node_name);
       if (input_node == nullptr) {
-        return errors::FailedPrecondition(input_tensor.node(),
+        return errors::FailedPrecondition(node_name,
                                           " was not found in the graph.");
       }
 
       InferenceContext* input_inference_context = GetContext(input_node);
       if (input_inference_context == nullptr) {
         return errors::FailedPrecondition(
-            "Inference context has not been created for ", input_tensor.node());
+            "Inference context has not been created for ", node_name);
       }
 
-      int output_port_num = input_tensor.index();
+      int output_port_num = NodePosition(input);
       AttrValue attr_output_shape;
       TensorShapeProto proto;
       const auto& handle = input_inference_context->output(output_port_num);
@@ -566,7 +566,7 @@ class SymbolicShapeRefiner {
     for (int i = grappler_function_item.inputs().size() - 1; i >= 0; --i) {
       const string& input = function_node->input(i);
       const string& node_name = NodeName(input);
-      const NodeDef* input_node = graph_.GetNode(node_name);
+      NodeDef* input_node = graph_.GetNode(node_name);
       if (IsConstant(*input_node)) {
         TF_CHECK_OK(
             ReplaceInputWithConst(*input_node, i, &grappler_function_item));
@@ -609,22 +609,24 @@ class SymbolicShapeRefiner {
 
       // It is guaranteed that output_tensors does not contain any control
       // inputs, so port_id >= 0.
-      TensorId out_tensor = ParseTensorName(out_arg.output_tensors[0]);
+      string out_tensor = out_arg.output_tensors[0];
+      int port_id;
+      string node_name = ParseNodeName(out_tensor, &port_id);
 
-      const NodeDef* retnode = gv.GetNode(out_tensor.node());
+      const NodeDef* retnode = gv.GetNode(node_name);
       if (retnode == nullptr) {
         return errors::FailedPrecondition(
-            "Unable to find return function_node ", out_tensor.node(), " for ",
+            "Unable to find return function_node ", node_name, " for ",
             function_node->name());
       }
 
       auto output_properties = gp.GetOutputProperties(retnode->name());
-      if (out_tensor.index() >= output_properties.size()) {
+      if (port_id >= output_properties.size()) {
         return errors::InvalidArgument(
-            out_tensor.ToString(), " has invalid position ", out_tensor.index(),
+            out_tensor, " has invalid position ", port_id,
             " (output_properties.size() = ", output_properties.size(), ").");
       }
-      auto const& outprop = output_properties[out_tensor.index()];
+      auto const& outprop = output_properties[port_id];
       const TensorShapeProto& shape = outprop.shape();
       ShapeHandle out;
       TF_RETURN_IF_ERROR(ic->MakeShapeFromShapeProto(shape, &out));
@@ -678,11 +680,6 @@ class SymbolicShapeRefiner {
               node->name(),
               "' was not previously added to SymbolicShapeRefiner.");
         }
-
-        if (src_output >= c->inference_context->num_outputs())
-          return errors::OutOfRange("src_output = ", src_output,
-                                    ", but num_outputs is only ",
-                                    c->inference_context->num_outputs());
 
         // Propagate input node's NodeContext info to the current node's
         // NodeContext:
@@ -1288,6 +1285,15 @@ class SymbolicShapeRefiner {
     // Integer tensors of rank one can also be interpreted as a shape
     // provided all their values are >= -1.
     if (IsIntegerVector(tensor)) {
+#if 0
+      ShapeHandle tensor_shape = ic->Vector(tensor.NumElements());
+      ShapeHandle shp;
+      // Note that MakeShapeFromTensor filters out invalid values (e.g., < -1).
+      if (ic->MakeShapeFromTensor(&tensor, tensor_shape, &shp).ok()) {
+        *tensors_as_shapes = shp;
+        return true;
+      }
+#else
       bool has_values_smaller_than_minus_1 = false;
       std::vector<DimensionHandle> dims;
       for (int i = 0; i < tensor.NumElements(); i++) {
@@ -1299,6 +1305,7 @@ class SymbolicShapeRefiner {
       if (!has_values_smaller_than_minus_1) {
         *tensors_as_shapes = ic->MakeShape(dims);
       }
+#endif
     } else if (IsIntegerScalar(tensor)) {
       // Scalar constant.
       int64 value = tensor.dtype() == DT_INT32 ? tensor.flat<int32>()(0)
@@ -1430,8 +1437,8 @@ Status GraphProperties::UpdateMergeNode(SymbolicShapeRefiner* shape_refiner,
       continue;
     }
     ShapeHandle input = in->output(fanin.src.port_id);
-    CHECK_EQ(fanin.dst.node, node);
-    c->SetInput(fanin.dst.port_id, input);
+    CHECK_EQ(fanin.tgt.node, node);
+    c->SetInput(fanin.tgt.port_id, input);
     if (!out_initialized) {
       out_initialized = true;
       out = input;
@@ -1656,12 +1663,13 @@ Status GraphProperties::InferStatically(bool assume_valid_feeds) {
   std::unordered_map<string, std::unordered_set<int>> fed_ports;
   if (!assume_valid_feeds) {
     for (const auto& feed : item_.feed) {
-      SafeTensorId tensor_id = ParseTensorName(feed.first);
-      fed_ports[tensor_id.node()].insert(tensor_id.index());
+      int port_index = 0;
+      string node_name = ParseNodeName(feed.first, &port_index);
+      fed_ports[node_name].insert(port_index);
     }
   }
 
-  GraphView graph_view(&item_.graph);
+  GraphView graph_view(const_cast<GraphDef*>(&item_.graph));
 
   // List the resources and the nodes using them. Also collect the Merge nodes,
   // fed nodes, and primary inputs.
@@ -1713,10 +1721,10 @@ Status GraphProperties::InferStatically(bool assume_valid_feeds) {
   for (const auto& resource : resources) {
     for (const NodeDef* src : resource.second.first) {
       resource_handles[src] = resource.first;
-      for (const NodeDef* dst : resource.second.second) {
+      for (const NodeDef* tgt : resource.second.second) {
         // Add control edges from enqueue to dequeue nodes to ensure they are
         // processed in their logical order.
-        extra_deps.emplace_back(src, dst);
+        extra_deps.emplace_back(src, tgt);
       }
     }
   }
@@ -1925,12 +1933,12 @@ Status GraphProperties::InferFromCostGraph(const CostGraphDef& cost_graph) {
   return Status::OK();
 }
 
-bool GraphProperties::HasInputProperties(const string& node_name) const {
-  return input_properties_.find(node_name) != input_properties_.end();
+bool GraphProperties::HasInputProperties(const string& name) const {
+  return input_properties_.find(name) != input_properties_.end();
 }
 
-bool GraphProperties::HasOutputProperties(const string& node_name) const {
-  return output_properties_.find(node_name) != output_properties_.end();
+bool GraphProperties::HasOutputProperties(const string& name) const {
+  return output_properties_.find(name) != output_properties_.end();
 }
 
 const std::vector<OpInfo::TensorProperties>&

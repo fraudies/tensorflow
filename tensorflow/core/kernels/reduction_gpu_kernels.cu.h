@@ -218,11 +218,7 @@ __global__ void RowReduceKernel(
     T in, outT out, int num_rows, int num_cols, Op op,
     typename std::iterator_traits<T>::value_type initVal) {
   typedef typename std::iterator_traits<T>::value_type value_type;
-  // Defensive index computation to avoid integer overflow.
-  assert(blockDim.x % 32 == 0);
-  int warps_per_block = blockDim.x / 32;
-  int warp_index = threadIdx.x / 32;
-  const int row = blockIdx.x * warps_per_block + warp_index;
+  const int row = (blockIdx.x * blockDim.x + threadIdx.x) / 32;
   const int lane = threadIdx.x % 32;
 
   if (num_cols == 1) {
@@ -530,27 +526,27 @@ void LaunchScalarReduction(OpKernelContext* ctx, OUT_T out, IN_T in,
         init);
     return;
   }
+  std::size_t temp_storage_bytes = 0;
 
-  size_t temp_storage_bytes = 0;
-  auto reduce = [&](void* temp_storage_ptr) {
-    auto success =
-        cub::DeviceReduce::Reduce(temp_storage_ptr, temp_storage_bytes, in, out,
-                                  in_size, op, init, cu_stream);
+  Tensor temp_storage;
+  // written as a loop because it reduces clutter
+  // first pass allocates memory, second launches kernel(s)
+  for (int i = 0; i < 2; ++i) {
+    auto success = cub::DeviceReduce::Reduce(
+        i == 0 ? nullptr : temp_storage.flat<int8_t>().data(),
+        temp_storage_bytes, in, out, in_size, op, init, cu_stream);
 
     OP_REQUIRES(
         ctx, success == 0,
         errors::Internal("CUB reduce error", cudaGetErrorString(success)));
-  };
 
-  reduce(nullptr);  // Get required amount of temp storage.
-
-  Tensor temp_storage;
-  OP_REQUIRES_OK(
-      ctx, ctx->allocate_temp(
-               DT_INT8, TensorShape({static_cast<int64>(temp_storage_bytes)}),
-               &temp_storage));
-
-  reduce(temp_storage.flat<int8_t>().data());  // Do reduction.
+    if (i == 0)
+      OP_REQUIRES_OK(
+          ctx,
+          ctx->allocate_temp(
+              DT_INT8, TensorShape({static_cast<int64>(temp_storage_bytes)}),
+              &temp_storage));
+  }
 }
 
 template <typename T, typename Op, typename OUT_T, typename IN_T>
@@ -573,26 +569,25 @@ void LaunchRowReduction(OpKernelContext* ctx, OUT_T out, IN_T in, int num_rows,
   cub::TransformInputIterator<int, RowOffset, cub::CountingInputIterator<int>>
       transform_iter(counting_iter, row_offset_op);
 
-  size_t temp_storage_bytes = 0;
-  auto reduce = [&](void* temp_storage_ptr) {
+  std::size_t temp_storage_bytes = 0;
+  Tensor temp_storage;
+  for (int i = 0; i < 2; ++i) {
     auto success = cub::DeviceSegmentedReduce::Reduce(
-        temp_storage_ptr, temp_storage_bytes, in, out, num_rows, transform_iter,
+        i == 0 ? nullptr : temp_storage.flat<int8_t>().data(),
+        temp_storage_bytes, in, out, num_rows, transform_iter,
         transform_iter + 1, op, init, cu_stream);
 
     OP_REQUIRES(ctx, success == 0,
                 errors::Internal("CUB segmented reduce error",
                                  cudaGetErrorString(success)));
-  };
 
-  reduce(nullptr);  // Get required amount of temp storage.
-
-  Tensor temp_storage;
-  OP_REQUIRES_OK(
-      ctx, ctx->allocate_temp(
-               DT_INT8, TensorShape({static_cast<int64>(temp_storage_bytes)}),
-               &temp_storage));
-
-  reduce(temp_storage.flat<int8_t>().data());  // Do reduction.
+    if (i == 0)
+      OP_REQUIRES_OK(
+          ctx,
+          ctx->allocate_temp(
+              DT_INT8, TensorShape({static_cast<int64>(temp_storage_bytes)}),
+              &temp_storage));
+  }
 }
 
 template <typename T, typename Op, typename OUT_T, typename IN_T>
@@ -725,25 +720,25 @@ void Launch3DXZReduction(OpKernelContext* ctx, OUT_T out, IN_T in, int extent_x,
                                                                  gather_iter);
 
   std::size_t temp_storage_bytes = 0;
-  auto reduce = [&](void* temp_storage_ptr) {
+  Tensor temp_storage;
+
+  for (int i = 0; i < 2; ++i) {
     auto success = cub::DeviceSegmentedReduce::Reduce(
-        temp_storage_ptr, temp_storage_bytes, permute_iter, out, extent_y,
-        transform_iter, transform_iter + 1, op, init, cu_stream);
+        i == 0 ? nullptr : temp_storage.flat<int8_t>().data(),
+        temp_storage_bytes, permute_iter, out, extent_y, transform_iter,
+        transform_iter + 1, op, init, cu_stream);
 
     OP_REQUIRES(ctx, success == 0,
                 errors::Internal("CUB segmented reduce error",
                                  cudaGetErrorString(success)));
-  };
 
-  reduce(nullptr);  // Get required amount of temp storage.
-
-  Tensor temp_storage;
-  OP_REQUIRES_OK(
-      ctx, ctx->allocate_temp(
-               DT_INT8, TensorShape({static_cast<int64>(temp_storage_bytes)}),
-               &temp_storage));
-
-  reduce(temp_storage.flat<int8_t>().data());  // Do reduction.
+    if (i == 0)
+      OP_REQUIRES_OK(
+          ctx,
+          ctx->allocate_temp(
+              DT_INT8, TensorShape({static_cast<int64>(temp_storage_bytes)}),
+              &temp_storage));
+  }
 }
 
 namespace reduction_op_helper {
@@ -885,11 +880,11 @@ struct ReduceFunctor<GPUDevice, Eigen::internal::SumReducer<T>> {
 };
 
 template <typename T>
-struct ReduceFunctor<GPUDevice, functor::MeanReducer<T>> {
+struct ReduceFunctor<GPUDevice, Eigen::internal::MeanReducer<T>> {
   template <typename OUT_T, typename IN_T, typename ReductionAxes>
   static void Reduce(OpKernelContext* ctx, OUT_T out, IN_T in,
                      const ReductionAxes& reduction_axes,
-                     const functor::MeanReducer<T>& reducer) {
+                     const Eigen::internal::MeanReducer<T>& reducer) {
     int divisor = 1;
     if (out.rank() == 0)
       divisor = in.size();
@@ -915,17 +910,17 @@ struct ReduceFunctor<GPUDevice, functor::MeanReducer<T>> {
 
   template <typename OUT_T>
   static void FillIdentity(const GPUDevice& d, OUT_T out,
-                           const functor::MeanReducer<T>& reducer) {
+                           const Eigen::internal::MeanReducer<T>& reducer) {
     FillIdentityEigenImpl(d, To32Bit(out), reducer);
   }
 };
 
 template <>
-struct ReduceFunctor<GPUDevice, functor::MeanReducer<Eigen::half>> {
+struct ReduceFunctor<GPUDevice, Eigen::internal::MeanReducer<Eigen::half>> {
   template <typename OUT_T, typename IN_T, typename ReductionAxes>
   static void Reduce(OpKernelContext* ctx, OUT_T out, IN_T in,
                      const ReductionAxes& reduction_axes,
-                     const functor::MeanReducer<Eigen::half>& reducer) {
+                     const Eigen::internal::MeanReducer<Eigen::half>& reducer) {
     float divisor = 1.f;
     if (out.rank() == 0)
       divisor = in.size();
@@ -957,8 +952,9 @@ struct ReduceFunctor<GPUDevice, functor::MeanReducer<Eigen::half>> {
   }
 
   template <typename OUT_T>
-  static void FillIdentity(const GPUDevice& d, OUT_T out,
-                           const functor::MeanReducer<Eigen::half>& reducer) {
+  static void FillIdentity(
+      const GPUDevice& d, OUT_T out,
+      const Eigen::internal::MeanReducer<Eigen::half>& reducer) {
     FillIdentityEigenImpl(d, To32Bit(out), reducer);
   }
 };

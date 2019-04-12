@@ -32,8 +32,6 @@ from __future__ import print_function
 
 import abc
 
-import six
-
 from tensorflow.python.framework import ops
 
 _PLUGIN_ASSET_PREFIX = "__tensorboard_plugin_asset__"
@@ -109,7 +107,6 @@ def get_all_plugin_assets(graph=None):
   return out
 
 
-@six.add_metaclass(abc.ABCMeta)
 class PluginAsset(object):
   """This abstract base class allows TensorBoard to serialize assets to disk.
 
@@ -127,6 +124,7 @@ class PluginAsset(object):
     writer calls assets and the PluginAsset instance provides its contents to be
     written to disk.
   """
+  __metaclass__ = abc.ABCMeta
 
   plugin_name = None
 

@@ -70,8 +70,7 @@ class LLVMCompiler : public Compiler {
   using Compiler::RunHloPasses;
 
   Status RunHloPassesOnModuleGroup(
-      HloModuleGroup* module_group,
-      absl::Span<se::StreamExecutor* const> executors,
+      HloModuleGroup* module_group, se::StreamExecutor* executor,
       DeviceMemoryAllocator* device_allocator) override;
 
   StatusOr<std::vector<std::unique_ptr<Executable>>> RunBackendOnModuleGroup(

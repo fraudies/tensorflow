@@ -2,10 +2,14 @@ path: "tensorflow.data"
 tf_module {
   member {
     name: "Dataset"
-    mtype: "<type \'type\'>"
+    mtype: "<class \'abc.ABCMeta\'>"
   }
   member {
     name: "FixedLengthRecordDataset"
+    mtype: "<class \'abc.ABCMeta\'>"
+  }
+  member {
+    name: "Iterator"
     mtype: "<type \'type\'>"
   }
   member {
@@ -14,11 +18,11 @@ tf_module {
   }
   member {
     name: "TFRecordDataset"
-    mtype: "<type \'type\'>"
+    mtype: "<class \'abc.ABCMeta\'>"
   }
   member {
     name: "TextLineDataset"
-    mtype: "<type \'type\'>"
+    mtype: "<class \'abc.ABCMeta\'>"
   }
   member {
     name: "experimental"

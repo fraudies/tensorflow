@@ -24,10 +24,16 @@ namespace {
 class UnpackVectorizer : public Vectorizer {
  public:
   Status Vectorize(const Node& node, Graph* outer_scope,
-                   VectorizerInput&& inputs,
-                   VectorizerOutput* outputs) override {
-    NodeBuilder::NodeOut value;
-    TF_RETURN_IF_ERROR(inputs.stacked(0, &value));
+                   std::vector<WrappedTensor>&& inputs,
+                   std::vector<WrappedTensor>* outputs) override {
+    Status s;
+    if (node.num_inputs() != 1 || inputs.size() != 1) {
+      return errors::Internal("Unpack op should only have one input.");
+    }
+
+    // Add new Unpack node with the same op and attrs as the original node
+    auto new_unpack_node = outer_scope->AddNode(node.def(), &s);
+    TF_RETURN_IF_ERROR(s);
 
     int axis = 0;
     if (HasNodeAttr(node.def(), "axis")) {
@@ -40,21 +46,17 @@ class UnpackVectorizer : public Vectorizer {
       // Note: negative axis values wrap around.
       axis += 1;
     }
+    new_unpack_node->AddAttr("axis", axis);
+
+    outer_scope->AddEdge(inputs[0].node, inputs[0].output_index,
+                         new_unpack_node, 0);
 
     int num;
     TF_RETURN_IF_ERROR(GetNodeAttr(node.attrs(), "num", &num));
 
-    Node* new_node;
-    TF_RETURN_IF_ERROR(NodeBuilder(strings::StrCat("vectorized/", node.name()),
-                                   node.type_string())
-                           .Input(value)
-                           .Attr("axis", axis)
-                           .Attr("num", num)
-                           .Finalize(outer_scope, &new_node));
-
     // Add the output mappings
     for (int i = 0; i < num; ++i) {
-      outputs->push_back({new_node, i, true});
+      outputs->push_back({new_unpack_node, i, true});
     }
 
     return Status::OK();

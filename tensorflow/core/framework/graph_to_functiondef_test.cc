@@ -18,7 +18,6 @@ limitations under the License.
 #include "tensorflow/cc/framework/ops.h"
 #include "tensorflow/cc/ops/function_ops.h"
 #include "tensorflow/cc/ops/standard_ops.h"
-#include "tensorflow/core/framework/function.pb.h"
 #include "tensorflow/core/framework/function_testlib.h"
 #include "tensorflow/core/graph/graph_constructor.h"
 #include "tensorflow/core/graph/graph_def_builder.h"
@@ -28,14 +27,6 @@ limitations under the License.
 
 namespace tensorflow {
 namespace {
-
-FunctionDef RemoveDebugInfo(const FunctionDef& def) {
-  FunctionDef copy = def;
-  for (auto& node_def : *copy.mutable_node_def()) {
-    node_def.clear_experimental_debug_info();
-  }
-  return copy;
-}
 
 bool EqualFunctionDef(const FunctionDef& a, const FunctionDef& b,
                       string* diff) {
@@ -87,8 +78,7 @@ TEST(GraphToFunctionDefTest, Basics) {
       {{"h_0", "G:sum:0"}});  // return values
 
   string diff;
-  bool fdefs_equal =
-      EqualFunctionDef(fdef_expected, RemoveDebugInfo(fdef), &diff);
+  bool fdefs_equal = EqualFunctionDef(fdef_expected, fdef, &diff);
   EXPECT_TRUE(fdefs_equal) << diff;
 }
 
@@ -121,8 +111,7 @@ TEST(GraphToFunctionDefTest, ControlDependencies) {
       {{"c", "b:y:0"}});  // return values
 
   string diff;
-  bool fdefs_equal =
-      EqualFunctionDef(fdef_expected, RemoveDebugInfo(fdef), &diff);
+  bool fdefs_equal = EqualFunctionDef(fdef_expected, fdef, &diff);
   EXPECT_TRUE(fdefs_equal) << diff;
 }
 

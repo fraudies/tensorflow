@@ -832,7 +832,7 @@ TEST_F(OpLevelCostEstimatorTest, GetTensorShapeProtoFromTensorProto) {
   EXPECT_FALSE(
       GetTensorShapeProtoFromTensorProto(tensor_proto, &tensor_shape_proto));
 
-  // Check GetTensorShapeProtoFromTensorProto() returns correct values.
+  // Check GetTensorShapeProtoFromTensorProto() resturns correct values.
   {
     std::vector<int64> shape_expected = {10, 20, 30, 40};
     GetTensorProto(DT_INT32, {4}, shape_expected,

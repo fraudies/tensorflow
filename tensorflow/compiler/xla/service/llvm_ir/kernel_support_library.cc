@@ -18,29 +18,28 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/llvm_ir/llvm_util.h"
 
 namespace xla {
-Status KernelSupportLibrary::ForWithStatus(
+Status KernelSupportLibrary::For(
     absl::string_view name, llvm::Value* start, llvm::Value* end,
     llvm::Value* step,
     const std::function<Status(llvm::Value*, bool)>& for_body_generator) {
-  return IfWithStatus(b_->CreateICmpSLT(start, end), [&]() -> Status {
+  return If(b_->CreateICmpSLT(start, end), [&]() -> Status {
     TF_RETURN_IF_ERROR(for_body_generator(start, /*is_first_iteration=*/true));
-    return ForWithStatus(
-        name, b_->CreateAdd(start, step), end, step,
-        [&](llvm::Value* iv) { return for_body_generator(iv, false); });
+    return For(name, b_->CreateAdd(start, step), end, step,
+               [&](llvm::Value* iv) { return for_body_generator(iv, false); });
   });
 }
 
-Status KernelSupportLibrary::ForWithStatus(
+Status KernelSupportLibrary::For(
     absl::string_view name, llvm::Value* start, llvm::Value* end,
     llvm::Value* step, bool peel_first_iteration,
     const std::function<Status(llvm::Value*, llvm::Value*)>&
         for_body_generator) {
   if (peel_first_iteration) {
-    return ForWithStatus(
-        name, start, end, step, true,
-        [&](llvm::Value* indvar, bool is_first_iteration) -> Status {
-          return for_body_generator(indvar, b_->getInt1(is_first_iteration));
-        });
+    return For(name, start, end, step, true,
+               [&](llvm::Value* indvar, bool is_first_iteration) -> Status {
+                 return for_body_generator(indvar,
+                                           b_->getInt1(is_first_iteration));
+               });
   } else {
     std::unique_ptr<llvm_ir::ForLoop> loop = llvm_ir::ForLoop::EmitForLoop(
         name, start, end, step, b_,
@@ -56,7 +55,7 @@ Status KernelSupportLibrary::ForWithStatus(
   }
 }
 
-Status KernelSupportLibrary::IfWithStatus(
+Status KernelSupportLibrary::If(
     absl::string_view name, llvm::Value* condition,
     const std::function<Status()>& true_block_generator,
     const std::function<Status()>& false_block_generator) {

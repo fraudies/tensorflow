@@ -240,14 +240,11 @@ Status PosixFileSystem::DeleteFile(const string& fname) {
 }
 
 Status PosixFileSystem::CreateDir(const string& name) {
-  string translated = TranslateName(name);
-  if (translated.empty()) {
-    return errors::AlreadyExists(name);
+  Status result;
+  if (mkdir(TranslateName(name).c_str(), 0755) != 0) {
+    result = IOError(name, errno);
   }
-  if (mkdir(translated.c_str(), 0755) != 0) {
-    return IOError(name, errno);
-  }
-  return Status::OK();
+  return result;
 }
 
 Status PosixFileSystem::DeleteDir(const string& name) {

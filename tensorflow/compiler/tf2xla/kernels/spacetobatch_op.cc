@@ -161,8 +161,8 @@ class SpaceToBatchNDOp : public XlaOpKernel {
   }
 };
 REGISTER_XLA_OP(Name("SpaceToBatchND")
-                    .CompileTimeConstantInput("paddings")
-                    .CompileTimeConstantInput("block_shape"),
+                    .CompileTimeConstInput("paddings")
+                    .CompileTimeConstInput("block_shape"),
                 SpaceToBatchNDOp);
 
 class SpaceToBatchOp : public XlaOpKernel {
@@ -185,7 +185,7 @@ class SpaceToBatchOp : public XlaOpKernel {
  private:
   int block_size_;
 };
-REGISTER_XLA_OP(Name("SpaceToBatch").CompileTimeConstantInput("paddings"),
+REGISTER_XLA_OP(Name("SpaceToBatch").CompileTimeConstInput("paddings"),
                 SpaceToBatchOp);
 
 }  // namespace

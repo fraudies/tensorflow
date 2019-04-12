@@ -24,7 +24,6 @@ limitations under the License.
 #include "tensorflow/core/framework/cancellation.h"
 #include "tensorflow/core/framework/control_flow.h"
 #include "tensorflow/core/framework/device_base.h"
-#include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/framework/kernel_def.pb.h"
 #include "tensorflow/core/framework/kernel_def_builder.h"
 #include "tensorflow/core/framework/node_def_util.h"
@@ -490,17 +489,6 @@ struct TensorValue {
   Tensor* tensor;
 };
 
-// Used to store partitioned graphs from function-calling ops.
-struct GraphCollector {
-  mutex mu;
-  std::vector<GraphDef> graphs GUARDED_BY(mu);
-
-  void CollectGraph(const GraphDef& graph) {
-    mutex_lock ml(mu);
-    graphs.push_back(graph);
-  }
-};
-
 class OpKernelContext {
  public:
   // The first element of a WrappedAllocator is a "base" Allocator and
@@ -601,7 +589,6 @@ class OpKernelContext {
     FunctionLibraryRuntime* function_library = nullptr;
     std::function<void(std::function<void()>)>* runner = nullptr;
     StepStatsCollectorInterface* stats_collector = nullptr;
-    GraphCollector* graph_collector = nullptr;
 
     // TensorSliceReaderCache support.
     checkpoint::TensorSliceReaderCacheWrapper* slice_reader_cache = nullptr;
@@ -723,9 +710,6 @@ class OpKernelContext {
   // status to a non-OK value and returns false.
   // Usage: if (!context->ValidateInputsAreSameShape(this)) return;
   bool ValidateInputsAreSameShape(OpKernel* op);
-
-  // If non-null, kernels should populate with any partition subgraphs created.
-  GraphCollector* graph_collector() { return params_->graph_collector; }
 
   // Input to output forwarding.
 
@@ -982,10 +966,9 @@ class OpKernelContext {
     return params_->output_attr_array[index];
   }
 
-  gtl::InlinedVector<WrappedAllocator, 4> ConsumeWrappedAllocators() {
+  gtl::InlinedVector<WrappedAllocator, 4> wrapped_allocators() const {
     mutex_lock lock(mu_);
-    gtl::InlinedVector<WrappedAllocator, 4> retrieved;
-    retrieved.swap(wrapped_allocators_);
+    gtl::InlinedVector<WrappedAllocator, 4> retrieved = wrapped_allocators_;
     return retrieved;
   }
 
@@ -1237,7 +1220,7 @@ Status CreateOpKernel(DeviceType device_type, DeviceBase* device,
 //           * def has all attrs specified (e.g. using AddDefaultsToNodeDef()).
 Status SupportedDeviceTypesForNode(
     const std::vector<DeviceType>& prioritized_types, const NodeDef& def,
-    PrioritizedDeviceTypeVector* device_types);
+    DeviceTypeVector* device_types);
 
 // Returns a message with a description of the kernels registered for op
 // `op_name`.
@@ -1321,9 +1304,6 @@ class Name : public KernelDefBuilder {
             return new __VA_ARGS__(context);                             \
           });
 
-// Checks whether a given kernel is registered on device_type.
-bool KernelDefAvailable(const DeviceType& device_type, const NodeDef& node_def);
-
 // If node_def has a corresponding kernel registered on device_type,
 // returns OK and fill in the kernel def and kernel_class_name. <def> and
 // <kernel_class_name> may be null.
@@ -1346,55 +1326,22 @@ KernelList GetRegisteredKernelsForOp(StringPiece op_name);
 
 namespace kernel_factory {
 
-// OpKernelFactory is responsible for creating OpKernels when TensorFlow needs
-// them. You register factories with the TensorFlow core by constructing an
-// OpKernelRegistrar and passing the factory as a constructor parameter.
-class OpKernelFactory {
- public:
-  virtual OpKernel* Create(OpKernelConstruction* context) = 0;
-  virtual ~OpKernelFactory() = default;
-};
-
 class OpKernelRegistrar {
  public:
-  // Registers the given kernel factory with TensorFlow. TF will call the
-  // factory Create() method when it determines that a kernel matching the given
-  // KernelDef is required.
+  typedef OpKernel* (*Factory)(OpKernelConstruction*);
+
   OpKernelRegistrar(const KernelDef* kernel_def, StringPiece kernel_class_name,
-                    std::unique_ptr<OpKernelFactory> factory) {
+                    Factory factory) {
     // Perform the check in the header to allow compile-time optimization
     // to a no-op, allowing the linker to remove the kernel symbols.
     if (kernel_def != nullptr) {
-      InitInternal(kernel_def, kernel_class_name, std::move(factory));
-    }
-  }
-
-  // Registers the given factory function with TensorFlow. This is equivalent
-  // to registering a factory whose Create function invokes `create_fn`.
-  OpKernelRegistrar(const KernelDef* kernel_def, StringPiece kernel_class_name,
-                    OpKernel* (*create_fn)(OpKernelConstruction*)) {
-    // Perform the check in the header to allow compile-time optimization
-    // to a no-op, allowing the linker to remove the kernel symbols.
-    if (kernel_def != nullptr) {
-      struct PtrOpKernelFactory : public OpKernelFactory {
-        explicit PtrOpKernelFactory(
-            OpKernel* (*create_func)(OpKernelConstruction*))
-            : create_func_(create_func) {}
-
-        OpKernel* Create(OpKernelConstruction* context) override {
-          return (*create_func_)(context);
-        }
-
-        OpKernel* (*create_func_)(OpKernelConstruction*);
-      };
-      InitInternal(kernel_def, kernel_class_name,
-                   absl::make_unique<PtrOpKernelFactory>(create_fn));
+      InitInternal(kernel_def, kernel_class_name, factory);
     }
   }
 
  private:
   void InitInternal(const KernelDef* kernel_def, StringPiece kernel_class_name,
-                    std::unique_ptr<OpKernelFactory> factory);
+                    Factory factory);
 };
 
 }  // namespace kernel_factory
@@ -1527,7 +1474,6 @@ T* OpKernelContext::op_device_context() {
 
 template <typename T>
 T* OpKernelContext::input_device_context(int index) {
-  DCHECK_NE(params_->input_device_contexts, nullptr);
   DCHECK_GE(index, 0);
   DCHECK_LT(index, params_->input_device_contexts->size());
   static_assert(std::is_base_of<DeviceContext, T>::value,
@@ -1536,7 +1482,6 @@ T* OpKernelContext::input_device_context(int index) {
 }
 
 inline DeviceContext* OpKernelContext::input_device_context(int index) {
-  DCHECK_NE(params_->input_device_contexts, nullptr);
   DCHECK_GE(index, 0);
   DCHECK_LT(index, params_->input_device_contexts->size());
   return (*params_->input_device_contexts)[index];

@@ -52,8 +52,7 @@ class ParallelConcatRemovePass : public GraphOptimizationPass {
       AttrSlice n_attrs = n->attrs();
       auto base_make_node = [n, &n_attrs](const string& op,
                                           const string& name) {
-        NodeDebugInfo debug_info(*n);
-        NodeBuilder node_builder(name, op, OpRegistry::Global(), &debug_info);
+        NodeBuilder node_builder(name, op);
         node_builder.Device(n->requested_device());
         string colo;
         if (GetNodeAttr(n_attrs, "_class", &colo).ok()) {

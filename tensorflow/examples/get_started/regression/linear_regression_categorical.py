@@ -45,11 +45,12 @@ def main(argv):
         # that the examples are well mixed.
         train.shuffle(1000).batch(128)
         # Repeat forever
-        .repeat())
+        .repeat().make_one_shot_iterator().get_next())
 
   # Build the validation input_fn.
   def input_test():
-    return test.shuffle(1000).batch(128)
+    return (test.shuffle(1000).batch(128)
+            .make_one_shot_iterator().get_next())
 
   # The following code demonstrates two of the ways that `feature_columns` can
   # be used to build a model with categorical inputs.
