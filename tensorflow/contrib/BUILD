@@ -158,6 +158,9 @@ py_library(
         "//conditions:default": [
             "//tensorflow/contrib/ignite",
         ],
+    }) + select({
+        "//tensorflow:with_avro_support": ["//tensorflow/contrib/avro"],
+        "//conditions:default": [],
     }),
 )
 
