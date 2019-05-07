@@ -30,7 +30,7 @@ from tensorflow.core.protobuf import config_pb2
 from tensorflow.python.platform import test
 from tensorflow.python.framework import test_util
 from tensorflow.python.framework.errors import OpError, OutOfRangeError
-from tensorflow.contrib.avro.python.avro_record_dataset import AvroRecordDataset
+from tensorflow.contrib.avro.python import avro_record_dataset
 from tensorflow.contrib.avro.python.utils.avro_serialization import \
     AvroDeserializer, AvroParser, AvroSchemaReader, AvroFileToRecords
 
@@ -258,7 +258,7 @@ class AvroRecordDatasetTest(test_util.TensorFlowTestCase):
         :param reader_schema: The schema used when reading the dataset
         """
         with self.test_session() as sess:
-            dataset = AvroRecordDataset(
+            dataset = avro_record_dataset.AvroRecordDatasetV1(
                 filenames=[self.filename], reader_schema=reader_schema)
             iterator = dataset.make_initializable_iterator()
             next_element = iterator.get_next()
@@ -284,7 +284,7 @@ class AvroRecordDatasetTest(test_util.TensorFlowTestCase):
 
         with self.test_session(config=config) as sess:
 
-            dataset = AvroRecordDataset(
+            dataset = avro_record_dataset.AvroRecordDatasetV1(
                 filenames=[self.filename], reader_schema=reader_schema)
             iterator = dataset.make_initializable_iterator()
             next_element = iterator.get_next()
@@ -295,7 +295,8 @@ class AvroRecordDatasetTest(test_util.TensorFlowTestCase):
                 reader_schema = writer_schema
 
             records_expected = AvroFileToRecords(filename=self.filename,
-                                                 reader_schema=reader_schema).get_records()
+                                                 reader_schema=reader_schema)\
+                .get_records()
 
             sess.run(iterator.initializer)
 
@@ -305,6 +306,7 @@ class AvroRecordDatasetTest(test_util.TensorFlowTestCase):
                 try:
                     record_actual = deserializer.deserialize(
                         sess.run(next_element))
+
                     record_expected = records_expected[record_actual['index']]
                     for name, value_actual in six.iteritems(record_actual):
                         # The field must be present in the read record
@@ -378,119 +380,6 @@ class AvroRecordDatasetTest(test_util.TensorFlowTestCase):
         Test no schema resolution by supplying no schema.
         """
         self._load_and_compare_records(reader_schema=None)
-
-    def test_no_schema_resolution_by_supplying_full_schema(self):
-        """
-        Test no schema resolution by supplying the original schema.
-        """
-        self._load_and_compare_records(reader_schema=self.full_schema)
-
-    def test_resolve_to_sub_schema(self):
-        """
-        Resolve to sub-schema
-        """
-        sub_schema = '''{"namespace": "test.dataset",
-                         "doc": "Test sub-schema with fields removed.",
-                         "type": "record",
-                         "name": "row",
-                         "fields": [
-                             {"name": "index", "type": "int"},
-                             {"name": "boolean_type", "type": "boolean"}
-                         ]}'''
-        self._load_and_compare_records(reader_schema=sub_schema)
-
-    def test_extend_with_default_fail(self):
-        """
-        Expand schema with a default type
-        """
-        expanded_schema = '''{"namespace": "test.dataset",
-                              "doc": "Test expanded schema with additional value that have defaults.",
-                              "type": "record",
-                              "name": "row",
-                              "fields": [
-                                  {"name": "index", "type": "int"},
-                                  {"name": "boolean_type", "type": "boolean", "default": false},
-                                  {"name": "string_type_with_default", "type": "string", "default": "unknown"}
-                              ]}'''
-        with self.assertRaises(OpError) as error:
-            self._load_and_compare_records(reader_schema=expanded_schema)
-        logging.info(error)
-
-    def test_remove_field_in_record_in_array_fail(self):
-        """
-        Remove a field from a record in an array.
-
-        This does not work in pyavroc's deserializer and here we do not support this case either.
-        One solution could be to select a branch of the union. This is what the current error message
-
-            "Invalid argument: Could not find size of value, Union has no selected branch"
-
-        indicates.
-        """
-        collapse_record_in_array_schema = '''{"namespace": "test.dataset",
-                                              "doc": "Test schema with removed field in list of records.",
-                                              "type": "record",
-                                              "name": "row",
-                                              "fields": [
-                                                  {"name": "index", "type": "int"},
-                                                  {"name": "features",
-                                                   "type": [ "null", {
-                                                     "type": "array",
-                                                     "items": ["null", {
-                                                         "type": "record",
-                                                         "name": "triplet",
-                                                         "fields": [
-                                                             {"name": "name", "type": [ "null", "string"]},
-                                                             {"name": "value", "type": [ "null", "float" ]}
-                                                         ]
-                                                      }]
-                                                  } ]}
-                                              ]}'''
-        with self.assertRaises(OpError) as error:
-            self._load_and_compare_records(
-                reader_schema=collapse_record_in_array_schema)
-        logging.info(error)
-
-    def test_remove_field_in_record_in_map_fail(self):
-        """
-        Remove a field from a record in a map. The problem and resolution is the same as in TestCollapseRecordInArray
-        """
-        collapse_record_in_map_schema = '''{"namespace": "test.dataset",
-                                            "doc": "Test schema with removed field in map of records.",
-                                            "type": "record",
-                                            "name": "row",
-                                            "fields": [
-                                                {"name": "index", "type": "int"},
-                                                {"name": "map_features",
-                                                 "type": {
-                                                    "type": "map",
-                                                    "values": ["null", {
-                                                        "name": "tri",
-                                                        "type": "record",
-                                                        "fields": [
-                                                            {"name": "name", "type": [ "null", "string"]},
-                                                            {"name": "value", "type": [ "null", "float" ]}
-                                                            ]
-                                                       }]
-                                                   }
-                                                }
-                                            ]}'''
-        self._load_and_compare_records(
-            reader_schema=collapse_record_in_map_schema)
-
-    def test_up_cast(self):
-        """
-        Up-cast a single to double precision
-        """
-        up_cast_schema = '''{"namespace": "test.dataset",
-                             "doc": "Test schema with up-cast of float to double.",
-                             "type": "record",
-                             "name": "row",
-                             "fields": [
-                                 {"name": "index", "type": "int"},
-                                 {"name": "float_type", "type": "double"}
-                            ]}'''
-        self._load_and_compare_records(reader_schema=up_cast_schema)
 
 
 if __name__ == "__main__":

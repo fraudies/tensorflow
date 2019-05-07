@@ -242,7 +242,8 @@ class SequentialAvroRecordReader {
 
 class AvroRecordDatasetOp : public DatasetOpKernel {
  public:
-  using DatasetOpKernel::DatasetOpKernel;
+
+  explicit AvroRecordDatasetOp(OpKernelConstruction* ctx) : DatasetOpKernel(ctx) { }
 
   void MakeDataset(OpKernelContext* ctx, DatasetBase** output) override {
     const Tensor* filenames_tensor;
@@ -297,8 +298,18 @@ class AvroRecordDatasetOp : public DatasetOpKernel {
                               DatasetGraphDefBuilder* b,
                               Node** output) const override {
 
-      // TODO(fraudies): Implement me, below is a copy of the code from the
-      // protobuf example reader
+      Node* filenames = nullptr;
+      Node* reader_schema = nullptr;
+
+      TF_RETURN_IF_ERROR(b->AddVector(filenames_, &filenames));
+      TF_RETURN_IF_ERROR(b->AddScalar(reader_schema_str_, &reader_schema));
+
+      TF_RETURN_IF_ERROR(b->AddDataset(
+          this,
+          {std::make_pair(0, filenames),
+           std::make_pair(1, reader_schema)},      // Single tensor inputs
+          {},  // Tensor list inputs
+          {}, output));
       return Status::OK();
    }
 
