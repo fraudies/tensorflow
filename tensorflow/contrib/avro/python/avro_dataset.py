@@ -19,6 +19,7 @@
 # https://github.com/tensorflow/tensorflow/blob/r2.0/tensorflow/python/data/experimental/ops/parsing_ops.py
 
 import os
+import functools
 
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import dtypes
@@ -27,21 +28,23 @@ from tensorflow.python.framework import sparse_tensor
 from tensorflow.python.data.util import structure
 from tensorflow.python.ops import parsing_ops
 from tensorflow.python.data.ops import dataset_ops
+from tensorflow.python.data.ops.dataset_ops import DatasetSource, DatasetV1Adapter
 from tensorflow.python.data.util import convert
-from tensorflow.python.framework import tensor_shape
 from tensorflow.python.platform import resource_loader
-from tensorflow.contrib.avro.ops.gen_avro_dataset import gen_avro_dataset
+from tensorflow.python.platform import tf_logging as logger
+from tensorflow.contrib.avro.ops.gen_avro_dataset import avro_dataset
 
 # Load the shared library
 lib_name = os.path.join(resource_loader.get_data_files_path(),
                         '_avro_dataset.so')
 reader_module = load_library.load_op_library(lib_name)
 
-
-class AvroDataset(dataset_ops.DatasetSource):
+# TODO(fraudies): fixme @tf_export("contrib.avro.AvroDataset", v1=[])
+class AvroDatasetV2(DatasetSource):
   """A `DatasetSource` that reads and parses Avro records from files."""
 
-  def __init__(self, filenames, features, reader_schema=None):
+  def __init__(self, filenames, features, reader_schema=None,
+               num_parallel_calls=2):
     """Creates a `AvroDataset` and batches for performance.
     Args:
       filenames: A `tf.string` tensor containing one or more filenames.
@@ -92,21 +95,21 @@ class AvroDataset(dataset_ops.DatasetSource):
 
       reader_schema: (Optional.) A `tf.string` scalar for schema resolution.
 
-      num_parallel_reads: (Optional.) A `int` that defines the number of threads
-                          used during loading/parsing.
-      fixed_batch_size: (Optional.) A `bool` that indicates if we can assume a
-                          fixed batch size.
-    """
-    super(AvroDataset, self).__init__()
+      num_parallel_calls: Number of parallel calls
 
-    self._filenames = convert.convert_to_tensor(
+    """
+    super(AvroDatasetV2, self).__init__()
+
+    self._filenames = ops.convert_to_tensor(
         filenames, dtypes.string, name="filenames")
     self._features = features
     self._reader_schema = convert.optional_param_to_tensor(
         "reader_schema", reader_schema, argument_default="",
         argument_dtype=dtypes.string)
+    self._num_parallel_calls = num_parallel_calls
+
     # Prepare dimensions
-    self._features = parsing_ops._prepend_none_dimension(features)
+    # self._features = parsing_ops._prepend_none_dimension(features)
 
     # Copied from _ParseExampleDataset from data/experimental/ops/parsing_ops.py
     (sparse_keys, sparse_types, dense_keys, dense_types, dense_defaults,
@@ -127,40 +130,44 @@ class AvroDataset(dataset_ops.DatasetSource):
     self._dense_defaults = dense_defaults_vec
     self._dense_shapes = dense_shapes
     self._dense_types = dense_types
-    dense_output_shapes = [
-      self._input_dataset.output_shapes.concatenate(shape)
-      for shape in dense_shape_as_shape
-    ]
+    dense_output_shapes = dense_shape_as_shape
     sparse_output_shapes = [
-      self._input_dataset.output_shapes.concatenate([None])
+      [None]
       for _ in range(len(sparse_keys))
     ]
 
-    self._output_shapes = dict(
+    output_shapes = dict(
         zip(self._dense_keys + self._sparse_keys,
             dense_output_shapes + sparse_output_shapes))
-    self._output_types = dict(
+    output_types = dict(
         zip(self._dense_keys + self._sparse_keys,
             self._dense_types + self._sparse_types))
-    self._output_classes = dict(
+    output_classes = dict(
         zip(self._dense_keys + self._sparse_keys,
             [ops.Tensor for _ in range(len(self._dense_defaults))] +
             [sparse_tensor.SparseTensor for _ in range(len(self._sparse_keys))
              ]))
-
-    self._output_shapes = tuple(
-        tensor_shape.scalar() for _ in range(len(record_defaults)))
-    self._output_types = tuple(d.dtype for d in self._record_defaults)
-    self._output_classes = tuple(
-        ops.Tensor for _ in range(len(record_defaults)))
     self._structure = structure.convert_legacy_structure(
         output_types, output_shapes, output_classes)
 
   def _as_variant_tensor(self):
-    out_dataset = gen_avro_dataset(
+    # logger.log("Calling variant tensor with %")
+    outputs = dataset_ops.flat_structure(self)
+
+    print("File names: {}".format(self._filenames))
+    print("Reader schema: {}".format(self._reader_schema))
+    print("dense defaults: {}".format(self._dense_defaults))
+    print("sparse keys: {}".format(self._sparse_keys))
+    print("dense keys: {}".format(self._dense_keys))
+    print("sparse types: {}".format(self._sparse_types))
+    print("dense shapes: {}".format(self._dense_shapes))
+    print("output shapes: {}".format(outputs['output_shapes']))
+    print("output types: {}".format(outputs['output_types']))
+
+    out_dataset = avro_dataset(
         filenames=self._filenames,
-        dense_defaults=self._dense_defaults,
         reader_schema=self._reader_schema,
+        dense_defaults=self._dense_defaults,
         sparse_keys=self._sparse_keys,
         dense_keys=self._dense_keys,
         sparse_types=self._sparse_types,
@@ -169,7 +176,7 @@ class AvroDataset(dataset_ops.DatasetSource):
 
     if any([
       isinstance(feature, parsing_ops.SparseFeature)
-      for _, feature in features.items()
+      for _, feature in self._features.items()
     ]):
       # pylint: disable=protected-access
       # pylint: disable=g-long-lambda
@@ -182,14 +189,16 @@ class AvroDataset(dataset_ops.DatasetSource):
   def _element_structure(self):
     return self._structure
 
-  @property
-  def output_types(self):
-    return self._output_types
 
-  @property
-  def output_shapes(self):
-    return self._output_shapes
+# TODO(fraudies): Fixme @tf_export(v1=["contrib.avro.AvroDataset"])
+class AvroDatasetV1(DatasetV1Adapter):
+  """A `Dataset` comprising records from one or more Avro files."""
 
-  @property
-  def output_classes(self):
-    return self._output_classes
+  @functools.wraps(AvroDatasetV2.__init__)
+  def __init__(self, filenames, features, reader_schema=None,
+               num_parallel_calls=2):
+    wrapped = AvroDatasetV2(filenames, features, reader_schema,
+                            num_parallel_calls)
+    super(AvroDatasetV1, self).__init__(wrapped)
+
+

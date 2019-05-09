@@ -39,10 +39,11 @@ void SplitOnDelimiterButNotInsideSquareBrackets(std::vector<string>* results, ch
   (*results).push_back(lastMatch);
 }
 
-Status AvroParserTree::ParseValue(std::vector<ValueStoreUniquePtr>* values, const AvroValueSharedPtr& value) {
+Status AvroParserTree::ParseValue(std::map<string, ValueStoreUniquePtr>* key_to_value,
+  const AvroValueSharedPtr& value) {
+
   // will also be used to get the data type for the node
-  std::map<string, ValueStoreUniquePtr> key_to_value;
-  TF_RETURN_IF_ERROR(InitValueBuffers(&key_to_value));
+  TF_RETURN_IF_ERROR(InitValueBuffers(key_to_value));
   // Note, avro_value_t* will be valid as long as value is
   std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> > parser_for_value;
   parser_for_value.push(std::make_pair(root_, value));
@@ -54,16 +55,12 @@ Status AvroParserTree::ParseValue(std::vector<ValueStoreUniquePtr>* values, cons
     AvroValueSharedPtr v = current.second;
     parser_for_value.pop();
     if ((*p).IsTerminal()) {
-      TF_RETURN_IF_ERROR((*p).ParseValue(&key_to_value, *v));
+      TF_RETURN_IF_ERROR((*p).ParseValue(key_to_value, *v));
     //} else if ((*p).UsesParsedValues()) {  // This is the boundary for threading
     //  TF_RETURN_IF_ERROR((*p).ResolveValues(&parser_for_value, *v, *values));
     } else {
-      TF_RETURN_IF_ERROR((*p).ResolveValues(&parser_for_value, *v, key_to_value));
+      TF_RETURN_IF_ERROR((*p).ResolveValues(&parser_for_value, *v, *key_to_value));
     }
-  }
-
-  for (const auto& key_type : keys_and_types_) {
-    (*values).push_back(std::move(key_to_value[key_type.first]));
   }
 }
 
@@ -337,6 +334,9 @@ Status AvroParserTree::InitValueBuffers(std::map<string, ValueStoreUniquePtr>* k
   }
   return Status::OK();
 }
+
+const string AvroParserTree::kArrayAllElements = "[*]";
+const string AvroParserTree::kDefaultNamespace = "default";
 
 }
 }

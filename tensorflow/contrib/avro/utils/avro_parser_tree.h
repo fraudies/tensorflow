@@ -12,7 +12,6 @@ limitations under the License.
 #ifndef TENSORFLOW_DATA_AVRO_PARSER_TREE_H_
 #define TENSORFLOW_DATA_AVRO_PARSER_TREE_H_
 
-#include <avro.h>
 #include <vector>
 #include "tensorflow/contrib/avro/utils/avro_parser.h"
 #include "tensorflow/contrib/avro/utils/prefix_tree.h"
@@ -27,7 +26,8 @@ public:
     const std::vector<std::pair<string, DataType>>& keys_and_types);
 
   // pointers are only valid as long as the object exists
-  Status ParseValue(std::vector<ValueStoreUniquePtr>* values, const AvroValueSharedPtr& value);
+  Status ParseValue(std::map<string, ValueStoreUniquePtr>* key_to_value,
+    const AvroValueSharedPtr& value);
 
   // exposed for testing
   inline AvroParserSharedPtr getRoot() const { return root_; }
@@ -64,9 +64,6 @@ private:
   // This map is a helper for fast access of the data type that corresponds to the key
   std::map<string, DataType> key_to_type_;
 };
-
-const string AvroParserTree::kArrayAllElements = "[*]";
-const string AvroParserTree::kDefaultNamespace = "default";
 
 }
 }

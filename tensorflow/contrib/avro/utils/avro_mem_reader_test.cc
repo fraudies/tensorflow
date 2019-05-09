@@ -160,14 +160,15 @@ public:
     // need to be returned through &  -- the alternative could have been to use char** mem_data and
     // manage the memory without using smart pointers
 
-    FILE* fp = fopen(filename.c_str(), "r");
-    if (fp == nullptr) {
+    std::unique_ptr<FILE, std::function<void(FILE*)>> fp(fopen(filename.c_str(), "r"),
+      [](FILE* f) { fclose(f); });
+    if (fp.get() == nullptr) {
       return Status(errors::InvalidArgument("Unable to open file ", filename));
     }
 
     // Find the size of the file in By
-    fseek(fp, 0, SEEK_END);
-    *mem_size = ftell(fp);
+    fseek(fp.get(), 0, SEEK_END);
+    *mem_size = ftell(fp.get());
 
     // Create memory for the entire file
     mem_data.reset(new (std::nothrow) char[*mem_size]);
@@ -176,11 +177,10 @@ public:
     }
 
     // Read the entire file into memory
-    rewind(fp);
-    if (fgets(mem_data.get(), *mem_size, fp) == nullptr) {
+    rewind(fp.get());
+    if (fgets(mem_data.get(), *mem_size, fp.get()) == nullptr) {
       return Status(errors::InvalidArgument("Unable read ", *mem_size, " bytes from file ", filename));
     }
-    fclose(fp);
 
     return Status::OK();
   }

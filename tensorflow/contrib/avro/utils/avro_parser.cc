@@ -300,9 +300,9 @@ Status ArrayFilterParser::ResolveValues(
 
     size_t reverse_index = n_elements - i_elements;
 
-    if (type_ == kRhsIsConstant
+    if ((type_ == kRhsIsConstant)
           && (*parsed_values.at(lhs_)).ValueMatchesAtReverseIndex(rhs_, reverse_index)
-      || type_ == kRhsIsValue
+      || (type_ == kRhsIsValue)
           && (*parsed_values.at(lhs_)).ValuesMatchAtReverseIndex(*parsed_values.at(rhs_), reverse_index)) {
 
       AvroValueSharedPtr next_value(new avro_value_t);

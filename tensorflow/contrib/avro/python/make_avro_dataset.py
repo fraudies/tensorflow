@@ -15,16 +15,18 @@
 
 
 from tensorflow.python.data.ops import dataset_ops
-from tensorflow.python.util.tf_export import tf_export
+# from tensorflow.python.util.tf_export import tf_export
 from tensorflow.python.data.experimental.ops import interleave_ops
 from tensorflow.python.data.experimental.ops import optimization
 from tensorflow.python.data.experimental import readers
 
-@tf_export("contrib.avro.make_avro_dataset")
+
+# TODO(fraudies): Fixme for tf 1/2 @tf_export("contrib.avro.make_avro_dataset")
 def make_avro_dataset(
     file_pattern,
     batch_size,
     features,
+    num_parallel_calls=2,
     label_key=None,
     num_epochs=None,
     shuffle=True,
@@ -48,6 +50,7 @@ def make_avro_dataset(
     return AvroDataset(
         filenames=filenames,
         features=features,
+        num_parallel_calls=num_parallel_calls,
         reader_schema=reader_schema
     )
 
