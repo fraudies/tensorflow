@@ -34,12 +34,6 @@ Status CheckValidType(const DataType& dtype) {
 }
 
 Status ParseAvroAttrs::FinishInit() {
-  if (static_cast<size_t>(num_sparse) != sparse_types.size()) {
-    return errors::InvalidArgument("len(sparse_keys) != len(sparse_types)");
-  }
-  if (static_cast<size_t>(num_dense) != dense_types.size()) {
-    return errors::InvalidArgument("len(dense_keys) != len(dense_types)");
-  }
   if (static_cast<size_t>(num_dense) != dense_shapes.size()) {
     return errors::InvalidArgument("len(dense_keys) != len(dense_shapes)");
   }

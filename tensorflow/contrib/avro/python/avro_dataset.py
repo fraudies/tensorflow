@@ -29,9 +29,7 @@ from tensorflow.python.data.util import structure
 from tensorflow.python.ops import parsing_ops
 from tensorflow.python.data.ops import dataset_ops
 from tensorflow.python.data.ops.dataset_ops import DatasetSource, DatasetV1Adapter
-from tensorflow.python.data.util import convert
 from tensorflow.python.platform import resource_loader
-from tensorflow.python.platform import tf_logging as logger
 from tensorflow.contrib.avro.ops.gen_avro_dataset import avro_dataset
 
 # Load the shared library
@@ -43,7 +41,7 @@ reader_module = load_library.load_op_library(lib_name)
 class AvroDatasetV2(DatasetSource):
   """A `DatasetSource` that reads and parses Avro records from files."""
 
-  def __init__(self, filenames, features, reader_schema=None,
+  def __init__(self, filenames, features, reader_schema="",
                num_parallel_calls=2):
     """Creates a `AvroDataset` and batches for performance.
     Args:
@@ -103,13 +101,8 @@ class AvroDatasetV2(DatasetSource):
     self._filenames = ops.convert_to_tensor(
         filenames, dtypes.string, name="filenames")
     self._features = features
-    self._reader_schema = convert.optional_param_to_tensor(
-        "reader_schema", reader_schema, argument_default="",
-        argument_dtype=dtypes.string)
+    self._reader_schema = reader_schema
     self._num_parallel_calls = num_parallel_calls
-
-    # Prepare dimensions
-    # self._features = parsing_ops._prepend_none_dimension(features)
 
     # Copied from _ParseExampleDataset from data/experimental/ops/parsing_ops.py
     (sparse_keys, sparse_types, dense_keys, dense_types, dense_defaults,
@@ -151,7 +144,6 @@ class AvroDatasetV2(DatasetSource):
         output_types, output_shapes, output_classes)
 
   def _as_variant_tensor(self):
-    # logger.log("Calling variant tensor with %")
     outputs = dataset_ops.flat_structure(self)
 
     print("File names: {}".format(self._filenames))
@@ -195,7 +187,7 @@ class AvroDatasetV1(DatasetV1Adapter):
   """A `Dataset` comprising records from one or more Avro files."""
 
   @functools.wraps(AvroDatasetV2.__init__)
-  def __init__(self, filenames, features, reader_schema=None,
+  def __init__(self, filenames, features, reader_schema="",
                num_parallel_calls=2):
     wrapped = AvroDatasetV2(filenames, features, reader_schema,
                             num_parallel_calls)

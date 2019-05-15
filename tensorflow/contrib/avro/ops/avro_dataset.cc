@@ -59,13 +59,11 @@ using ::tensorflow::shape_inference::ShapeHandle;
 
 REGISTER_OP("AvroDataset")
     .Input("filenames: string")
-    .Input("reader_schema: string")
-    .Input("sparse_keys: Nsparse * string")
-    .Input("dense_keys: Ndense * string")
     .Input("dense_defaults: Tdense")
     .Output("handle: variant")
-    .Attr("Nsparse: int >= 0")  // Inferred from sparse_keys
-    .Attr("Ndense: int >= 0")   // Inferred from dense_keys
+    .Attr("reader_schema: string")
+    .Attr("sparse_keys: list(string) >= 0")
+    .Attr("dense_keys: list(string) >= 0")
     .Attr("sparse_types: list({float,double,int64,int32,string,bool}) >= 0")
     .Attr("Tdense: list({float,double,int64,int32,string,bool}) >= 0")
     .Attr("dense_shapes: list(shape) >= 0")
@@ -108,6 +106,11 @@ class AvroDatasetOp : public DatasetOpKernel {
     : DatasetOpKernel(ctx),
       graph_def_version_(ctx->graph_def_version()) {
 
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("reader_schema", &reader_schema_));
+
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("sparse_keys", &sparse_keys_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("dense_keys", &dense_keys_));
+
     OP_REQUIRES_OK(ctx, ctx->GetAttr("sparse_types", &sparse_types_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("Tdense", &dense_types_));
 
@@ -131,25 +134,9 @@ class AvroDatasetOp : public DatasetOpKernel {
       filenames.push_back(filenames_tensor->flat<string>()(i));
     }
 
-    // Get schema
-    OP_REQUIRES_OK(ctx, ParseScalarArgument<string>(ctx, "reader_schema",
-      &reader_schema_));
-
     // Get keys
     OpInputList sparse_keys;
     OpInputList dense_keys;
-    OP_REQUIRES_OK(ctx, ctx->input_list("sparse_keys", &sparse_keys));
-    OP_REQUIRES_OK(ctx, ctx->input_list("dense_keys", &dense_keys));
-    //    CHECK_EQ(dense_keys.size(), attrs_.num_dense);
-    //    CHECK_EQ(sparse_keys.size(), attrs_.num_sparse);
-    sparse_keys_.resize(sparse_keys.size());
-    for (size_t i_sparse = 0; i_sparse < sparse_keys.size(); ++i_sparse) {
-      sparse_keys_[i_sparse] = sparse_keys[i_sparse].scalar<string>()();
-    }
-    dense_keys_.resize(dense_keys.size());
-    for (size_t i_dense = 0; i_dense < dense_keys.size(); ++i_dense) {
-      dense_keys_[i_dense] = dense_keys[i_dense].scalar<string>()();
-    }
 
     // Get dense default tensors
     OpInputList dense_default_tensors;
@@ -254,7 +241,8 @@ class AvroDatasetOp : public DatasetOpKernel {
                               Node** output) const override {
 
       Node* filenames = nullptr;
-      Node* reader_schema = nullptr;
+
+      TF_RETURN_IF_ERROR(b->AddVector(filenames_, &filenames));
 
       std::vector<Node*> dense_defaults_nodes;
       dense_defaults_nodes.reserve(dense_defaults_.size());
@@ -265,15 +253,14 @@ class AvroDatasetOp : public DatasetOpKernel {
         dense_defaults_nodes.emplace_back(node);
       }
 
-      TF_RETURN_IF_ERROR(b->AddVector(filenames_, &filenames));
-      TF_RETURN_IF_ERROR(b->AddScalar(reader_schema_, &reader_schema));
-
+      AttrValue reader_schema_attr;
       AttrValue sparse_keys_attr;
       AttrValue dense_keys_attr;
       AttrValue sparse_types_attr;
       AttrValue dense_attr;
       AttrValue dense_shapes_attr;
 
+      b->BuildAttrValue(reader_schema_, &reader_schema_attr);
       b->BuildAttrValue(sparse_keys_, &sparse_keys_attr);
       b->BuildAttrValue(dense_keys_, &dense_keys_attr);
       b->BuildAttrValue(sparse_types_, &sparse_types_attr);
@@ -282,13 +269,13 @@ class AvroDatasetOp : public DatasetOpKernel {
 
       TF_RETURN_IF_ERROR(b->AddDataset(this,
                                        {
-                                          {0, filenames},
-                                          {1, reader_schema},
+                                          {0, filenames}
                                        }, // single tensor inputs
                                        {
-                                          {0, dense_defaults_nodes}
+                                          {1, dense_defaults_nodes}
                                        }, // list tensor inputs
                                        {
+                                          {"reader_schema", reader_schema_attr},
                                           {"sparse_keys", sparse_keys_attr},
                                           {"dense_keys", dense_keys_attr},
                                           {"sparse_types", sparse_types_attr},

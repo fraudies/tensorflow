@@ -35,15 +35,19 @@ class ParseAvroAttrs {
   template <typename ContextType>
   Status Init(ContextType* ctx) {
     TF_RETURN_IF_ERROR(ctx->GetAttr("sparse_types", &sparse_types));
-    TF_RETURN_IF_ERROR(ctx->GetAttr("Ndense", &num_dense));
-    TF_RETURN_IF_ERROR(ctx->GetAttr("Nsparse", &num_sparse));
     TF_RETURN_IF_ERROR(ctx->GetAttr("Tdense", &dense_types));
     TF_RETURN_IF_ERROR(ctx->GetAttr("dense_shapes", &dense_shapes));
 
-    //string schema;
-    //TF_RETURN_IF_ERROR(ctx->GetAttr("reader_schema", &schema));
-    // TODO(fraudies): parse schema to check for validity
-    //VLOG(4) << "Avro parser with schema\n" << schema;
+    num_sparse = sparse_types.size();
+    num_dense = dense_types.size();
+
+    string schema;
+    TF_RETURN_IF_ERROR(ctx->GetAttr("reader_schema", &schema));
+    if (schema.size()) {
+      VLOG(4) << "Avro parser for reader schema\n" << schema;
+    } else {
+      VLOG(4) << "Avro parser with default schema";
+    }
 
     return FinishInit();
   }

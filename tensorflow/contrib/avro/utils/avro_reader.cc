@@ -28,6 +28,7 @@ Status AvroReader::OnWorkStartup() {
   StringPiece result;
   TF_RETURN_IF_ERROR((*file_).Read(0, file_size_, &result, data_.get()));
 
+  // TODO(fraudies): Create a resolved avro mem reader using the reader schema
   // Create the memory reader
   TF_RETURN_IF_ERROR(AvroMemReader::Create(&avro_mem_reader_, data_, file_size_, filename_));
 
