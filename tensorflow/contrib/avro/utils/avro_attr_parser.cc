@@ -14,8 +14,8 @@ limitations under the License.
 namespace tensorflow {
 namespace data {
 
-// float,double,int64,int32,string,bool
-
+// Checks for the type to be float, double, int64, int32, string, or bool
+// These are compatible with the avro types
 Status CheckValidType(const DataType& dtype) {
   switch (dtype) {
     case DT_INT32:

@@ -29,23 +29,31 @@ public:
   Status ParseValue(std::map<string, ValueStoreUniquePtr>* key_to_value,
     const AvroValueSharedPtr& value);
 
+  // default constructor
+  AvroParserTree(const string& avro_namespace = kDefaultNamespace);
+
+  inline string GetAvroNamespace() const { return avro_namespace_; }
+
   // exposed for testing
   inline AvroParserSharedPtr getRoot() const { return root_; }
+  string ToString() const { return (*root_).ToString(); };
 private:
   static const char kSeparator = '.';
   static const string kArrayAllElements;
   static const string kDefaultNamespace;
 
   Status Build(AvroParser* parent, const std::vector<PrefixTreeNodeSharedPtr>& children);
-  Status BuildKeys(const std::vector<std::pair<string, DataType>>& keys_and_types);
+  Status BuildKeyWithInternalName(const std::vector<std::pair<string, DataType>>& keys_and_types);
 
   static Status GetUniqueKeys(std::unordered_set<string>* keys,
     const std::vector<std::pair<string, DataType>>& keys_and_types);
 
-  static Status CreateAvroParser(AvroParserUniquePtr& value_parser, const string& infix);
+  Status CreateAvroParser(AvroParserUniquePtr& value_parser, const string& infix) const;
 
-  static Status CreateValueParser(AvroParserUniquePtr& value_parser,
-    const string& name, DataType data_type);
+  Status CreateValueParser(AvroParserUniquePtr& value_parser,
+    const string& name, DataType data_type) const;
+
+  Status ConvertToUserName(string* user_name, const string& internal_name) const;
 
   static bool ContainsFilter(string* lhs, string* rhs, const string& key);
   static bool IsFilter(string* lhs, string* rhs, const string& key);
@@ -56,6 +64,10 @@ private:
   static bool IsStringConstant(string* constant, const string& infix);
 
   Status InitValueBuffers(std::map<string, ValueStoreUniquePtr>* key_to_value);
+
+  inline bool IsDefaultNamespace() const { return avro_namespace_ == kDefaultNamespace; };
+
+  const string avro_namespace_;
 
   AvroParserSharedPtr root_;
 

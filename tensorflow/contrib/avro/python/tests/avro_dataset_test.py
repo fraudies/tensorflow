@@ -46,7 +46,6 @@ class AvroDatasetTest(test_util.TensorFlowTestCase):
     self.filename = ''
 
     self.full_schema = """{
-              "namespace": "test.dataset",
               "doc": "Test schema for avro records.",
               "type": "record",
               "name": "row",
@@ -58,7 +57,8 @@ class AvroDatasetTest(test_util.TensorFlowTestCase):
       {"index": 0},
       {"index": 1},
       {"index": 2},
-      {"index": 3}
+      {"index": 3},
+      {"index": 4}
     ]
 
   @staticmethod
@@ -89,13 +89,16 @@ class AvroDatasetTest(test_util.TensorFlowTestCase):
     # Write test records into temporary output directory
     self.output_dir = tempfile.mkdtemp()
     self.filename = os.path.join(self.output_dir, "test.avro")
+
+    print("Created dummy data {}", self.filename)
+
     AvroDatasetTest._write_records_to_file(
         records=self.test_records,
         writer_schema=self.full_schema,
         filename=self.filename)
 
-  def tearDown(self):
-    shutil.rmtree(self.output_dir)
+  #def tearDown(self):
+  #  shutil.rmtree(self.output_dir)
 
   def test_reading_data(self):
     logging.info("Running test for reading data")
@@ -105,7 +108,7 @@ class AvroDatasetTest(test_util.TensorFlowTestCase):
     with self.test_session(config=config) as sess:
 
       features = {
-        'int_type': parsing_ops.FixedLenFeature([], tf_types.int32)
+        'index': parsing_ops.FixedLenFeature([], tf_types.int32)
       }
 
       dataset = AvroDatasetV1(filenames=[self.filename], features=features)

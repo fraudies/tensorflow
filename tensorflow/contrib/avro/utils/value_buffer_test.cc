@@ -39,6 +39,23 @@ TEST(ShapeBuilderTest, ShapeBuilderEmpty) {
   EXPECT_TRUE(builder.HasAllElements(shape));
 }
 
+// Note, we built this case into the shape builder to simplify the surrounding logic/state keeping
+TEST(ShapeBuilderTest, ShapeBuilderForScalar) {
+  ShapeBuilder builder;
+  builder.Increment();
+
+  size_t dim(builder.GetNumberOfDimensions());
+  EXPECT_EQ(dim, 1);
+
+  TensorShape shape;
+  builder.GetDenseShape(&shape);
+  EXPECT_EQ(shape.dims(), 1);
+  EXPECT_EQ(shape.dim_size(0), 1);
+
+  EXPECT_TRUE(builder.HasAllElements(shape));
+}
+
+// Test has all elements for single dimension
 TEST(ShapeBuilderTest, ShapeBuilderSingleDimension) {
   ShapeBuilder builder;
   builder.BeginMark(); builder.Increment(); builder.Increment(); builder.FinishMark();

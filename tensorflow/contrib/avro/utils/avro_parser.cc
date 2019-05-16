@@ -122,8 +122,14 @@ Status IntValueParser::ParseValue(std::map<string, ValueStoreUniquePtr>* values,
     return Status(errors::InvalidArgument("For '", key_, "' could not extract int. Error: ",
       avro_strerror()));
   }
+
+  LOG(INFO) << "Got field value: " << field_value;
+
   // Assume the key exists and cast is possible
   (*reinterpret_cast<IntValueBuffer*>((*values)[key_].get())).Add(field_value);
+
+  LOG(INFO) << "Inserted field value";
+
   return Status::OK();
 }
 string IntValueParser::ToString(int level) const {

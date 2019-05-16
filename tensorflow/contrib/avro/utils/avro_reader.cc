@@ -79,6 +79,7 @@ Status AvroReader::Read(AvroResult* result) {
 
   for (size_t i_dense = 0; i_dense < n_dense; ++i_dense) {
     const AvroParseConfig::Dense& dense = config_.dense[i_dense];
+
     const ValueStoreUniquePtr& value_store = key_to_value_[dense.feature_name];
 
     TensorShape resolved_shape;
@@ -86,6 +87,8 @@ Status AvroReader::Read(AvroResult* result) {
       dense.default_value.shape()));
 
     (*result).dense_values[i_dense] = Tensor(allocator_, dense.dtype, resolved_shape);
+
+    LOG(INFO) << "Creating dense tensor for '" << dense.feature_name << "' with " << resolved_shape << " and user shape " << dense.shape;
 
     TF_RETURN_IF_ERROR((*value_store).MakeDense(&(*result).dense_values[i_dense],
       resolved_shape, dense.default_value));
@@ -105,7 +108,6 @@ Status AvroReader::ShapeToTensor(Tensor* tensor, const TensorShape& shape) {
 }
 
 std::vector<std::pair<string, DataType>> AvroReader::CreateKeysAndTypesFromConfig() {
-
   std::vector<std::pair<string, DataType>> keys_and_types;
   for (const AvroParseConfig::Sparse& sparse : config_.sparse) {
     keys_and_types.push_back({sparse.feature_name, sparse.dtype});

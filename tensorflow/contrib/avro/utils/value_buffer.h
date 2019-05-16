@@ -24,7 +24,7 @@ namespace data {
 static constexpr size_t kBeginMark = std::numeric_limits<size_t>::max() - 1;
 static constexpr size_t kFinishMark = std::numeric_limits<size_t>::max();
 
-// Class type forward declare
+// Forward declaration
 class ValueStore;
 
 // Pointer type
@@ -34,7 +34,6 @@ using ValueStoreUniquePtr = std::unique_ptr<ValueStore>;
 // Non template base class
 class ValueStore {
 public:
-  // TODO(fraudies): Implement and test these three methods
   virtual Status ResolveDenseShape(TensorShape* shape, const PartialTensorShape& partial_shape,
     const TensorShape& default_shape) const = 0;
   virtual Status GetSparseValueShape(TensorShape* shape) const = 0;
@@ -55,10 +54,13 @@ public:
   ShapeBuilder();
   void BeginMark();
   void FinishMark();
-  inline void Increment() { element_counter_++; }
+  void Increment();
   size_t GetNumberOfDimensions() const;
   void GetDenseShape(TensorShape* shape) const;
-  bool HasAllElements(const TensorShape& shape) const; // indicates if the underlying buffer has all elements
+
+  // indicates if the underlying buffer has all elements for the given shape
+  bool HasAllElements(const TensorShape& shape) const;
+
   Status GetCopyInfo(std::vector<std::pair<size_t, size_t> >* copy_info, const TensorShape& shape) const;
   Status GetFillInfo(std::vector<std::pair<size_t, size_t> >* fill_info, const TensorShape& shape) const;
   Status GetIndices(Tensor* indices) const;
@@ -110,6 +112,8 @@ private:
   Status FillInFromDefault(Tensor* tensor, const Tensor& defaults) const;
   inline bool IsScalarTensor(const TensorShape& tensor_shape) const {
     return tensor_shape.dims() == 1 && tensor_shape.dim_size(0) == 1;
+    // TODO(fraudies): Cleanup
+    //return tensor_shape.dims() < 1 || (tensor_shape.dims() == 1 && tensor_shape.dim_size(0) <= 1);
   }
   gtl::InlinedVector<T, 4> values_; // For up to 4 values use inline
   ShapeBuilder shape_builder_;
@@ -174,6 +178,8 @@ Status ValueBuffer<T>::ResolveDenseShape(TensorShape* shape,
 
   bool isScalarDefault = IsScalarTensor(default_shape);
 
+  LOG(INFO) << "Default shape is " << default_shape << " and is scalar " << (isScalarDefault ? "true" : "false");
+
   // Honor user defined shape if fully defined
   if (partial_shape.IsFullyDefined()) {
     if (!partial_shape.AsTensorShape(shape)) {
@@ -198,6 +204,9 @@ Status ValueBuffer<T>::ResolveDenseShape(TensorShape* shape,
   } else {
     TensorShape dense_shape;
     shape_builder_.GetDenseShape(&dense_shape);
+
+    LOG(INFO) << "Dense shape from data " << dense_shape;
+
     PartialTensorShape tmp_shape;
     // Honor any partially defined shape from user and supplement with that from data
     if (partial_shape.MergeWith(dense_shape, &tmp_shape) == Status::OK()) {
