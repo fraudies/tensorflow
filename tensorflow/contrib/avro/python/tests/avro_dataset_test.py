@@ -106,9 +106,9 @@ class AvroDatasetTest(test_util.TensorFlowTestCase):
         intra_op_parallelism_threads=1, inter_op_parallelism_threads=1)
 
     with self.test_session(config=config) as sess:
-
+      # Note, currently there is no easy way of supporting [] w/out batching
       features = {
-        'index': parsing_ops.FixedLenFeature([], tf_types.int32)
+        'index': parsing_ops.FixedLenFeature([1], tf_types.int32, default_value=0)
       }
 
       dataset = AvroDatasetV1(filenames=[self.filename], features=features)
