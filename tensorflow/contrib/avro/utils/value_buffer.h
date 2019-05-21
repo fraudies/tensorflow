@@ -34,13 +34,8 @@ using ValueStoreUniquePtr = std::unique_ptr<ValueStore>;
 // Non template base class
 class ValueStore {
 public:
-  enum ResolverType {
-    memoryShape,
-    outputShape
-  };
-
   virtual Status ResolveDenseShape(TensorShape* shape, const PartialTensorShape& partial_shape,
-    const TensorShape& default_shape, ResolverType resolverType = ResolverType::memoryShape) const = 0;
+    const TensorShape& default_shape) const = 0;
   virtual Status GetSparseValueShape(TensorShape* shape) const = 0;
   virtual Status GetSparseIndexShape(TensorShape* shape) const = 0;
 
@@ -94,8 +89,7 @@ public:
 
   // TODO(fraudies): May want to split this into two methods rather than using the flag
   Status ResolveDenseShape(TensorShape* shape, const PartialTensorShape& partial_shape,
-    const TensorShape& default_shape,
-    ResolverType resolverType = ValueStore::ResolverType::memoryShape) const override;
+    const TensorShape& default_shape) const override;
   Status GetSparseValueShape(TensorShape* shape) const override;
   Status GetSparseIndexShape(TensorShape* shape) const override;
 
@@ -118,6 +112,7 @@ private:
   // Assumes tensor has been initialized
   Status FillInFromDefault(Tensor* tensor, const Tensor& defaults) const;
   // Means this is not a tensor; it's just a scalar value
+  // TODO(fraudies): Remove me?
   inline static bool IsScalarValue(const PartialTensorShape& partial_shape) {
     return partial_shape.dims() < 1;
   }
@@ -125,11 +120,6 @@ private:
   inline static bool IsOneElementTensor(const TensorShape& tensor_shape) {
     return tensor_shape.dims() == 1 && tensor_shape.dim_size(0) == 1;
   }
-  /*
-  inline static bool IsFullTensor(const TensorShape& tensor_shape) {
-    return tensor_shape.dims() >= 1 && tensor_shape.dim_size(0) >= 1;
-  }
-  */
   gtl::InlinedVector<T, 4> values_; // For up to 4 values use inline
   ShapeBuilder shape_builder_;
 };
@@ -189,11 +179,9 @@ size_t ValueBuffer<T>::GetNumberOfElements() const {
 // In that order!
 template<typename T>
 Status ValueBuffer<T>::ResolveDenseShape(TensorShape* shape,
-  const PartialTensorShape& partial_shape, const TensorShape& default_shape,
-  ResolverType resolverType) const {
+  const PartialTensorShape& partial_shape, const TensorShape& default_shape) const {
 
   bool defaultIsOneElementTensor = IsOneElementTensor(default_shape);
-  bool partialIsScalarValue = IsScalarValue(partial_shape);
 
   LOG(INFO) << "Default shape is " << default_shape << " and is one element tensor " << (defaultIsOneElementTensor ? "true" : "false");
 
@@ -201,19 +189,9 @@ Status ValueBuffer<T>::ResolveDenseShape(TensorShape* shape,
 
   // Honor user defined shape if fully defined
   if (partial_shape.IsFullyDefined()) {
-    // This is the case where the user provided [] as input and expects a scalar;
-    // however internally we represent that as a one dimensional tensor with
-    // dimension: 1
-    PartialTensorShape tmp_shape;
-    if (partialIsScalarValue && resolverType == memoryShape) {
-      tmp_shape = TensorShape({1});
-      LOG(INFO) << "Is scalar value with tmp shape " << tmp_shape;
-    } else {
-      tmp_shape = partial_shape;
-    }
-    if (!tmp_shape.AsTensorShape(shape)) {
-      return errors::InvalidArgument("Expected ", tmp_shape, " to be fully defined"
-        " and convertible into a dense shape.");
+    if (!partial_shape.AsTensorShape(shape)) {
+      return errors::InvalidArgument("Expected ", partial_shape, " to be convertible"
+       " into a dense shape.");
     }
 
   // If the default is not scalar
