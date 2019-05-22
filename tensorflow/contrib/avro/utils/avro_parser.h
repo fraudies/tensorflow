@@ -34,7 +34,6 @@ using AvroValueParserSharedPtr = std::shared_ptr<AvroValueParser>;
 class AvroParser {
 public:
   AvroParser();
-  virtual ~AvroParser();
 
   // Default implementation returns error
   virtual Status ResolveValues(
@@ -67,7 +66,6 @@ private:
 class AvroValueParser : public AvroParser {
 public:
   AvroValueParser(const string& key);
-  virtual ~AvroValueParser();
   inline const string& GetKey() const { return key_; }
 protected:
   //static Status CheckKey(const std::map<string, std::unique_ptr<ValueStore> >& values);
@@ -80,16 +78,39 @@ protected:
 class BoolValueParser : public AvroValueParser {
 public:
   BoolValueParser(const string& key);
-  virtual ~BoolValueParser();
   Status ParseValue(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
   virtual string ToString(int level = 0) const;
 };
 
+class LongValueParser : public AvroValueParser {
+public:
+  LongValueParser(const string& key);
+  Status ParseValue(std::map<string, ValueStoreUniquePtr>* values,
+    const avro_value_t& value) const override;
+  virtual string ToString(int level = 0) const;
+};
+
+
 class IntValueParser : public AvroValueParser {
 public:
   IntValueParser(const string& key);
-  virtual ~IntValueParser();
+  Status ParseValue(std::map<string, ValueStoreUniquePtr>* values,
+    const avro_value_t& value) const override;
+  virtual string ToString(int level = 0) const;
+};
+
+class DoubleValueParser : public AvroValueParser {
+public:
+  DoubleValueParser(const string& key);
+  Status ParseValue(std::map<string, ValueStoreUniquePtr>* values,
+    const avro_value_t& value) const override;
+  virtual string ToString(int level = 0) const;
+};
+
+class FloatValueParser : public AvroValueParser {
+public:
+  FloatValueParser(const string& key);
   Status ParseValue(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
   virtual string ToString(int level = 0) const;
@@ -98,7 +119,6 @@ public:
 class StringValueParser : public AvroValueParser {
 public:
   StringValueParser(const string& key);
-  virtual ~StringValueParser();
   Status ParseValue(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
   virtual string ToString(int level = 0) const;
@@ -139,7 +159,6 @@ public:
 class ArrayIndexParser : public AvroParser {
 public:
   ArrayIndexParser(size_t index);
-  virtual ~ArrayIndexParser();
   Status ResolveValues(
     std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
     const avro_value_t& value,
@@ -154,7 +173,6 @@ enum ArrayFilterType { kRhsIsConstant, kRhsIsValue };
 class ArrayFilterParser : public AvroParser {
 public:
   ArrayFilterParser(const string& lhs, const string& rhs, ArrayFilterType type);
-  virtual ~ArrayFilterParser();
   inline virtual bool UsesParsedValues() const { return true; }
   Status ResolveValues(
     std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
@@ -170,7 +188,6 @@ private:
 class MapKeyParser : public AvroParser {
 public:
   MapKeyParser(const string& key);
-  ~MapKeyParser();
   Status ResolveValues(
     std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
     const avro_value_t& value,
@@ -183,7 +200,6 @@ private:
 class AttributeParser : public AvroParser {
 public:
   AttributeParser(const string& name);
-  virtual ~AttributeParser();
   // check that the in_value is of type record
   // check that an attribute with name exists
   // get the the attribute for the name and return it in the vector as single element
@@ -199,7 +215,6 @@ private:
 class NamespaceParser : public AvroParser {
 public:
   NamespaceParser(const string& name);
-  virtual ~NamespaceParser();
   // checks namespace of value against given namespace
   // - if matches passes avro value to all it's child parsers
   // - if does not match returns error with actual and expected namespace

@@ -72,6 +72,21 @@ REGISTER_OP("AvroDataset")
                                               // sorted by key (dense_keys and
                                               // sparse_keys combined) here.
     .SetIsStateful()
+    .SetShapeFn([](shape_inference::InferenceContext* c) {
+
+      // Log schema if the user provided one at op kernel construction
+      string schema;
+      TF_RETURN_IF_ERROR(c->GetAttr("reader_schema", &schema));
+      if (schema.size()) {
+        VLOG(4) << "Avro parser for reader schema\n" << schema;
+      } else {
+        VLOG(4) << "Avro parser with default schema";
+      }
+
+      return shape_inference::ScalarShape(c);
+    });
+
+/*
     .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
       ParseAvroAttrs attrs;
       TF_RETURN_IF_ERROR(attrs.Init(c));
@@ -98,6 +113,7 @@ REGISTER_OP("AvroDataset")
 
       return Status::OK();
     });
+*/
 
 
 class AvroDatasetOp : public DatasetOpKernel {
@@ -121,6 +137,8 @@ class AvroDatasetOp : public DatasetOpKernel {
   }
 
   void MakeDataset(OpKernelContext* ctx, DatasetBase** output) override {
+
+    LOG(INFO) << "Making dataset";
 
     // Get filenames
     const Tensor* filenames_tensor;
@@ -183,6 +201,8 @@ class AvroDatasetOp : public DatasetOpKernel {
          it++) {
       it->second = i++;
     }
+
+    LOG(INFO) << "Parsed dense and sparse keys";
 
     *output = new Dataset(ctx, std::move(filenames), reader_schema_,
                     dense_defaults, sparse_keys_, dense_keys_,
@@ -368,6 +388,8 @@ class AvroDatasetOp : public DatasetOpKernel {
               << dataset()->output_shapes()[output_index].DebugString() << ", got "
               << avro_result.dense_values[d].shape().DebugString()
               << ").";
+
+          LOG(INFO) << "Output tensor for " << dataset()->dense_keys_[d] << " is " << avro_result.dense_values[d].SummarizeValue(3);
           (*out_tensors)[output_index] = avro_result.dense_values[d];
         }
         for (int d = 0; d < dataset()->sparse_keys_.size(); ++d) {

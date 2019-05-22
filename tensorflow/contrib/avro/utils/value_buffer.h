@@ -126,7 +126,9 @@ private:
 
 // Template specializations for value buffer
 typedef ValueBuffer<bool> BoolValueBuffer;
-typedef ValueBuffer<int> IntValueBuffer;
+typedef ValueBuffer<int64> LongValueBuffer;
+typedef ValueBuffer<int32> IntValueBuffer;
+typedef ValueBuffer<double> DoubleValueBuffer;
 typedef ValueBuffer<float> FloatValueBuffer;
 typedef ValueBuffer<string> StringValueBuffer;
 

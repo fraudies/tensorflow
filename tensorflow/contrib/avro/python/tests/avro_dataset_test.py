@@ -17,113 +17,166 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import logging
-import os
-import shutil
-import tempfile
-
-from avro.io import DatumWriter
-from avro.datafile import DataFileWriter
-
-from tensorflow.core.protobuf import config_pb2
+import numpy as np
 from tensorflow.python.platform import test
 from tensorflow.python.framework import dtypes as tf_types
-from tensorflow.python.framework import test_util
-from tensorflow.python.framework.errors import OpError, OutOfRangeError
 from tensorflow.python.ops import parsing_ops
-from tensorflow.contrib.avro.python.avro_dataset import AvroDatasetV1
-from tensorflow.contrib.avro.python.utils.avro_serialization import \
-  AvroDeserializer, AvroParser, AvroSchemaReader, AvroFileToRecords
+from tensorflow.python.framework import sparse_tensor
+
+from tensorflow.contrib.avro.python.tests import avro_dataset_test_base as avro_test_base
 
 
-class AvroDatasetTest(test_util.TensorFlowTestCase):
+class AvroDatasetPrimitiveTypeTest(avro_test_base.AvroDatasetTestBase):
 
   def __init__(self, *args, **kwargs):
-    super(AvroDatasetTest, self).__init__(*args, **kwargs)
-
-    # Set by setup
-    self.output_dir = ''
-    self.filename = ''
-
-    self.full_schema = """{
-              "doc": "Test schema for avro records.",
+    super(AvroDatasetPrimitiveTypeTest, self).__init__(*args, **kwargs)
+    self.schema = """{
               "type": "record",
               "name": "row",
               "fields": [
-                  {"name": "index", "type": "int"}
+                  {"name": "int_value", "type": "int"}
               ]}"""
-
-    self.test_records = [
-      {"index": 0},
-      {"index": 1},
-      {"index": 2},
-      {"index": 3},
-      {"index": 4}
+    self.actual_records = [
+      {"int_value": 0},
+      {"int_value": 1},
+      {"int_value": 2}
+    ]
+    self.features = {
+      "int_value": parsing_ops.FixedLenFeature([], tf_types.int32, default_value=0)
+    }
+    self.expected_tensors = [
+      {"int_value": np.asarray([0])},
+      {"int_value": np.asarray([1])},
+      {"int_value": np.asarray([2])}
     ]
 
-  @staticmethod
-  def _write_records_to_file(records,
-      filename,
-      writer_schema,
-      codec='deflate'):
-    """
-    Writes the string data into an avro encoded file
 
-    :param records: Records to write
-    :param filename: Filename for the file to be written
-    :param writer_schema: The schema used when writing the records
-    :param codec: Compression codec used to write the avro file
-    """
-    schema = AvroParser(writer_schema).get_schema_object()
-    with open(filename, 'wb') as out:
-      writer = DataFileWriter(
-          out, DatumWriter(), schema, codec=codec)
-      for record in records:
-        writer.append(record)
-      writer.close()
+class AvroDatasetFixedLengthListTest(avro_test_base.AvroDatasetTestBase):
 
-  def setUp(self):
-    log_root = logging.getLogger()
-    log_root.setLevel(logging.INFO)
+  def __init__(self, *args, **kwargs):
+    super(AvroDatasetFixedLengthListTest, self).__init__(*args, **kwargs)
+    self.schema = """{
+              "type": "record",
+              "name": "row",
+              "fields": [
+                  {
+                     "name": "int_list",
+                     "type": {
+                        "type": "array",
+                        "items": "int"
+                     }
+                  }
+              ]}"""
+    self.actual_records = [
+      {"int_list": [0, 1, 2]},
+      {"int_list": [3, 4, 5]},
+      {"int_list": [6, 7, 8]}
+    ]
+    self.features = {
+      "int_list[*]": parsing_ops.FixedLenFeature([3], tf_types.int32)
+    }
+    self.expected_tensors = [
+      {"int_list[*]": np.asarray([0, 1, 2])},
+      {"int_list[*]": np.asarray([3, 4, 5])},
+      {"int_list[*]": np.asarray([6, 7, 8])}
+    ]
 
-    # Write test records into temporary output directory
-    self.output_dir = tempfile.mkdtemp()
-    self.filename = os.path.join(self.output_dir, "test.avro")
+# Not implemented yet
+# class AvroDatasetSparseFeatureTest(avro_test_base.AvroDatasetTestBase):
+#
+#   def __init__(self, *args, **kwargs):
+#     super(AvroDatasetSparseFeatureTest, self).__init__(*args, **kwargs)
+#     self.schema = """{
+#               "type": "record",
+#               "name": "row",
+#               "fields": [
+#                 {
+#                   "name": "sparse_type",
+#                   "type": {
+#                     "type": "array",
+#                     "items": {
+#                        "type": "record",
+#                        "name": "sparse_triplet",
+#                        "fields": [
+#                           {
+#                              "name":"index",
+#                              "type":"long"
+#                           },
+#                           {
+#                              "name":"value",
+#                              "type":"float"
+#                           }
+#                        ]
+#                     }
+#                  }
+#               }
+#         ]}"""
+#     self.actual_records = [
+#       {"sparse_type": [{"index": 0, "value": 5.0}, {"index": 3, "value": 2.0}]},
+#       {"sparse_type": [{"index": 2, "value": 7.0}]},
+#     ]
+#     self.features = {
+#       "sparse_type": parsing_ops.SparseFeature(index_key="index",
+#                                                value_key="value",
+#                                                dtype=tf_types.float32,
+#                                                size=4)
+#     }
+#     self.expected_tensors = [
+#       {"sparse_type": sparse_tensor.SparseTensorValue(
+#           np.asarray([0, 3]), np.asarray([5.0, 2.0]), np.asarray([2]))},
+#       {"sparse_type": sparse_tensor.SparseTensorValue(
+#           np.asarray([2]), np.asarray([7.0]), np.asarray([1]))}
+#     ]
 
-    print("Created dummy data {}", self.filename)
 
-    AvroDatasetTest._write_records_to_file(
-        records=self.test_records,
-        writer_schema=self.full_schema,
-        filename=self.filename)
-
-  def tearDown(self):
-    shutil.rmtree(self.output_dir)
-
-  def test_reading_data(self):
-    logging.info("Running test for reading data")
-    config = config_pb2.ConfigProto(
-        intra_op_parallelism_threads=1, inter_op_parallelism_threads=1)
-
-    with self.test_session(config=config) as sess:
-      features = {
-        'index': parsing_ops.FixedLenFeature([], tf_types.int32, default_value=0)
-      }
-
-      dataset = AvroDatasetV1(filenames=[self.filename], features=features)
-      iterator = dataset.make_initializable_iterator()
-      next_element = iterator.get_next()
-
-      sess.run(iterator.initializer)
-
-      while True:
-        try:
-          record_actual = sess.run(next_element)
-          logging.info(record_actual)
-
-        except OutOfRangeError:
-          logging.info("Done")
-          break
+# Makes only sense with batching
+# class AvroDatasetVariableLengthListTest(avro_test_base.AvroDatasetTestBase):
+#
+#   def __init__(self, *args, **kwargs):
+#     super(AvroDatasetVariableLengthListTest, self).__init__(*args, **kwargs)
+#     self.schema = """{
+#               "type": "record",
+#               "name": "row",
+#               "fields": [
+#                   {
+#                      "name": "int_list",
+#                      "type": {
+#                         "type": "array",
+#                         "items": "int"
+#                      }
+#                   }
+#               ]}"""
+#     self.actual_records = [
+#       {"int_list": [1, 2]},
+#       {"int_list": [3, 4, 5]},
+#       {"int_list": [6]}
+#     ]
+#     self.features = {
+#       'int_list[*]': parsing_ops.VarLenFeature(tf_types.int32)
+#     }
+#     self.expected_tensors = [
+#       {"int_list[*]":
+#          sparse_tensor.SparseTensorValue(
+#              np.asarray([0, 1]),
+#              np.asarray([1, 2]),
+#              np.asarray([1, 2])
+#          )
+#       },
+#       {"int_list[*]":
+#         sparse_tensor.SparseTensorValue(
+#             np.asarray([0, 1, 2]),
+#             np.asarray([3, 4, 5]),
+#             np.asarray([1, 3])
+#         )
+#       },
+#       {"int_list[*]":
+#         sparse_tensor.SparseTensorValue(
+#             np.asarray([0]),
+#             np.asarray([6]),
+#             np.asarray([1, 1])
+#         )
+#       }
+#     ]
 
 
 if __name__ == "__main__":

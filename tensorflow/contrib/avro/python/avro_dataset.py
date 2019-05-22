@@ -15,8 +15,9 @@
 
 # From CSV dataset
 # https://github.com/tensorflow/tensorflow/blob/r1.12/tensorflow/python/data/experimental/ops/readers.py
-# https://github.com/tensorflow/tensorflow/blob/r1.12/tensorflow/python/data/experimental/ops/parsing_ops.py
-# https://github.com/tensorflow/tensorflow/blob/r2.0/tensorflow/python/data/experimental/ops/parsing_ops.py
+
+# Parse example dataset
+# https://github.com/tensorflow/tensorflow/blob/v1.13.1/tensorflow/python/data/experimental/ops/parsing_ops.py
 
 import os
 import functools
@@ -99,7 +100,8 @@ class AvroDatasetV2(DatasetSource):
     super(AvroDatasetV2, self).__init__()
     self._filenames = ops.convert_to_tensor(
         filenames, dtypes.string, name="filenames")
-    self._features = AvroDatasetV2._resolve_empty_dense_shape(features)
+    self._features = AvroDatasetV2._build_keys_for_sparse_features(
+        AvroDatasetV2._resolve_empty_dense_shape(features))
     self._reader_schema = reader_schema
     self._num_parallel_calls = num_parallel_calls
 
@@ -165,16 +167,8 @@ class AvroDatasetV2(DatasetSource):
         sparse_types=self._sparse_types,
         dense_shapes=self._dense_shapes,
         **dataset_ops.flat_structure(self))
+    print("output dataset: {}".format(out_dataset))
 
-    if any([
-      isinstance(feature, parsing_ops.SparseFeature)
-      for _, feature in self._features.items()
-    ]):
-      # pylint: disable=protected-access
-      # pylint: disable=g-long-lambda
-      out_dataset = out_dataset.map(
-          lambda x: parsing_ops._construct_sparse_tensors_for_sparse_features(
-              self._features, x), num_parallel_calls=self._num_parallel_calls)
     return out_dataset
 
   @property
@@ -186,7 +180,31 @@ class AvroDatasetV2(DatasetSource):
     for key in sorted(features.keys()):
       feature = features[key]
       if isinstance(feature, parsing_ops.FixedLenFeature) and feature.shape == []:
-        features[key] = parsing_ops.FixedLenFeature([1], feature.dtype, feature.default_value)
+        features[key] = parsing_ops.FixedLenFeature([1], feature.dtype,
+                                                    feature.default_value)
+    return features
+
+  @staticmethod
+  def _build_keys_for_sparse_features(features):
+    """
+    Builds the fully qualified names for keys of sparse features.
+
+    :param features:  A map of features with keys to TensorFlow features.
+
+    :return: A map of features where for the sparse feature the 'index_key' and the 'value_key' have been expanded
+             properly for the parser in the native code.
+    """
+    if features:
+      # NOTE: We iterate over sorted keys to keep things deterministic.
+      for key in sorted(features.keys()):
+        feature = features[key]
+        if isinstance(feature, parsing_ops.SparseFeature):
+          features[key] = parsing_ops.SparseFeature(
+              index_key=key + '[*].' + feature.index_key,
+              value_key=key + '[*].' + feature.value_key,
+              dtype=feature.dtype,
+              size=feature.size,
+              already_sorted=feature.already_sorted)
     return features
 
 

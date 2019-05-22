@@ -20,7 +20,6 @@ namespace data {
 // AvroParser
 // ------------------------------------------------------------
 AvroParser::AvroParser() {}
-AvroParser::~AvroParser() {}
 Status AvroParser::ResolveValues(std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
   const avro_value_t& value,
   const std::map<string, ValueStoreUniquePtr>& parsed_values) const {
@@ -90,13 +89,11 @@ string AvroParser::LevelToString(int level) const {
 // AvroValueParser
 // ------------------------------------------------------------
 AvroValueParser::AvroValueParser(const string& key) : key_(key) { }
-AvroValueParser::~AvroValueParser() { }
 
 // ------------------------------------------------------------
 // Concrete implementations of avro value parsers
 // ------------------------------------------------------------
 BoolValueParser::BoolValueParser(const string& key) : AvroValueParser(key) { }
-BoolValueParser::~BoolValueParser() { }
 Status BoolValueParser::ParseValue(std::map<string, ValueStoreUniquePtr>* values, const avro_value_t& value) const {
   // TODO: Check compatibility between value and type or before calling this method--let's see where it fits better
   int field_value = 0;
@@ -114,8 +111,22 @@ string BoolValueParser::ToString(int level) const {
   return LevelToString(level) + "|---BoolValue(" + key_ + ")\n";
 }
 
+LongValueParser::LongValueParser(const string& key) : AvroValueParser(key) { }
+Status LongValueParser::ParseValue(std::map<string, ValueStoreUniquePtr>* values, const avro_value_t& value) const {
+  long field_value = 0;
+  if (avro_value_get_long(&value, &field_value) != 0) {
+    return Status(errors::InvalidArgument("For '", key_, "' could not extract int. Error: ",
+      avro_strerror()));
+  }
+  // Assume the key exists and cast is possible
+  (*reinterpret_cast<LongValueBuffer*>((*values)[key_].get())).Add(field_value);
+  return Status::OK();
+}
+string LongValueParser::ToString(int level) const {
+  return LevelToString(level) + "|---LongValue(" + key_ + ")\n";
+}
+
 IntValueParser::IntValueParser(const string& key) : AvroValueParser(key) { }
-IntValueParser::~IntValueParser() { }
 Status IntValueParser::ParseValue(std::map<string, ValueStoreUniquePtr>* values, const avro_value_t& value) const {
   int field_value = 0;
   if (avro_value_get_int(&value, &field_value) != 0) {
@@ -123,12 +134,8 @@ Status IntValueParser::ParseValue(std::map<string, ValueStoreUniquePtr>* values,
       avro_strerror()));
   }
 
-  LOG(INFO) << "Got field value: " << field_value;
-
   // Assume the key exists and cast is possible
   (*reinterpret_cast<IntValueBuffer*>((*values)[key_].get())).Add(field_value);
-
-  LOG(INFO) << "Inserted field value";
 
   return Status::OK();
 }
@@ -136,8 +143,37 @@ string IntValueParser::ToString(int level) const {
   return LevelToString(level) + "|---IntValue(" + key_ + ")\n";
 }
 
+DoubleValueParser::DoubleValueParser(const string& key) : AvroValueParser(key) { }
+Status DoubleValueParser::ParseValue(std::map<string, ValueStoreUniquePtr>* values, const avro_value_t& value) const {
+  double field_value = 0;
+  if (avro_value_get_double(&value, &field_value) != 0) {
+    return Status(errors::InvalidArgument("For '", key_, "' could not extract int. Error: ",
+      avro_strerror()));
+  }
+  // Assume the key exists and cast is possible
+  (*reinterpret_cast<DoubleValueBuffer*>((*values)[key_].get())).Add(field_value);
+  return Status::OK();
+}
+string DoubleValueParser::ToString(int level) const {
+  return LevelToString(level) + "|---DoubleValue(" + key_ + ")\n";
+}
+
+FloatValueParser::FloatValueParser(const string& key) : AvroValueParser(key) { }
+Status FloatValueParser::ParseValue(std::map<string, ValueStoreUniquePtr>* values, const avro_value_t& value) const {
+  float field_value = 0;
+  if (avro_value_get_float(&value, &field_value) != 0) {
+    return Status(errors::InvalidArgument("For '", key_, "' could not extract int. Error: ",
+      avro_strerror()));
+  }
+  // Assume the key exists and cast is possible
+  (*reinterpret_cast<FloatValueBuffer*>((*values)[key_].get())).Add(field_value);
+  return Status::OK();
+}
+string FloatValueParser::ToString(int level) const {
+  return LevelToString(level) + "|---FloatValue(" + key_ + ")\n";
+}
+
 StringValueParser::StringValueParser(const string& key) : AvroValueParser(key) { }
-StringValueParser::~StringValueParser() { }
 Status StringValueParser::ParseValue(std::map<string, ValueStoreUniquePtr>* values, const avro_value_t& value) const {
   const char* field_value = nullptr;  // just a pointer to the data not a copy, no need to free this
   size_t field_size = 0;
@@ -231,7 +267,6 @@ string ArrayAllParser::ToString(int level) const {
 }
 
 ArrayIndexParser::ArrayIndexParser(size_t index) : index_(index) { }
-ArrayIndexParser::~ArrayIndexParser() { }
 Status ArrayIndexParser::ResolveValues(
   std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
   const avro_value_t& value,
@@ -279,7 +314,6 @@ string ArrayIndexParser::ToString(int level) const {
 
 ArrayFilterParser::ArrayFilterParser(const string& lhs, const string& rhs, ArrayFilterType type)
   : lhs_(lhs), rhs_(rhs), type_(type) { }
-ArrayFilterParser::~ArrayFilterParser() { }
 Status ArrayFilterParser::ResolveValues(
   std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
   const avro_value_t& value,
@@ -338,7 +372,6 @@ string ArrayFilterParser::ToString(int level) const {
 
 
 MapKeyParser::MapKeyParser(const string& key) : key_(key) { }
-MapKeyParser::~MapKeyParser() { }
 Status MapKeyParser::ResolveValues(
   std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
   const avro_value_t& value,
@@ -364,7 +397,6 @@ string MapKeyParser::ToString(int level) const {
 
 
 AttributeParser::AttributeParser(const string& name) : name_(name) { }
-AttributeParser::~AttributeParser() { }
 Status AttributeParser::ResolveValues(
   std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
   const avro_value_t& value,
@@ -389,7 +421,6 @@ string AttributeParser::ToString(int level) const {
 
 
 NamespaceParser::NamespaceParser(const string& name) : name_(name) { }
-NamespaceParser::~NamespaceParser() { }
 Status NamespaceParser::ResolveValues(
   std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
   const avro_value_t& value,

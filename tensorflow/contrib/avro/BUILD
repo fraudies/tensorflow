@@ -125,6 +125,13 @@ tf_custom_op_py_library(
     visibility = ["//visibility:public"],
 )
 
+py_library(
+    name = "avro_test",
+    srcs = ["python/tests/avro_dataset_test_base.py"],
+    deps = [],
+    srcs_version = "PY2AND3",
+)
+
 tf_custom_op_library(
     name = "python/_avro_record_dataset.so",
     srcs = ["ops/avro_record_dataset.cc"],
@@ -235,6 +242,7 @@ py_test(
     srcs = ["python/tests/avro_dataset_test.py"],
     deps = [
         ":avro",
+        ":avro_test",
         "//tensorflow/contrib/avro/python/utils:avro_utils",
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:framework_ops",

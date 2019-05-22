@@ -67,6 +67,9 @@ Status AvroReader::Read(AvroResult* result) {
       &(*result).sparse_values[i_sparse],
       &(*result).sparse_indices[i_sparse]));
 
+    LOG(INFO) << "Sparse values: " << (*result).sparse_values[i_sparse].SummarizeValue(5);
+    LOG(INFO) << "Sparse indices: " << (*result).sparse_indices[i_sparse].SummarizeValue(5);
+
     TensorShape size_shape;
     size_shape.AddDim(value_shape.dims());
     (*result).sparse_shapes[i_sparse] = Tensor(allocator_, DT_INT64, size_shape);
@@ -90,8 +93,12 @@ Status AvroReader::Read(AvroResult* result) {
 
     LOG(INFO) << "Creating dense tensor for '" << dense.feature_name << "' with " << resolved_shape << " and user shape " << dense.shape;
 
+    LOG(INFO) << (*value_store).ToString(10);
+
     TF_RETURN_IF_ERROR((*value_store).MakeDense(&(*result).dense_values[i_dense],
       resolved_shape, dense.default_value));
+
+    LOG(INFO) << "Dense tensor " << (*result).dense_values[i_dense].SummarizeValue(3);
   }
 
   return Status::OK();

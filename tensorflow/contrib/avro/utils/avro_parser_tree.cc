@@ -171,7 +171,6 @@ Status AvroParserTree::Build(AvroParser* parent, const std::vector<PrefixTreeNod
     AvroParserUniquePtr avro_parser(nullptr);
 
     // Create a parser and add it to the parent
-    LOG(INFO) << "Create parser for " << (*child).GetName('.');
     TF_RETURN_IF_ERROR(CreateAvroParser(avro_parser, (*child).GetPrefix()));
 
     // Build a parser for the terminal node and attach it
@@ -190,6 +189,7 @@ Status AvroParserTree::Build(AvroParser* parent, const std::vector<PrefixTreeNod
 
     // Build a parser for all children of this non-terminal node
     } else {
+      LOG(INFO) << "Create parser for " << (*child).GetName('.');
       TF_RETURN_IF_ERROR(Build(avro_parser.get(), (*child).GetChildren()));
     }
 
@@ -277,34 +277,38 @@ Status AvroParserTree::CreateAvroParser(AvroParserUniquePtr& avro_parser,
 
 Status AvroParserTree::CreateValueParser(AvroParserUniquePtr& value_parser,
   const string& name, DataType data_type) const {
-  string user_name;
-  TF_RETURN_IF_ERROR(ConvertToUserName(&user_name, name));
+
+  string user_defined_name;
+  TF_RETURN_IF_ERROR(ConvertToUserName(&user_defined_name, name));
 
   switch (data_type) {
     case DT_BOOL:
-      value_parser.reset(new BoolValueParser(user_name));
+      value_parser.reset(new BoolValueParser(user_defined_name));
       break;
     case DT_INT32:
-      value_parser.reset(new IntValueParser(user_name));
+      value_parser.reset(new IntValueParser(user_defined_name));
       break;
     case DT_INT64:
-      return Status(errors::Unimplemented("Long value parser not supported yet"));
+      value_parser.reset(new LongValueParser(user_defined_name));
+      break;
     case DT_FLOAT:
-      return Status(errors::Unimplemented("Float value parser not supported yet"));
+      value_parser.reset(new FloatValueParser(user_defined_name));
+      break;
     case DT_DOUBLE:
-      return Status(errors::Unimplemented("Double value parser not supported yet"));
+      value_parser.reset(new DoubleValueParser(user_defined_name));
+      break;
     case DT_STRING:
-      value_parser.reset(new StringValueParser(user_name));
+      value_parser.reset(new StringValueParser(user_defined_name));
       break;
     default:
       return Status(errors::Unimplemented("Unable to build avro value parser for name '",
-                user_name, "', because data type '", DataTypeString(data_type),
+                user_defined_name, "', because data type '", DataTypeString(data_type),
                 "' is not supported!"));
   }
   return Status::OK();
 }
 
-Status AvroParserTree::ConvertToUserName(string* user_name, const string& internal_name) const {
+Status AvroParserTree::ConvertToUserName(string* user_defined_name, const string& internal_name) const {
   // Remove the default namespace, if we added it
   if (IsDefaultNamespace()) {
     size_t pos = internal_name.find(kDefaultNamespace);
@@ -312,10 +316,10 @@ Status AvroParserTree::ConvertToUserName(string* user_name, const string& intern
       return Status(errors::InvalidArgument("Unable to find the default namespace '",
         kDefaultNamespace, "' at the start of '", internal_name));
     }
-    *user_name = internal_name.substr(pos+kDefaultNamespace.size()+1, string::npos);
+    *user_defined_name = internal_name.substr(pos+kDefaultNamespace.size()+1, string::npos);
   }
   // Remove the . before the [ if we there are any
-  RE2::GlobalReplace(user_name, RE2(".\\["), "[");
+  RE2::GlobalReplace(user_defined_name, RE2(".\\["), "[");
 
   return Status::OK();
 }
@@ -349,33 +353,44 @@ inline bool AvroParserTree::IsStringConstant(string* constant, const string& inf
 }
 
 Status AvroParserTree::InitValueBuffers(std::map<string, ValueStoreUniquePtr>* key_to_value) {
+  // Remove all existing entries, because we'll create new ones
+  (*key_to_value).clear();
+
+  // For all keys and their data types add a buffer
   for (const auto& key_and_type : keys_and_types_) {
     const string& key = key_and_type.first;
-    string user_name;
-    TF_RETURN_IF_ERROR(ConvertToUserName(&user_name, key));
+    string user_defined_name;
+    TF_RETURN_IF_ERROR(ConvertToUserName(&user_defined_name, key));
 
     DataType data_type = key_and_type.second;
     switch (data_type) {
       // Fill in the ValueBuffer
       case DT_BOOL:
         (*key_to_value).insert(
-          std::make_pair(user_name, std::unique_ptr<BoolValueBuffer>(new BoolValueBuffer())));
+          std::make_pair(user_defined_name, std::unique_ptr<BoolValueBuffer>(new BoolValueBuffer())));
         break;
       case DT_INT32:
         (*key_to_value).insert(
-          std::make_pair(user_name, std::unique_ptr<IntValueBuffer>(new IntValueBuffer())));
+          std::make_pair(user_defined_name, std::unique_ptr<IntValueBuffer>(new IntValueBuffer())));
         break;
       case DT_INT64:
-        return Status(errors::Unimplemented("Long value buffer not supported yet"));
+        (*key_to_value).insert(
+          std::make_pair(user_defined_name, std::unique_ptr<LongValueBuffer>(new LongValueBuffer())));
+        break;
       case DT_FLOAT:
-        return Status(errors::Unimplemented("Float value buffer not supported yet"));
+        (*key_to_value).insert(
+          std::make_pair(user_defined_name, std::unique_ptr<FloatValueBuffer>(new FloatValueBuffer())));
+        break;
       case DT_DOUBLE:
-        return Status(errors::Unimplemented("Double value buffer not supported yet"));
+        (*key_to_value).insert(
+          std::make_pair(user_defined_name, std::unique_ptr<DoubleValueBuffer>(new DoubleValueBuffer())));
+        break;
       case DT_STRING:
         (*key_to_value).insert(
-          std::make_pair(user_name, std::unique_ptr<StringValueBuffer>(new StringValueBuffer())));
+          std::make_pair(user_defined_name, std::unique_ptr<StringValueBuffer>(new StringValueBuffer())));
+        break;
       default:
-        return Status(errors::Unimplemented("Unable to build value buffer for key '", user_name,
+        return Status(errors::Unimplemented("Unable to build value buffer for key '", user_defined_name,
           "', because data type '", DataTypeString(data_type), "' is not supported!"));
     }
   }
