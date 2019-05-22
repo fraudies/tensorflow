@@ -97,10 +97,9 @@ class AvroDatasetV2(DatasetSource):
 
     """
     super(AvroDatasetV2, self).__init__()
-
     self._filenames = ops.convert_to_tensor(
         filenames, dtypes.string, name="filenames")
-    self._features = features
+    self._features = AvroDatasetV2._resolve_empty_dense_shape(features)
     self._reader_schema = reader_schema
     self._num_parallel_calls = num_parallel_calls
 
@@ -123,6 +122,7 @@ class AvroDatasetV2(DatasetSource):
     self._dense_defaults = dense_defaults_vec
     self._dense_shapes = dense_shapes
     self._dense_types = dense_types
+
     dense_output_shapes = dense_shape_as_shape
     sparse_output_shapes = [
       [None]
@@ -180,6 +180,14 @@ class AvroDatasetV2(DatasetSource):
   @property
   def _element_structure(self):
     return self._structure
+
+  @staticmethod
+  def _resolve_empty_dense_shape(features):
+    for key in sorted(features.keys()):
+      feature = features[key]
+      if isinstance(feature, parsing_ops.FixedLenFeature) and feature.shape == []:
+        features[key] = parsing_ops.FixedLenFeature([1], feature.dtype, feature.default_value)
+    return features
 
 
 # TODO(fraudies): Fixme @tf_export(v1=["contrib.avro.AvroDataset"])
