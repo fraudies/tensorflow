@@ -21,8 +21,7 @@ cc_library(
             "utils/value_buffer.h",
             "utils/avro_parser.h",
             "utils/avro_parser_tree.h",
-            "utils/avro_reader.h",
-            "utils/avro_attr_parser.h"],
+            "utils/avro_reader.h"],
     deps = [
         "//third_party/avro",
         "@com_googlesource_code_re2//:re2",
@@ -36,8 +35,7 @@ cc_library(
             "utils/value_buffer.cc",
             "utils/avro_parser.cc",
             "utils/avro_parser_tree.cc",
-            "utils/avro_reader.cc",
-            "utils/avro_attr_parser.cc"],
+            "utils/avro_reader.cc"],
     deps = [
         ":avro_utils_api",
         "//tensorflow/core:protos_all_cc",
@@ -155,8 +153,7 @@ tf_custom_op_library(
             "utils/value_buffer.cc",
             "utils/avro_parser.cc",
             "utils/avro_parser_tree.cc",
-            "utils/avro_reader.cc",
-            "utils/avro_attr_parser.cc"],
+            "utils/avro_reader.cc"],
     deps = [
         ":avro_utils_api", # Note, can't use avro utils because of TF core dependency
     ],

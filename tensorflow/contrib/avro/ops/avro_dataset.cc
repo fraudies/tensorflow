@@ -22,7 +22,6 @@ limitations under the License.
 #include "tensorflow/core/lib/io/inputbuffer.h"
 
 #include "tensorflow/contrib/avro/utils/avro_reader.h"
-#include "tensorflow/contrib/avro/utils/avro_attr_parser.h"
 
 // As boiler plate I used
 // https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/framework/dataset.h  DatasetBase
@@ -57,6 +56,24 @@ namespace data {
 
 using ::tensorflow::shape_inference::ShapeHandle;
 
+// TODO(fraudies): Find a better place for this method
+Status CheckValidType(const DataType& dtype) {
+  switch (dtype) {
+    case DT_INT32:
+    case DT_INT64:
+    case DT_FLOAT:
+    case DT_DOUBLE:
+    case DT_STRING:
+    case DT_BOOL:
+      return Status::OK();
+    default:
+      return errors::InvalidArgument("Received invalid input dtype: ",
+                                     DataTypeString(dtype),
+                                     ". Valid types are float, double, ",
+                                     "int64, int32, string, bool.");
+  }
+}
+
 REGISTER_OP("AvroDataset")
     .Input("filenames: string")
     .Input("dense_defaults: Tdense")
@@ -73,6 +90,32 @@ REGISTER_OP("AvroDataset")
                                               // sparse_keys combined) here.
     .SetIsStateful()
     .SetShapeFn([](shape_inference::InferenceContext* c) {
+      int64 num_sparse;
+      int64 num_dense;
+      std::vector<DataType> sparse_types;
+      std::vector<DataType> dense_types;
+      std::vector<PartialTensorShape> dense_shapes;
+
+      TF_RETURN_IF_ERROR(c->GetAttr("sparse_types", &sparse_types));
+      TF_RETURN_IF_ERROR(c->GetAttr("Tdense", &dense_types));
+      TF_RETURN_IF_ERROR(c->GetAttr("dense_shapes", &dense_shapes));
+
+      num_sparse = sparse_types.size();
+      num_dense = dense_types.size();
+
+      // Add input checking
+      if (static_cast<size_t>(num_dense) != dense_shapes.size()) {
+        return errors::InvalidArgument("len(dense_keys) != len(dense_shapes)");
+      }
+      if (num_dense > std::numeric_limits<int32>::max()) {
+        return errors::InvalidArgument("num_dense_ too large");
+      }
+      for (const DataType& type : dense_types) {
+        TF_RETURN_IF_ERROR(CheckValidType(type));
+      }
+      for (const DataType& type : sparse_types) {
+        TF_RETURN_IF_ERROR(CheckValidType(type));
+      }
 
       // Log schema if the user provided one at op kernel construction
       string schema;
@@ -85,35 +128,6 @@ REGISTER_OP("AvroDataset")
 
       return shape_inference::ScalarShape(c);
     });
-
-/*
-    .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
-      ParseAvroAttrs attrs;
-      TF_RETURN_IF_ERROR(attrs.Init(c));
-
-      // Output sparse_indices, sparse_values, and sparse_shapes.
-      int output_idx = 0;
-      for (int i = 0; i < attrs.num_sparse; ++i) {
-        c->set_output(output_idx++, c->Matrix(c->UnknownDim(), 2));
-      }
-      for (int i = 0; i < attrs.num_sparse; ++i) {
-        c->set_output(output_idx++, c->Vector(c->UnknownDim()));
-      }
-      for (int i = 0; i < attrs.num_sparse; ++i) {
-        c->set_output(output_idx++, c->Vector(2));
-      }
-
-      // Output dense_shapes.
-      for (int i = 0; i < attrs.num_dense; ++i) {
-        ShapeHandle dense;
-        TF_RETURN_IF_ERROR(
-            c->MakeShapeFromPartialTensorShape(attrs.dense_shapes[i], &dense));
-        c->set_output(output_idx++, dense);
-      }
-
-      return Status::OK();
-    });
-*/
 
 
 class AvroDatasetOp : public DatasetOpKernel {
