@@ -237,6 +237,20 @@ Status ShapeBuilder::GetIndices(Tensor* indices) const {
   return Status::OK();
 }
 
+string ShapeBuilder::ToString() const {
+  std::stringstream ss;
+  for (size_t info : element_info_) {
+    if (info == kBeginMark) {
+      ss << "Begin, ";
+    } else if (info == kFinishMark) {
+      ss << "Finish, ";
+    } else {
+      ss << info << ", ";
+    }
+  }
+  return ss.str();
+}
+
 std::vector<size_t> ShapeBuilder::CumulativeProductOfDimensionsWithOneAtEnd(
   const TensorShape& shape) const {
 

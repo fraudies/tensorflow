@@ -47,29 +47,7 @@ Status AvroParserTree::ParseValue(std::map<string, ValueStoreUniquePtr>* key_to_
   // will also be used to get the data type for the node
   TF_RETURN_IF_ERROR(InitValueBuffers(key_to_value));
 
-  // Note, avro_value_t* will be valid as long as value is
-  std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> > parser_for_value;
-  parser_for_value.push(std::make_pair(root_, value));
-
-  // TODO(fraudies): Have threads working on the queue as performance optimization
-  // Note, only parallelize all expression parsing between two filters in the queue
-  while (!parser_for_value.empty()) {
-
-    auto current = parser_for_value.front();
-    AvroParserSharedPtr p = current.first;
-    AvroValueSharedPtr v = current.second;
-    parser_for_value.pop();
-
-    if ((*p).IsTerminal()) {
-      TF_RETURN_IF_ERROR((*p).ParseValue(key_to_value, *v));
-
-    //} else if ((*p).UsesParsedValues()) {  // This is the boundary for threading
-    //  TF_RETURN_IF_ERROR((*p).ResolveValues(&parser_for_value, *v, *values));
-
-    } else {
-      TF_RETURN_IF_ERROR((*p).ResolveValues(&parser_for_value, *v, *key_to_value));
-    }
-  }
+  TF_RETURN_IF_ERROR((*root_).Parse(key_to_value, *value));
 
   return Status::OK();
 }

@@ -19,23 +19,13 @@ namespace data {
 // ------------------------------------------------------------
 // AvroParser
 // ------------------------------------------------------------
-AvroParser::AvroParser() {}
-Status AvroParser::ResolveValues(std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
-  const avro_value_t& value,
-  const std::map<string, ValueStoreUniquePtr>& parsed_values) const {
-  return Status(errors::Unimplemented("Not implemented for avro parser."));
-}
-
-Status AvroParser::ParseValue(std::map<string, ValueStoreUniquePtr>* values,
-  const avro_value_t& value) const {
-  return Status(errors::Unimplemented("Not implemented for avro parser."));
-}
+AvroParser::AvroParser(const string& key) : key_(key) { }
 
 const std::vector<AvroParserSharedPtr>& AvroParser::GetChildren() const {
   return children_;
 }
 
-const std::vector<AvroValueParserSharedPtr>& AvroParser::GetFinalDescendents() const {
+const std::vector<AvroParserSharedPtr>& AvroParser::GetFinalDescendents() const {
   // If this parser is terminal there are no final descendents
   if (IsTerminal()) {
     return final_descendents_;
@@ -50,12 +40,11 @@ const std::vector<AvroValueParserSharedPtr>& AvroParser::GetFinalDescendents() c
     }
     // Helper variable for children of subsequent nodes
     while (!current.empty()) {
-      const std::vector<AvroParserSharedPtr>& children = (*current.front()).GetChildren();
-      if (children.size() == 0) {
-        // TODO(fraudies): Maybe we can design this better avoiding this down-cast
-        // Here we assume each child is a value parser
-        final_descendents_.push_back(std::dynamic_pointer_cast<AvroValueParser>(current.front()));
+      if ((*current.front()).IsTerminal()) {
+        // TODO(fraudies): Improve design to avoid cast; at least check outcome of cast
+        final_descendents_.push_back(current.front());
       } else {
+        const std::vector<AvroParserSharedPtr>& children = (*current.front()).GetChildren();
         for (const auto& child : children) {
           current.push(child);
         }
@@ -84,17 +73,13 @@ string AvroParser::LevelToString(int level) const {
   return ss.str();
 }
 
-
-// ------------------------------------------------------------
-// AvroValueParser
-// ------------------------------------------------------------
-AvroValueParser::AvroValueParser(const string& key) : key_(key) { }
-
 // ------------------------------------------------------------
 // Concrete implementations of avro value parsers
 // ------------------------------------------------------------
-BoolValueParser::BoolValueParser(const string& key) : AvroValueParser(key) { }
-Status BoolValueParser::ParseValue(std::map<string, ValueStoreUniquePtr>* values, const avro_value_t& value) const {
+BoolValueParser::BoolValueParser(const string& key) : AvroParser(key) { }
+Status BoolValueParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
+  const avro_value_t& value) const {
+
   // TODO: Check compatibility between value and type or before calling this method--let's see where it fits better
   int field_value = 0;
   if (avro_value_get_boolean(&value, &field_value) != 0) {
@@ -111,8 +96,10 @@ string BoolValueParser::ToString(int level) const {
   return LevelToString(level) + "|---BoolValue(" + key_ + ")\n";
 }
 
-LongValueParser::LongValueParser(const string& key) : AvroValueParser(key) { }
-Status LongValueParser::ParseValue(std::map<string, ValueStoreUniquePtr>* values, const avro_value_t& value) const {
+LongValueParser::LongValueParser(const string& key) : AvroParser(key) { }
+Status LongValueParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
+  const avro_value_t& value) const {
+
   long field_value = 0;
   if (avro_value_get_long(&value, &field_value) != 0) {
     return Status(errors::InvalidArgument("For '", key_, "' could not extract int. Error: ",
@@ -126,25 +113,27 @@ string LongValueParser::ToString(int level) const {
   return LevelToString(level) + "|---LongValue(" + key_ + ")\n";
 }
 
-IntValueParser::IntValueParser(const string& key) : AvroValueParser(key) { }
-Status IntValueParser::ParseValue(std::map<string, ValueStoreUniquePtr>* values, const avro_value_t& value) const {
+IntValueParser::IntValueParser(const string& key) : AvroParser(key) { }
+Status IntValueParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
+  const avro_value_t& value) const {
+
   int field_value = 0;
   if (avro_value_get_int(&value, &field_value) != 0) {
     return Status(errors::InvalidArgument("For '", key_, "' could not extract int. Error: ",
       avro_strerror()));
   }
-
   // Assume the key exists and cast is possible
   (*reinterpret_cast<IntValueBuffer*>((*values)[key_].get())).Add(field_value);
-
   return Status::OK();
 }
 string IntValueParser::ToString(int level) const {
   return LevelToString(level) + "|---IntValue(" + key_ + ")\n";
 }
 
-DoubleValueParser::DoubleValueParser(const string& key) : AvroValueParser(key) { }
-Status DoubleValueParser::ParseValue(std::map<string, ValueStoreUniquePtr>* values, const avro_value_t& value) const {
+DoubleValueParser::DoubleValueParser(const string& key) : AvroParser(key) { }
+Status DoubleValueParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
+  const avro_value_t& value) const {
+
   double field_value = 0;
   if (avro_value_get_double(&value, &field_value) != 0) {
     return Status(errors::InvalidArgument("For '", key_, "' could not extract int. Error: ",
@@ -158,8 +147,10 @@ string DoubleValueParser::ToString(int level) const {
   return LevelToString(level) + "|---DoubleValue(" + key_ + ")\n";
 }
 
-FloatValueParser::FloatValueParser(const string& key) : AvroValueParser(key) { }
-Status FloatValueParser::ParseValue(std::map<string, ValueStoreUniquePtr>* values, const avro_value_t& value) const {
+FloatValueParser::FloatValueParser(const string& key) : AvroParser(key) { }
+Status FloatValueParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
+  const avro_value_t& value) const {
+
   float field_value = 0;
   if (avro_value_get_float(&value, &field_value) != 0) {
     return Status(errors::InvalidArgument("For '", key_, "' could not extract int. Error: ",
@@ -173,8 +164,10 @@ string FloatValueParser::ToString(int level) const {
   return LevelToString(level) + "|---FloatValue(" + key_ + ")\n";
 }
 
-StringValueParser::StringValueParser(const string& key) : AvroValueParser(key) { }
-Status StringValueParser::ParseValue(std::map<string, ValueStoreUniquePtr>* values, const avro_value_t& value) const {
+StringValueParser::StringValueParser(const string& key) : AvroParser(key) { }
+Status StringValueParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
+  const avro_value_t& value) const {
+
   const char* field_value = nullptr;  // just a pointer to the data not a copy, no need to free this
   size_t field_size = 0;
   if (avro_value_get_string(&value, &field_value, &field_size) != 0) {
@@ -190,56 +183,23 @@ string StringValueParser::ToString(int level) const {
   return LevelToString(level) + "|---StringValue(" + key_ + ")\n";
 }
 
-ArrayBeginMarkerParser::ArrayBeginMarkerParser(const std::vector<AvroValueParserSharedPtr>& final_descendents)
-  : AvroValueParser("BeginMarker"), final_descendents_(final_descendents) { }
-Status ArrayBeginMarkerParser::ParseValue(std::map<string, ValueStoreUniquePtr>* values,
-    const avro_value_t& value) const {
-
-  for (const AvroValueParserSharedPtr& value_parser : final_descendents_) {
-    // Assumes the key exists in the map
-    (*(*values)[(*value_parser).GetKey()]).BeginMark();
-  }
-
-  return Status::OK();
-}
-string ArrayBeginMarkerParser::ToString(int level) const {
-  return LevelToString(level) + "|---ArrayBeginMarkerParser\n";
-}
-
-ArrayFinishMarkerParser::ArrayFinishMarkerParser(const std::vector<AvroValueParserSharedPtr>& final_descendents)
-  : AvroValueParser("FinishMarker"), final_descendents_(final_descendents) { }
-Status ArrayFinishMarkerParser::ParseValue(std::map<string, ValueStoreUniquePtr>* values,
-    const avro_value_t& value) const {
-
-  for (const AvroValueParserSharedPtr& value_parser : final_descendents_) {
-    // Assumes the key exists in the map
-    (*(*values)[(*value_parser).GetKey()]).FinishMark();
-  }
-
-  return Status::OK();
-}
-string ArrayFinishMarkerParser::ToString(int level) const {
-  return LevelToString(level) + "|---ArrayFinishMarkerParser\n";
-}
-
 // ------------------------------------------------------------
 // Concrete implementations of value parsers
 // ------------------------------------------------------------
-Status ArrayAllParser::ResolveValues(
-  std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
-  const avro_value_t& value,
-  const std::map<string, ValueStoreUniquePtr>& parsed_values) const {
+ArrayAllParser::ArrayAllParser() : AvroParser("") { }
+Status ArrayAllParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
+  const avro_value_t& value) const {
 
   size_t n_elements = 0;
   avro_value_get_size(&value, &n_elements);
   const std::vector<AvroParserSharedPtr>& children(GetChildren());
-  const std::vector<AvroValueParserSharedPtr>& final_descendents(GetFinalDescendents());
+  const std::vector<AvroParserSharedPtr>& final_descendents(GetFinalDescendents());
 
   // Add a begin mark to all value buffers under this array
-  AvroValueSharedPtr begin_value(new avro_value_t);
-  (*values).push(
-    std::make_pair(
-      std::make_shared<ArrayBeginMarkerParser>(final_descendents), begin_value));
+  for (const AvroParserSharedPtr& value_parser : final_descendents) {
+    // Assumes the key exists in the map
+    (*(*values)[(*value_parser).GetKey()]).BeginMark();
+  }
 
   // Resolve all the values from the array
   for (size_t i_elements = 0; i_elements < n_elements; ++i_elements) {
@@ -247,15 +207,15 @@ Status ArrayAllParser::ResolveValues(
     avro_value_get_by_index(&value, i_elements, next_value.get(), NULL);
     // For all children
     for (const AvroParserSharedPtr& child : children) {
-      (*values).push(std::make_pair(child, next_value));
+      TF_RETURN_IF_ERROR((*child).Parse(values, *next_value));
     }
   }
 
   // Add a finish mark to all value buffers under this array
-  AvroValueSharedPtr finish_value(new avro_value_t);
-  (*values).push(
-    std::make_pair(
-      std::make_shared<ArrayFinishMarkerParser>(final_descendents), finish_value));
+  for (const AvroParserSharedPtr& value_parser : final_descendents) {
+    // Assumes the key exists in the map
+    (*(*values)[(*value_parser).GetKey()]).FinishMark();
+  }
 
   return Status::OK();
 }
@@ -266,11 +226,9 @@ string ArrayAllParser::ToString(int level) const {
   return ss.str();
 }
 
-ArrayIndexParser::ArrayIndexParser(size_t index) : index_(index) { }
-Status ArrayIndexParser::ResolveValues(
-  std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
-  const avro_value_t& value,
-  const std::map<string, ValueStoreUniquePtr>& parsed_values) const {
+ArrayIndexParser::ArrayIndexParser(size_t index) : AvroParser(""), index_(index) { }
+Status ArrayIndexParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
+  const avro_value_t& value) const {
 
   // Check for valid index
   size_t n_elements = 0;
@@ -281,27 +239,27 @@ Status ArrayIndexParser::ResolveValues(
   }
 
   const std::vector<AvroParserSharedPtr>& children(GetChildren());
-  const std::vector<AvroValueParserSharedPtr>& final_descendents(GetFinalDescendents());
+  const std::vector<AvroParserSharedPtr>& final_descendents(GetFinalDescendents());
 
   // Add a begin mark to all value buffers under this array
-  AvroValueSharedPtr begin_value(new avro_value_t);
-  (*values).push(
-    std::make_pair(
-      std::make_shared<ArrayBeginMarkerParser>(final_descendents), begin_value));
+  for (const AvroParserSharedPtr& value_parser : final_descendents) {
+    // Assumes the key exists in the map
+    (*(*values)[(*value_parser).GetKey()]).BeginMark();
+  }
 
   AvroValueSharedPtr next_value(new avro_value_t);
   avro_value_get_by_index(&value, index_, next_value.get(), NULL);
 
   // For all children same next value
   for (const AvroParserSharedPtr& child : children) {
-    (*values).push(std::make_pair(child, next_value));
+    TF_RETURN_IF_ERROR((*child).Parse(values, *next_value));
   }
 
   // Add a finish mark to all value buffers under this array
-  AvroValueSharedPtr finish_value(new avro_value_t);
-  (*values).push(
-    std::make_pair(
-      std::make_shared<ArrayFinishMarkerParser>(final_descendents), finish_value));
+  for (const AvroParserSharedPtr& value_parser : final_descendents) {
+    // Assumes the key exists in the map
+    (*(*values)[(*value_parser).GetKey()]).FinishMark();
+  }
 
   return Status::OK();
 }
@@ -313,23 +271,21 @@ string ArrayIndexParser::ToString(int level) const {
 }
 
 ArrayFilterParser::ArrayFilterParser(const string& lhs, const string& rhs, ArrayFilterType type)
-  : lhs_(lhs), rhs_(rhs), type_(type) { }
-Status ArrayFilterParser::ResolveValues(
-  std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
-  const avro_value_t& value,
-  const std::map<string, ValueStoreUniquePtr>& parsed_values) const {
+  : AvroParser(""), lhs_(lhs), rhs_(rhs), type_(type) { }
+Status ArrayFilterParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
+  const avro_value_t& value) const {
 
   if (type_ != kRhsIsConstant && type_ != kRhsIsValue) {
     return Status(errors::Internal("Unknown constant type ", type_));
   }
 
-  const std::vector<AvroValueParserSharedPtr>& final_descendents = GetFinalDescendents();
+  const std::vector<AvroParserSharedPtr>& final_descendents = GetFinalDescendents();
 
   // Add a begin mark to all value buffers under this array
-  AvroValueSharedPtr begin_value(new avro_value_t);
-  (*values).push(
-    std::make_pair(
-      std::make_shared<ArrayBeginMarkerParser>(final_descendents), begin_value));
+  for (const AvroParserSharedPtr& value_parser : final_descendents) {
+    // Assumes the key exists in the map
+    (*(*values)[(*value_parser).GetKey()]).BeginMark();
+  }
 
   size_t n_elements = 0;
   avro_value_get_size(&value, &n_elements);
@@ -340,25 +296,25 @@ Status ArrayFilterParser::ResolveValues(
 
     size_t reverse_index = n_elements - i_elements;
 
-    if ((type_ == kRhsIsConstant)
-          && (*parsed_values.at(lhs_)).ValueMatchesAtReverseIndex(rhs_, reverse_index)
-      || (type_ == kRhsIsValue)
-          && (*parsed_values.at(lhs_)).ValuesMatchAtReverseIndex(*parsed_values.at(rhs_), reverse_index)) {
+    if ( ((type_ == kRhsIsConstant)
+           && (*(*values).at(lhs_)).ValueMatchesAtReverseIndex(rhs_, reverse_index))
+      || ((type_ == kRhsIsValue)
+          && (*(*values).at(lhs_)).ValuesMatchAtReverseIndex(*(*values).at(rhs_), reverse_index)) ) {
 
       AvroValueSharedPtr next_value(new avro_value_t);
       avro_value_get_by_index(&value, i_elements, next_value.get(), NULL);
       // For all children
       for (const AvroParserSharedPtr& child : children) {
-        (*values).push(std::make_pair(child, next_value));
+        TF_RETURN_IF_ERROR((*child).Parse(values, *next_value));
       }
     }
   }
 
   // Add a finish mark to all value buffers under this array
-  AvroValueSharedPtr finish_value(new avro_value_t);
-  (*values).push(
-    std::make_pair(
-      std::make_shared<ArrayFinishMarkerParser>(final_descendents), finish_value));
+  for (const AvroParserSharedPtr& value_parser : final_descendents) {
+    // Assumes the key exists in the map
+    (*(*values)[(*value_parser).GetKey()]).FinishMark();
+  }
 
   return Status::OK();
 }
@@ -371,11 +327,9 @@ string ArrayFilterParser::ToString(int level) const {
 }
 
 
-MapKeyParser::MapKeyParser(const string& key) : key_(key) { }
-Status MapKeyParser::ResolveValues(
-  std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
-  const avro_value_t& value,
-  const std::map<string, ValueStoreUniquePtr>& parsed_values) const {
+MapKeyParser::MapKeyParser(const string& key) : AvroParser(""), key_(key) { }
+Status MapKeyParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
+  const avro_value_t& value) const {
 
   // TODO(fraudies): Code for key/attribute parser almost identical, except for error message
   AvroValueSharedPtr next_value(new avro_value_t);
@@ -384,7 +338,7 @@ Status MapKeyParser::ResolveValues(
   }
   const std::vector<AvroParserSharedPtr>& children(GetChildren());
   for (const AvroParserSharedPtr& child : children) {
-    (*values).push(std::make_pair(child, next_value));
+    TF_RETURN_IF_ERROR((*child).Parse(values, *next_value));
   }
   return Status::OK();
 }
@@ -396,11 +350,9 @@ string MapKeyParser::ToString(int level) const {
 }
 
 
-AttributeParser::AttributeParser(const string& name) : name_(name) { }
-Status AttributeParser::ResolveValues(
-  std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
-  const avro_value_t& value,
-  const std::map<string, ValueStoreUniquePtr>& parsed_values) const {
+AttributeParser::AttributeParser(const string& name) : AvroParser(""), name_(name) { }
+Status AttributeParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
+  const avro_value_t& value) const {
 
   AvroValueSharedPtr next_value(new avro_value_t);
   if (avro_value_get_by_name(&value, name_.c_str(), next_value.get(), NULL) != 0) {
@@ -408,7 +360,7 @@ Status AttributeParser::ResolveValues(
   }
   const std::vector<AvroParserSharedPtr>& children(GetChildren());
   for (const AvroParserSharedPtr& child : children) {
-    (*values).push(std::make_pair(child, next_value));
+    TF_RETURN_IF_ERROR((*child).Parse(values, *next_value));
   }
   return Status::OK();
 }
@@ -420,11 +372,9 @@ string AttributeParser::ToString(int level) const {
 }
 
 
-NamespaceParser::NamespaceParser(const string& name) : name_(name) { }
-Status NamespaceParser::ResolveValues(
-  std::queue<std::pair<AvroParserSharedPtr, AvroValueSharedPtr> >* values,
-  const avro_value_t& value,
-  const std::map<string, ValueStoreUniquePtr>& parsed_values) const {
+NamespaceParser::NamespaceParser(const string& name) : AvroParser(""), name_(name) { }
+Status NamespaceParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
+  const avro_value_t& value) const {
 
   // TODO(fraudies): Check namespace match
   AvroValueSharedPtr next_value(new avro_value_t);
@@ -432,7 +382,7 @@ Status NamespaceParser::ResolveValues(
 
   const std::vector<AvroParserSharedPtr>& children(GetChildren());
   for (const AvroParserSharedPtr& child : children) {
-    (*values).push(std::make_pair(child, next_value));
+    TF_RETURN_IF_ERROR((*child).Parse(values, *next_value));
   }
   return Status::OK();
 }

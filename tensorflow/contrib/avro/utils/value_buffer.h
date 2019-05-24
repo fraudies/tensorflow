@@ -64,6 +64,7 @@ public:
   Status GetCopyInfo(std::vector<std::pair<size_t, size_t> >* copy_info, const TensorShape& shape) const;
   Status GetFillInfo(std::vector<std::pair<size_t, size_t> >* fill_info, const TensorShape& shape) const;
   Status GetIndices(Tensor* indices) const;
+  string ToString() const;
 private:
   // Not recommended by google style guide but this is not part of the public API
   std::vector<size_t> CumulativeProductOfDimensionsWithOneAtEnd(const TensorShape& shape) const;
@@ -372,6 +373,7 @@ inline bool ValueBuffer<string>::ValueMatchesAtReverseIndex(const string& value,
 template <typename T>
 string ValueBuffer<T>::ToString(size_t limit) const {
   std::stringstream ss;
+  ss << shape_builder_.ToString() << std::endl;
   size_t n_print = std::min(values_.size(),  limit);
   for (size_t i_print = 0; i_print < n_print; ++i_print) {
     ss << values_[i_print] << ", ";

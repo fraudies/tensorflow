@@ -81,6 +81,145 @@ class AvroDatasetFixedLengthListTest(avro_test_base.AvroDatasetTestBase):
       {"int_list[*]": np.asarray([6, 7, 8])}
     ]
 
+
+class AvroDatasetDense2DTest(avro_test_base.AvroDatasetTestBase):
+
+  def __init__(self, *args, **kwargs):
+    super(AvroDatasetDense2DTest, self).__init__(*args, **kwargs)
+    self.schema = """{
+              "type": "record",
+              "name": "row",
+              "fields": [
+                  {
+                     "name": "int_list",
+                     "type": {
+                        "type": "array",
+                        "items":
+                          {
+                             "name" : "name",
+                             "type" : "record",
+                             "fields" : [
+                                {
+                                   "name": "nested_int_list",
+                                   "type":
+                                      {
+                                          "type": "array",
+                                          "items": "int"
+                                      }
+                                }
+                             ]
+                          }
+                     }
+                  }
+              ]}"""
+    self.actual_records = [
+      {"int_list": [
+        {"nested_int_list": [1, 2, 3]},
+        {"nested_int_list": [4, 5, 6]}
+      ]},
+      {"int_list": [
+        {"nested_int_list": [7, 8, 9]},
+        {"nested_int_list": [10, 11, 12]}
+      ]}
+    ]
+    self.features = {
+      "int_list[*].nested_int_list[*]":
+        parsing_ops.FixedLenFeature([2, 3], tf_types.int32)
+    }
+    self.expected_tensors = [
+      {"int_list[*].nested_int_list[*]": np.asarray([[1, 2, 3], [4, 5, 6]])},
+      {"int_list[*].nested_int_list[*]": np.asarray([[7, 8, 9], [10, 11, 12]])}
+    ]
+
+
+class AvroDatasetDense3DTest(avro_test_base.AvroDatasetTestBase):
+
+  def __init__(self, *args, **kwargs):
+    super(AvroDatasetDense3DTest, self).__init__(*args, **kwargs)
+    self.schema = """{
+              "type": "record",
+              "name": "row",
+              "fields": [
+                  {
+                     "name": "int_list",
+                     "type": {
+                        "type": "array",
+                        "items":
+                          {  
+                             "name" : "wrapper1",
+                             "type" : "record",
+                             "fields" : [
+                                {  
+                                   "name": "nested_int_list",
+                                   "type": {
+                                      "type": "array",
+                                      "items": 
+                                        {
+                                           "name" : "wrapper2",
+                                           "type" : "record",
+                                           "fields" : [
+                                              {  
+                                                 "name": "nested_nested_int_list",
+                                                 "type":
+                                                    {
+                                                        "type": "array",
+                                                        "items": "int"
+                                                    }
+                                              }
+                                           ]                                        
+                                        }
+                                   }
+                                }
+                             ]
+                          }                        
+                     }
+                  }
+              ]}"""
+    self.actual_records = [
+      {"int_list": [
+        {"nested_int_list":
+          [
+            {"nested_nested_int_list": [1, 2, 3, 4]},
+            {"nested_nested_int_list": [5, 6, 7, 8]}
+          ]
+        },
+        {"nested_int_list":
+          [
+            {"nested_nested_int_list": [9, 10, 11, 12]},
+            {"nested_nested_int_list": [13, 14, 15, 16]}
+          ]
+        },
+        {"nested_int_list":
+          [
+            {"nested_nested_int_list": [17, 18, 19, 20]},
+            {"nested_nested_int_list": [21, 22, 23, 24]}
+          ]
+        },
+      ]}
+    ]
+    self.features = {
+      "int_list[*].nested_int_list[*].nested_nested_int_list[*]":
+        parsing_ops.FixedLenFeature([3, 2, 4], tf_types.int32)
+    }
+    self.expected_tensors = [
+      {"int_list[*].nested_int_list[*].nested_nested_int_list[*]": np.asarray([
+        [
+          [1, 2, 3, 4],
+          [5, 6, 7, 8]
+        ],
+        [
+          [9, 10, 11, 12],
+          [13, 14, 15, 16]
+        ],
+        [
+          [17, 18, 19, 20],
+          [21, 22, 23, 24]
+        ]
+      ])},
+    ]
+
+
+
 # Not implemented yet
 # class AvroDatasetSparseFeatureTest(avro_test_base.AvroDatasetTestBase):
 #

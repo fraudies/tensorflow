@@ -78,16 +78,16 @@ tf_cc_test(
     ],
 )
 
-tf_cc_test(
-    name = "avro_parser_test",
-    srcs = ["utils/avro_parser_test.cc"],
-    deps = [
-        ":avro_utils",
-        "//tensorflow/core:test",
-        "//tensorflow/core:test_main",
-        "//tensorflow/core:testlib",
-    ],
-)
+#tf_cc_test(
+#    name = "avro_parser_test",
+#    srcs = ["utils/avro_parser_test.cc"],
+#    deps = [
+#        ":avro_utils",
+#        "//tensorflow/core:test",
+#        "//tensorflow/core:test_main",
+#        "//tensorflow/core:testlib",
+#    ],
+#)
 
 tf_cc_test(
     name = "avro_parser_tree_test",
