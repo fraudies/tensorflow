@@ -41,9 +41,12 @@ Status AvroReader::OnWorkStartup() {
 
 Status AvroReader::Read(AvroResult* result) {
 
-  TF_RETURN_IF_ERROR(avro_mem_reader_.ReadNext(avro_value_));
+  std::vector<AvroValueSharedPtr> values;
 
-  TF_RETURN_IF_ERROR(avro_parser_tree_.ParseValue(&key_to_value_, std::move(avro_value_)));
+  // TODO(fraudies): Use callback for performance optimization
+  // TODO(fraudies): Handle last batch of uneven size -- currently dropped
+  TF_RETURN_IF_ERROR(avro_mem_reader_.ReadBatch(&values, config_.batch_size));
+  TF_RETURN_IF_ERROR(avro_parser_tree_.ParseValues(&key_to_value_, values));
 
   // Get sparse tensors
   size_t n_sparse = config_.sparse.size();
@@ -67,13 +70,15 @@ Status AvroReader::Read(AvroResult* result) {
       &(*result).sparse_values[i_sparse],
       &(*result).sparse_indices[i_sparse]));
 
-    LOG(INFO) << "Sparse values: " << (*result).sparse_values[i_sparse].SummarizeValue(5);
-    LOG(INFO) << "Sparse indices: " << (*result).sparse_indices[i_sparse].SummarizeValue(5);
+    LOG(INFO) << "Sparse values: " << (*result).sparse_values[i_sparse].SummarizeValue(15);
+    LOG(INFO) << "Sparse indices: " << (*result).sparse_indices[i_sparse].SummarizeValue(15);
+    LOG(INFO) << "Value shape: " << value_shape;
+    LOG(INFO) << "Index shape: " << index_shape;
 
     TensorShape size_shape;
-    size_shape.AddDim(value_shape.dims());
+    size_shape.AddDim(index_shape.dims());
     (*result).sparse_shapes[i_sparse] = Tensor(allocator_, DT_INT64, size_shape);
-    TF_RETURN_IF_ERROR(ShapeToTensor(&(*result).sparse_shapes[i_sparse], value_shape));
+    TF_RETURN_IF_ERROR(ShapeToTensor(&(*result).sparse_shapes[i_sparse], index_shape));
   }
 
   // Get dense tensors

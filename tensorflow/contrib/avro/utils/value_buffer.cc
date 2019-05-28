@@ -34,13 +34,6 @@ void ShapeBuilder::FinishMark() {
 
 void ShapeBuilder::Increment() {
   element_counter_++;
-  // If we do not have any marks yet then this is a scalar, add a begin and finish mark
-  // Note, this allows us to create scalars w/out calling begin and finish marks and simplifies
-  // the case when scalars appear within an array versus if they appear just by themselves
-  if (element_info_.size() == 0) {
-    BeginMark();
-    FinishMark();
-  }
 }
 
 // Assumes that the value buffer has correct markers

@@ -256,6 +256,8 @@ template <typename T>
 Status ValueBuffer<T>::MakeDense(Tensor* tensor, const TensorShape& resolved_shape,
   const Tensor& defaults) const {
 
+  // TODO(fraudies): Handle batching for defaults probably in here
+
   // Get the dense shape
   bool doFillFromDefault = !shape_builder_.HasAllElements(resolved_shape);
 
@@ -324,6 +326,7 @@ Status ValueBuffer<T>::FillInFromDefault(Tensor* tensor, const Tensor& defaults)
   TensorShape shape = (*tensor).shape();
   auto tensor_data = (*tensor).flat<T>().data();
   auto buffer_data = defaults.flat<T>().data();
+
   if (IsOneElementTensor(defaults.shape())) {
     // Fill tensor with default to create padding
     std::fill(tensor_data, tensor_data + shape.num_elements(), defaults.flat<T>()(0));
@@ -373,7 +376,7 @@ inline bool ValueBuffer<string>::ValueMatchesAtReverseIndex(const string& value,
 template <typename T>
 string ValueBuffer<T>::ToString(size_t limit) const {
   std::stringstream ss;
-  ss << shape_builder_.ToString() << std::endl;
+  ss << "Shape: " << shape_builder_.ToString() << "Values: ";
   size_t n_print = std::min(values_.size(),  limit);
   for (size_t i_print = 0; i_print < n_print; ++i_print) {
     ss << values_[i_print] << ", ";

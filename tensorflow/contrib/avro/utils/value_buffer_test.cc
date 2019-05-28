@@ -45,12 +45,11 @@ TEST(ShapeBuilderTest, ShapeBuilderForScalar) {
   builder.Increment();
 
   size_t dim(builder.GetNumberOfDimensions());
-  EXPECT_EQ(dim, 1);
+  EXPECT_EQ(dim, 0);
 
   TensorShape shape;
   builder.GetDenseShape(&shape);
-  EXPECT_EQ(shape.dims(), 1);
-  EXPECT_EQ(shape.dim_size(0), 1);
+  EXPECT_EQ(shape.dims(), 0);
 
   EXPECT_TRUE(builder.HasAllElements(shape));
 }

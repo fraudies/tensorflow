@@ -98,6 +98,33 @@ Status AvroMemReader::ReadNext(AvroValueUniquePtr& value) {
   return Status::OK();
 }
 
+Status AvroMemReader::ReadBatch(std::vector<AvroValueSharedPtr>* values, int64 batch_size) {
+
+  mutex_lock l(mu_);
+
+  avro_set_error("");
+
+  for (int64 i_batch = 0; i_batch < batch_size; ++i_batch) {
+    AvroValueUniquePtr next_value(new avro_value_t, AvroValueDestructor);
+
+    // Initialize the value for that schema
+    if (avro_generic_value_new(writer_iface_.get(), next_value.get()) != 0) {
+      return Status(errors::InvalidArgument(
+          "Unable to create instance for generic class."));
+    }
+
+    int ret = avro_file_reader_read_value(*file_reader_, next_value.get());
+
+    (*values).push_back(std::move(next_value));
+
+    if (ret != 0) {
+      return errors::OutOfRange("eof");
+    }
+  }
+
+  return Status::OK();
+}
+
 
 
 
@@ -211,6 +238,54 @@ Status AvroResolvedMemReader::ReadNext(AvroValueUniquePtr& value) {
   avro_value_decref(writer_value);
   free(writer_value);
 
+  return Status::OK();
+}
+
+Status AvroResolvedMemReader::ReadBatch(std::vector<AvroValueSharedPtr>* values, int64 batch_size) {
+
+  mutex_lock l(mu_);
+
+  for (int64 i_batch = 0; i_batch < batch_size; ++i_batch) {
+
+    AvroValueUniquePtr reader_value(new avro_value_t, AvroValueDestructor);
+    AvroValueUniquePtr writer_value(new avro_value_t, AvroValueDestructor);
+
+    // Initialize value for reader class
+    if (avro_generic_value_new(reader_iface_.get(), reader_value.get()) != 0) {
+      return Status(errors::InvalidArgument(
+          "Unable to create instance for generic reader class."));
+    }
+
+    // Create instance for resolved writer class
+    if (avro_resolved_writer_new_value(writer_iface_.get(), writer_value.get()) != 0) {
+      return Status(
+          errors::InvalidArgument("Unable to create resolved writer value."));
+    }
+    avro_resolved_writer_set_dest(writer_value.get(), reader_value.get());
+
+    int ret = avro_file_reader_read_value(*file_reader_, writer_value.get());
+    if (ret != 0) {
+      return errors::OutOfRange("eof");
+    }
+    // TODO(fraudies): Issue:
+    // When reading from a memory mapped file we get this error
+    // `Error reading file: Incorrect sync bytes`
+    // Instead of EOF
+    // Need to check why this is happening when opening the file with fmemopen and not with
+    // fopen
+    /*
+    if (ret == EOF) {
+      return errors::OutOfRange("eof");
+    }
+    if (ret != 0) {
+      return errors::InvalidArgument("Unable to read value due to: ", avro_strerror());
+    }
+    */
+    // Transfer ownership for reader value
+
+    (*values).push_back(std::move(reader_value));
+
+  }
   return Status::OK();
 }
 

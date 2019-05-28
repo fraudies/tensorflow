@@ -34,6 +34,7 @@ struct AvroParseConfig {
     DataType dtype;
   };
 
+  int64 batch_size;
   std::vector<Dense> dense;
   std::vector<Sparse> sparse;
 };
@@ -55,7 +56,6 @@ public:
       filename_(filename),
       reader_schema_(reader_schema),
       config_(config),
-      avro_value_(nullptr, AvroValueDestructor),
       allocator_(tensorflow::cpu_allocator()) { }
 
   // Call for startup of work after construction.
@@ -80,7 +80,6 @@ private:
   const string reader_schema_;
   const AvroParseConfig config_;
 
-  AvroValueUniquePtr avro_value_;
   AvroMemReader avro_mem_reader_;
   AvroParserTree avro_parser_tree_;
   std::unique_ptr<char[]> data_;

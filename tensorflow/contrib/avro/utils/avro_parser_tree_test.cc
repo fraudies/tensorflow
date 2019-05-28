@@ -138,14 +138,16 @@ TEST(AvroParserTreeTest, ParseIntArray) {
   }
 
   std::map<string, ValueStoreUniquePtr> key_to_value;
-  TF_EXPECT_OK(parser_tree.ParseValue(&key_to_value, std::make_shared<avro_value_t>(value)));
+  std::vector<AvroValueSharedPtr> values;
+  values.push_back(std::make_shared<avro_value_t>(value));
+  TF_EXPECT_OK(parser_tree.ParseValues(&key_to_value, values));
 
   auto key_and_value = key_to_value.find(int_array_key);
   // Entry should exist
   EXPECT_FALSE(key_and_value == key_to_value.end());
 
   // Define shapes
-  const TensorShape shape({4});
+  const TensorShape shape({1, 4});
 
   // Define expected values
   Tensor expected(DT_INT32, shape);
@@ -208,7 +210,9 @@ TEST(AvroParserTreeTest, ParseIntValue) {
   EXPECT_EQ(avro_value_set_int(&int_field, int_value), 0);
 
   std::map<string, ValueStoreUniquePtr> key_to_value;
-  TF_EXPECT_OK(parser_tree.ParseValue(&key_to_value, std::make_shared<avro_value_t>(value)));
+  std::vector<AvroValueSharedPtr> values;
+  values.push_back(std::make_shared<avro_value_t>(value));
+  TF_EXPECT_OK(parser_tree.ParseValues(&key_to_value, values));
 
   auto key_and_value = key_to_value.find(int_value_name);
   // Entry should exist

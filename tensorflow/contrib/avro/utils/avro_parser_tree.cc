@@ -41,13 +41,21 @@ void SplitOnDelimiterButNotInsideSquareBrackets(std::vector<string>* results, ch
 
 AvroParserTree::AvroParserTree(const string& avro_namespace) : avro_namespace_(avro_namespace) { }
 
-Status AvroParserTree::ParseValue(std::map<string, ValueStoreUniquePtr>* key_to_value,
-  const AvroValueSharedPtr& value) {
+Status AvroParserTree::ParseValues(std::map<string, ValueStoreUniquePtr>* key_to_value,
+  const std::vector<AvroValueSharedPtr>& values) {
 
-  // will also be used to get the data type for the node
+  // new assignment of all buffers
   TF_RETURN_IF_ERROR(InitValueBuffers(key_to_value));
 
-  TF_RETURN_IF_ERROR((*root_).Parse(key_to_value, *value));
+  // add being marks to all buffers
+  TF_RETURN_IF_ERROR(AddBeginMarks(key_to_value));
+
+  for (auto const& value : values) {
+    TF_RETURN_IF_ERROR((*root_).Parse(key_to_value, *value));
+  }
+
+  // add end marks to all buffers
+  TF_RETURN_IF_ERROR(AddFinishMarks(key_to_value));
 
   return Status::OK();
 }
@@ -328,6 +336,20 @@ inline bool AvroParserTree::IsAttribute(const string& infix) {
 
 inline bool AvroParserTree::IsStringConstant(string* constant, const string& infix) {
   return RE2::FullMatch(infix, "'(\\S+)'", constant);
+}
+
+Status AvroParserTree::AddBeginMarks(std::map<string, ValueStoreUniquePtr>* key_to_value) {
+  for (auto const& key_value : *key_to_value) {
+    (*key_value.second).BeginMark();
+  }
+  return Status::OK();
+}
+
+Status AvroParserTree::AddFinishMarks(std::map<string, ValueStoreUniquePtr>* key_to_value) {
+  for (auto const& key_value : *key_to_value) {
+    (*key_value.second).FinishMark();
+  }
+  return Status::OK();
 }
 
 Status AvroParserTree::InitValueBuffers(std::map<string, ValueStoreUniquePtr>* key_to_value) {

@@ -36,8 +36,9 @@ from tensorflow.contrib.avro.python.utils.avro_serialization import \
 
 class AvroDatasetTestBase(test_util.TensorFlowTestCase):
 
-  def __init__(self, *args, **kwargs):
+  def __init__(self, batch_size, *args, **kwargs):
     super(AvroDatasetTestBase, self).__init__(*args, **kwargs)
+    self.batch_size = batch_size
     self.output_dir = ''
     self.filename = ''
     self.schema = ''
@@ -95,7 +96,8 @@ class AvroDatasetTestBase(test_util.TensorFlowTestCase):
     tensors = []
     with self.test_session(config=config) as sess:
 
-      dataset = AvroDatasetV1(filenames=[self.filename], features=self.features)
+      dataset = AvroDatasetV1(filenames=[self.filename], features=self.features,
+                              batch_size=self.batch_size)
       iterator = dataset.make_initializable_iterator()
       next_element = iterator.get_next()
       sess.run(iterator.initializer)

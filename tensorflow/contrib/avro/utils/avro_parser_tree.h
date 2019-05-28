@@ -25,9 +25,8 @@ public:
   static Status Build(AvroParserTree* parser_tree,
     const std::vector<std::pair<string, DataType>>& keys_and_types);
 
-  // pointers are only valid as long as the object exists
-  Status ParseValue(std::map<string, ValueStoreUniquePtr>* key_to_value,
-    const AvroValueSharedPtr& value);
+  Status ParseValues(std::map<string, ValueStoreUniquePtr>* key_to_value,
+    const std::vector<AvroValueSharedPtr>& values);
 
   // default constructor
   AvroParserTree(const string& avro_namespace = kDefaultNamespace);
@@ -47,6 +46,8 @@ private:
 
   static Status GetUniqueKeys(std::unordered_set<string>* keys,
     const std::vector<std::pair<string, DataType>>& keys_and_types);
+  static Status AddBeginMarks(std::map<string, ValueStoreUniquePtr>* key_to_value);
+  static Status AddFinishMarks(std::map<string, ValueStoreUniquePtr>* key_to_value);
 
   Status CreateAvroParser(AvroParserUniquePtr& value_parser, const string& infix) const;
 

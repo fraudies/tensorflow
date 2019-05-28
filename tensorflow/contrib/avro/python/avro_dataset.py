@@ -42,8 +42,8 @@ reader_module = load_library.load_op_library(lib_name)
 class AvroDatasetV2(DatasetSource):
   """A `DatasetSource` that reads and parses Avro records from files."""
 
-  def __init__(self, filenames, features, reader_schema="",
-               num_parallel_calls=2):
+  def __init__(self, filenames, features, reader_schema="", batch_size=128,
+      num_parallel_calls=2):
     """Creates a `AvroDataset` and batches for performance.
     Args:
       filenames: A `tf.string` tensor containing one or more filenames.
@@ -100,9 +100,11 @@ class AvroDatasetV2(DatasetSource):
     super(AvroDatasetV2, self).__init__()
     self._filenames = ops.convert_to_tensor(
         filenames, dtypes.string, name="filenames")
-    self._features = AvroDatasetV2._build_keys_for_sparse_features(
-        AvroDatasetV2._resolve_empty_dense_shape(features))
+#    self._features = AvroDatasetV2._build_keys_for_sparse_features(
+#        AvroDatasetV2._resolve_empty_dense_shape(features))
+    self._features = AvroDatasetV2._build_keys_for_sparse_features(features)
     self._reader_schema = reader_schema
+    self._batch_size = batch_size
     self._num_parallel_calls = num_parallel_calls
 
     # Copied from _ParseExampleDataset from data/experimental/ops/parsing_ops.py
@@ -160,6 +162,7 @@ class AvroDatasetV2(DatasetSource):
 
     out_dataset = avro_dataset(
         filenames=self._filenames,
+        batch_size=self._batch_size,
         reader_schema=self._reader_schema,
         dense_defaults=self._dense_defaults,
         sparse_keys=self._sparse_keys,
@@ -175,14 +178,27 @@ class AvroDatasetV2(DatasetSource):
   def _element_structure(self):
     return self._structure
 
-  @staticmethod
-  def _resolve_empty_dense_shape(features):
-    for key in sorted(features.keys()):
-      feature = features[key]
-      if isinstance(feature, parsing_ops.FixedLenFeature) and feature.shape == []:
-        features[key] = parsing_ops.FixedLenFeature([1], feature.dtype,
-                                                    feature.default_value)
-    return features
+  # @staticmethod
+  # def _prepend_batch_dimension(features, batch_size):
+  #   if features:
+  #     for key in sorted(features.keys()):
+  #       feature = features[key]
+  #       if isinstance(feature, parsing_ops.FixedLenFeature):
+  #         features[key] = parsing_ops.FixedLenFeature(
+  #             [batch_size] + feature.shape, feature.dtype, feature.default_value)
+  #       elif isinstance(feature, parsing_ops.FixedLenSequenceFeature):
+  #         features[key] = parsing_ops.FixedLenSequenceFeature(
+  #             [batch_size] + feature.shape, feature.dtype, feature.default_value)
+  #   return features
+
+  # @staticmethod
+  # def _resolve_empty_dense_shape(features):
+  #   for key in sorted(features.keys()):
+  #     feature = features[key]
+  #     if isinstance(feature, parsing_ops.FixedLenFeature) and feature.shape == []:
+  #       features[key] = parsing_ops.FixedLenFeature([1], feature.dtype,
+  #                                                   feature.default_value)
+  #   return features
 
   @staticmethod
   def _build_keys_for_sparse_features(features):
@@ -213,9 +229,9 @@ class AvroDatasetV1(DatasetV1Adapter):
   """A `Dataset` comprising records from one or more Avro files."""
 
   @functools.wraps(AvroDatasetV2.__init__)
-  def __init__(self, filenames, features, reader_schema="",
+  def __init__(self, filenames, features, reader_schema="", batch_size=128,
                num_parallel_calls=2):
-    wrapped = AvroDatasetV2(filenames, features, reader_schema,
+    wrapped = AvroDatasetV2(filenames, features, reader_schema, batch_size,
                             num_parallel_calls)
     super(AvroDatasetV1, self).__init__(wrapped)
 
