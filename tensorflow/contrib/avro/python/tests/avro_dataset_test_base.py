@@ -29,7 +29,7 @@ import tempfile
 from tensorflow.core.protobuf import config_pb2
 from tensorflow.python.framework import test_util, sparse_tensor
 from tensorflow.python.framework.errors import OpError, OutOfRangeError
-from tensorflow.contrib.avro.python.avro_dataset import AvroDatasetV1
+from tensorflow.contrib.avro.python.avro_dataset import make_avro_datasetV1
 from tensorflow.contrib.avro.python.utils.avro_serialization import \
   AvroRecordsToFile
 
@@ -38,80 +38,75 @@ class AvroDatasetTestBase(test_util.TensorFlowTestCase):
 
   def __init__(self, batch_size, *args, **kwargs):
     super(AvroDatasetTestBase, self).__init__(*args, **kwargs)
-    self.batch_size = batch_size
-    self.output_dir = ''
-    self.filename = ''
-    self.schema = ''
-    self.actual_records = []
-    self.features = {}
-    self.expected_tensors = []
+    self._batch_size = batch_size
+    self._output_dir = ''
+    self._filename = ''
+    self._schema = ''
+    self._actual_records = []
+    self._features = {}
+    self._expected_tensors = []
 
   def setUp(self):
     log_root = logging.getLogger()
     log_root.setLevel(logging.INFO)
 
     # Write test records into temporary output directory
-    self.output_dir = tempfile.mkdtemp()
-    self.filename = os.path.join(self.output_dir, "test.avro")
-    writer = AvroRecordsToFile(filename=self.filename, writer_schema=self.schema)
-    writer.write_records(self.actual_records)
+    self._output_dir = tempfile.mkdtemp()
+    self._filename = os.path.join(self._output_dir, "test.avro")
+    writer = AvroRecordsToFile(filename=self._filename,
+                               writer_schema=self._schema)
+    writer.write_records(self._actual_records)
 
   def tearDown(self):
-    shutil.rmtree(self.output_dir)
+    shutil.rmtree(self._output_dir)
 
-  def _assert_same_tensors(self, expected, actual):
-    logging.info("Expected {}".format(expected))
-    logging.info("Actual {}".format(actual))
+  def _assert_same_tensors(self, expected_tensors, actual_tensors):
 
-    assert len(expected) == len(actual), \
-      "Expected length {} but got actual length {}".format(
-          len(expected), len(actual))
-    for expected_item, actual_item in zip(expected, actual):
+    assert len(expected_tensors) == len(actual_tensors), \
+      "Expected {} pairs but " "got {} pairs".format(
+          len(expected_tensors), len(actual_tensors))
 
-      assert len(expected_item) == len(actual_item), \
-        "Expected {} pairs but " "got {} pairs".format(
-            len(expected_item), len(actual_item))
+    for name, actual_tensor in six.iteritems(actual_tensors):
+      assert name in expected_tensors, "Expected key {} be present in {}"\
+        .format(name, actual_tensors.keys())
+      expected_tensor = expected_tensors[name]
 
-      for name, actual_tensor in six.iteritems(actual_item):
-        assert name in expected_item, "Expected key {} be present in {}".format(
-            name, actual.keys())
-        expected_tensor = expected_item[name]
-
-        def assert_same_array(expected_array, actual_array):
-          if np.issubdtype(actual_array.dtype, np.number):
-            self.assertAllClose(expected_array, actual_array)
-          else:
-            self.assertAllEqual(expected_array, actual_array)
-
-        # Sparse tensor?
-        if isinstance(actual_tensor, sparse_tensor.SparseTensorValue):
-          self.assertAllEqual(expected_tensor.indices, actual_tensor.indices)
-          assert_same_array(expected_tensor.values, actual_tensor.values)
+      def assert_same_array(expected_array, actual_array):
+        if np.issubdtype(actual_array.dtype, np.number):
+          self.assertAllClose(expected_array, actual_array)
         else:
-          assert_same_array(expected_tensor, actual_tensor)
+          self.assertAllEqual(expected_array, actual_array)
 
-  def _read_all_tensors(self):
+      # Sparse tensor?
+      if isinstance(actual_tensor, sparse_tensor.SparseTensorValue):
+        self.assertAllEqual(expected_tensor.indices, actual_tensor.indices)
+        assert_same_array(expected_tensor.values, actual_tensor.values)
+      else:
+        assert_same_array(expected_tensor, actual_tensor)
+
+  def _verify_output(self):
     config = config_pb2.ConfigProto(
         intra_op_parallelism_threads=1, inter_op_parallelism_threads=1)
-    tensors = []
     with self.test_session(config=config) as sess:
+      # Turn off any parallelism and random for testing to have
+      # reproducibility
+      dataset = make_avro_datasetV1(file_pattern=[self._filename],
+                                    features=self._features,
+                                    batch_size=self._batch_size,
+                                    shuffle=False,
+                                    num_epochs=1)
 
-      dataset = AvroDatasetV1(filenames=[self.filename], features=self.features,
-                              batch_size=self.batch_size)
       iterator = dataset.make_initializable_iterator()
       next_element = iterator.get_next()
       sess.run(iterator.initializer)
 
-      while True:
-        try:
-          e = sess.run(next_element)
-          logging.info("Next element: {}".format(e))
-          tensors.append(e)
-        except OutOfRangeError:
-          break
-    return tensors
+      for expected_tensors in self._expected_tensors:
+
+        self._assert_same_tensors(expected_tensors=expected_tensors,
+                                  actual_tensors=sess.run(next_element))
+
+      with self.assertRaises(OutOfRangeError):
+        sess.run(next_element)
 
   def test(self):
-    actual_tensors = self._read_all_tensors()
-    self._assert_same_tensors(expected=self.expected_tensors,
-                              actual=actual_tensors)
+    self._verify_output()

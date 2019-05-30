@@ -30,6 +30,9 @@ from tensorflow.python.data.util import structure
 from tensorflow.python.ops import parsing_ops
 from tensorflow.python.data.ops import dataset_ops
 from tensorflow.python.data.ops.dataset_ops import DatasetSource, DatasetV1Adapter
+from tensorflow.python.data.experimental.ops import interleave_ops
+from tensorflow.python.data.experimental.ops import optimization
+from tensorflow.python.data.experimental.ops import readers
 from tensorflow.python.platform import resource_loader
 from tensorflow.contrib.avro.ops.gen_avro_dataset import avro_dataset
 
@@ -38,8 +41,15 @@ lib_name = os.path.join(resource_loader.get_data_files_path(),
                         '_avro_dataset.so')
 reader_module = load_library.load_op_library(lib_name)
 
+
 # TODO(fraudies): fixme @tf_export("contrib.avro.AvroDataset", v1=[])
-class AvroDatasetV2(DatasetSource):
+# Note: I've hidden the dataset because it does not apply the mapping for
+# sparse tensors
+# Note: that such mapping is not possible inside the dataset, rather it
+# needs to happen through a map on the output of the dataset which is a map
+# of keys to tensors
+# This can be changed when eager mode is the default and only mode supported
+class _AvroDatasetV2(DatasetSource):
   """A `DatasetSource` that reads and parses Avro records from files."""
 
   def __init__(self, filenames, features, reader_schema="", batch_size=128,
@@ -97,12 +107,10 @@ class AvroDatasetV2(DatasetSource):
       num_parallel_calls: Number of parallel calls
 
     """
-    super(AvroDatasetV2, self).__init__()
+    super(_AvroDatasetV2, self).__init__()
     self._filenames = ops.convert_to_tensor(
         filenames, dtypes.string, name="filenames")
-#    self._features = AvroDatasetV2._build_keys_for_sparse_features(
-#        AvroDatasetV2._resolve_empty_dense_shape(features))
-    self._features = AvroDatasetV2._build_keys_for_sparse_features(features)
+    self._features = _AvroDatasetV2._build_keys_for_sparse_features(features)
     self._reader_schema = reader_schema
     self._batch_size = batch_size
     self._num_parallel_calls = num_parallel_calls
@@ -170,35 +178,17 @@ class AvroDatasetV2(DatasetSource):
         sparse_types=self._sparse_types,
         dense_shapes=self._dense_shapes,
         **dataset_ops.flat_structure(self))
+
     print("output dataset: {}".format(out_dataset))
 
     return out_dataset
 
+    # return dataset_ops.MapDataset(self, lambda x: parsing_ops._construct_sparse_tensors_for_sparse_features(
+    #     self._features, x), use_inter_op_parallelism=False)
+
   @property
   def _element_structure(self):
     return self._structure
-
-  # @staticmethod
-  # def _prepend_batch_dimension(features, batch_size):
-  #   if features:
-  #     for key in sorted(features.keys()):
-  #       feature = features[key]
-  #       if isinstance(feature, parsing_ops.FixedLenFeature):
-  #         features[key] = parsing_ops.FixedLenFeature(
-  #             [batch_size] + feature.shape, feature.dtype, feature.default_value)
-  #       elif isinstance(feature, parsing_ops.FixedLenSequenceFeature):
-  #         features[key] = parsing_ops.FixedLenSequenceFeature(
-  #             [batch_size] + feature.shape, feature.dtype, feature.default_value)
-  #   return features
-
-  # @staticmethod
-  # def _resolve_empty_dense_shape(features):
-  #   for key in sorted(features.keys()):
-  #     feature = features[key]
-  #     if isinstance(feature, parsing_ops.FixedLenFeature) and feature.shape == []:
-  #       features[key] = parsing_ops.FixedLenFeature([1], feature.dtype,
-  #                                                   feature.default_value)
-  #   return features
 
   @staticmethod
   def _build_keys_for_sparse_features(features):
@@ -225,14 +215,77 @@ class AvroDatasetV2(DatasetSource):
 
 
 # TODO(fraudies): Fixme @tf_export(v1=["contrib.avro.AvroDataset"])
-class AvroDatasetV1(DatasetV1Adapter):
+class _AvroDatasetV1(DatasetV1Adapter):
   """A `Dataset` comprising records from one or more Avro files."""
 
-  @functools.wraps(AvroDatasetV2.__init__)
+  @functools.wraps(_AvroDatasetV2.__init__)
   def __init__(self, filenames, features, reader_schema="", batch_size=128,
                num_parallel_calls=2):
-    wrapped = AvroDatasetV2(filenames, features, reader_schema, batch_size,
-                            num_parallel_calls)
-    super(AvroDatasetV1, self).__init__(wrapped)
+    wrapped = _AvroDatasetV2(filenames, features, reader_schema, batch_size,
+                             num_parallel_calls)
+    super(_AvroDatasetV1, self).__init__(wrapped)
 
 
+# TODO(fraudies): Fixme for tf 1/2 @tf_export("contrib.avro.make_avro_dataset")
+def make_avro_datasetV1(
+    file_pattern,
+    features,
+    batch_size,
+    reader_schema="",
+    num_parallel_calls=2,
+    label_key=None,
+    num_epochs=None,
+    shuffle=True,
+    shuffle_buffer_size=10000,
+    shuffle_seed=None,
+    prefetch_buffer_size=optimization.AUTOTUNE,
+    num_parallel_reads=1,
+    sloppy=False
+):
+
+  filenames = readers._get_file_names(file_pattern, False)
+  dataset = dataset_ops.Dataset.from_tensor_slices(filenames)
+  if shuffle:
+    dataset = dataset.shuffle(len(filenames), shuffle_seed)
+
+  if label_key is not None and label_key not in features:
+    raise ValueError("`label_key` provided must be in `features`.")
+
+  def filename_to_dataset(filename):
+    # Batches
+    return _AvroDatasetV1(
+        filenames=filename,
+        features=features,
+        reader_schema=reader_schema,
+        batch_size=batch_size,
+        num_parallel_calls=num_parallel_calls
+    )
+
+  # Read files sequentially (if num_parallel_reads=1) or in parallel
+  dataset = dataset.apply(
+      interleave_ops.parallel_interleave(
+          filename_to_dataset, cycle_length=num_parallel_reads, sloppy=sloppy))
+
+  dataset = readers._maybe_shuffle_and_repeat(
+      dataset, num_epochs, shuffle, shuffle_buffer_size, shuffle_seed)
+
+  if any(
+      isinstance(feature, parsing_ops.SparseFeature)
+      for _, feature in features.items()
+  ):
+    # pylint: disable=protected-access
+    # pylint: disable=g-long-lambda
+    dataset = dataset.map(
+        lambda x: parsing_ops._construct_sparse_tensors_for_sparse_features(
+            features, x), num_parallel_calls=num_parallel_calls)
+
+  if label_key:
+    if label_key not in features:
+      raise ValueError(
+          "The `label_key` provided (%r) must be one of the `features` keys." %
+          label_key)
+    dataset = dataset.map(lambda x: (x, x.pop(label_key)))
+
+  dataset = dataset.prefetch(prefetch_buffer_size)
+
+  return dataset

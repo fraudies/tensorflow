@@ -29,10 +29,6 @@ limitations under the License.
 // Example build with headers
 // https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/kernels/data/sql/BUILD
 //
-// Parse example dataset op implementation
-// https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/kernels/data/parse_example_dataset_op.cc
-// https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/util/example_proto_fast_parsing.cc
-//
 // dataset
 // https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/ops/dataset_ops.cc
 
@@ -43,6 +39,7 @@ limitations under the License.
 // Example parser
 // https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/ops/parsing_ops.cc
 // https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/kernels/data/experimental/parse_example_dataset_op.cc
+// https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/util/example_proto_fast_parsing.cc
 // https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/util/example_proto_helper.h
 
 // https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/ops/parsing_ops.py
