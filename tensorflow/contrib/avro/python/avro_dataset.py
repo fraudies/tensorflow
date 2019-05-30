@@ -19,8 +19,11 @@
 # Parse example dataset
 # https://github.com/tensorflow/tensorflow/blob/v1.13.1/tensorflow/python/data/experimental/ops/parsing_ops.py
 
+# For tf export use examples see
+# sql_dataset_test_base.py for use and readers.py for definition
+
+
 import os
-import functools
 
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import dtypes
@@ -35,6 +38,7 @@ from tensorflow.python.data.experimental.ops import optimization
 from tensorflow.python.data.experimental.ops import readers
 from tensorflow.python.platform import resource_loader
 from tensorflow.contrib.avro.ops.gen_avro_dataset import avro_dataset
+from tensorflow.python.util.tf_export import tf_export
 
 # Load the shared library
 lib_name = os.path.join(resource_loader.get_data_files_path(),
@@ -49,68 +53,16 @@ reader_module = load_library.load_op_library(lib_name)
 # needs to happen through a map on the output of the dataset which is a map
 # of keys to tensors
 # This can be changed when eager mode is the default and only mode supported
-class _AvroDatasetV2(DatasetSource):
+class _AvroDataset(DatasetSource):
   """A `DatasetSource` that reads and parses Avro records from files."""
 
   def __init__(self, filenames, features, reader_schema="", batch_size=128,
       num_parallel_calls=2):
-    """Creates a `AvroDataset` and batches for performance.
-    Args:
-      filenames: A `tf.string` tensor containing one or more filenames.
-      features: Is a map of keys that describe a single entry or sparse vector
-                in the avro record and map that entry to a tensor. The syntax
-                is as follows:
 
-                features = {'my_meta_data.size':
-                            tf.FixedLenFeature([], tf.int64)}
-
-                Select the 'size' field from a record metadata that is in the
-                field 'my_meta_data'. In this example we assume that the size is
-                encoded as a long in the Avro record for the metadata.
-
-
-                features = {'my_map_data['source'].ip_addresses':
-                            tf.VarLenFeature([], tf.string)}
-
-                Select the 'ip_addresses' for the 'source' key in the map
-                'my_map_data'. Notice we assume that IP addresses are encoded as
-                strings in this example.
-
-
-                features = {'my_friends[1].first_name':
-                            tf.FixedLenFeature([], tf.string)}
-
-                Select the 'first_name' for the second friend with index '1'.
-                This assumes that all of your data has a second friend. In
-                addition, we assume that all friends have only one first name.
-                For this reason we chose a 'FixedLenFeature'.
-
-
-                features = {'my_friends[*].first_name':
-                            tf.VarLenFeature([], tf.string)}
-
-                Selects all first_names in each row. For this example we use the
-                wildcard '*' to indicate that we want to select all 'first_name'
-                entries from the array.
-
-                features = {'sparse_features':
-                            tf.SparseFeature(index_key='index',
-                                             value_key='value',
-                                             dtype=tf.float32, size=10)}
-
-                We assume that sparse features contains an array with records
-                that contain an 'index' field that MUST BE LONG and an 'value'
-                field with floats (single precision).
-
-      reader_schema: (Optional.) A `tf.string` scalar for schema resolution.
-
-      num_parallel_calls: Number of parallel calls
-
-    """
-    super(_AvroDatasetV2, self).__init__()
+    super(_AvroDataset, self).__init__()
     self._filenames = ops.convert_to_tensor(
         filenames, dtypes.string, name="filenames")
-    self._features = _AvroDatasetV2._build_keys_for_sparse_features(features)
+    self._features = _AvroDataset._build_keys_for_sparse_features(features)
     self._reader_schema = reader_schema
     self._batch_size = batch_size
     self._num_parallel_calls = num_parallel_calls
@@ -183,8 +135,6 @@ class _AvroDatasetV2(DatasetSource):
 
     return out_dataset
 
-    # return dataset_ops.MapDataset(self, lambda x: parsing_ops._construct_sparse_tensors_for_sparse_features(
-    #     self._features, x), use_inter_op_parallelism=False)
 
   @property
   def _element_structure(self):
@@ -214,20 +164,8 @@ class _AvroDatasetV2(DatasetSource):
     return features
 
 
-# TODO(fraudies): Fixme @tf_export(v1=["contrib.avro.AvroDataset"])
-class _AvroDatasetV1(DatasetV1Adapter):
-  """A `Dataset` comprising records from one or more Avro files."""
-
-  @functools.wraps(_AvroDatasetV2.__init__)
-  def __init__(self, filenames, features, reader_schema="", batch_size=128,
-               num_parallel_calls=2):
-    wrapped = _AvroDatasetV2(filenames, features, reader_schema, batch_size,
-                             num_parallel_calls)
-    super(_AvroDatasetV1, self).__init__(wrapped)
-
-
-# TODO(fraudies): Fixme for tf 1/2 @tf_export("contrib.avro.make_avro_dataset")
-def make_avro_datasetV1(
+@tf_export("contrib.avro.make_avro_dataset", v1=[])
+def make_avro_dataset_v2(
     file_pattern,
     features,
     batch_size,
@@ -242,7 +180,62 @@ def make_avro_datasetV1(
     num_parallel_reads=1,
     sloppy=False
 ):
+  """Makes an avro dataset.
 
+  Reads from avro files and parses the contents into tensors.
+
+  Args:
+    filenames: A `tf.string` tensor containing one or more filenames.
+    features: Is a map of keys that describe a single entry or sparse vector
+              in the avro record and map that entry to a tensor. The syntax
+              is as follows:
+
+              features = {'my_meta_data.size':
+                          tf.FixedLenFeature([], tf.int64)}
+
+              Select the 'size' field from a record metadata that is in the
+              field 'my_meta_data'. In this example we assume that the size is
+              encoded as a long in the Avro record for the metadata.
+
+
+              features = {'my_map_data['source'].ip_addresses':
+                          tf.VarLenFeature([], tf.string)}
+
+              Select the 'ip_addresses' for the 'source' key in the map
+              'my_map_data'. Notice we assume that IP addresses are encoded as
+              strings in this example.
+
+
+              features = {'my_friends[1].first_name':
+                          tf.FixedLenFeature([], tf.string)}
+
+              Select the 'first_name' for the second friend with index '1'.
+              This assumes that all of your data has a second friend. In
+              addition, we assume that all friends have only one first name.
+              For this reason we chose a 'FixedLenFeature'.
+
+
+              features = {'my_friends[*].first_name':
+                          tf.VarLenFeature([], tf.string)}
+
+              Selects all first_names in each row. For this example we use the
+              wildcard '*' to indicate that we want to select all 'first_name'
+              entries from the array.
+
+              features = {'sparse_features':
+                          tf.SparseFeature(index_key='index',
+                                           value_key='value',
+                                           dtype=tf.float32, size=10)}
+
+              We assume that sparse features contains an array with records
+              that contain an 'index' field that MUST BE LONG and an 'value'
+              field with floats (single precision).
+
+    reader_schema: (Optional.) A `tf.string` scalar for schema resolution.
+
+    num_parallel_calls: Number of parallel calls
+
+  """
   filenames = readers._get_file_names(file_pattern, False)
   dataset = dataset_ops.Dataset.from_tensor_slices(filenames)
   if shuffle:
@@ -253,7 +246,7 @@ def make_avro_datasetV1(
 
   def filename_to_dataset(filename):
     # Batches
-    return _AvroDatasetV1(
+    return _AvroDataset(
         filenames=filename,
         features=features,
         reader_schema=reader_schema,
@@ -289,3 +282,25 @@ def make_avro_datasetV1(
   dataset = dataset.prefetch(prefetch_buffer_size)
 
   return dataset
+
+@tf_export(v1=["contrib.avro.make_avro_dataset"])
+def make_avro_dataset_v1(
+    file_pattern,
+    features,
+    batch_size,
+    reader_schema="",
+    num_parallel_calls=2,
+    label_key=None,
+    num_epochs=None,
+    shuffle=True,
+    shuffle_buffer_size=10000,
+    shuffle_seed=None,
+    prefetch_buffer_size=optimization.AUTOTUNE,
+    num_parallel_reads=1,
+    sloppy=False
+):  # pylint: disable=missing-docstring
+  return dataset_ops.DatasetV1Adapter(make_avro_dataset_v2(
+      file_pattern, features, batch_size, reader_schema, num_parallel_calls,
+      label_key, num_epochs, shuffle, shuffle_buffer_size, shuffle_seed,
+      prefetch_buffer_size, num_parallel_reads, sloppy))
+make_avro_dataset_v1.__doc__ = make_avro_dataset_v2.__doc__

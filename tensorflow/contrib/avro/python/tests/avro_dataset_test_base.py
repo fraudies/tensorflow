@@ -29,7 +29,7 @@ import tempfile
 from tensorflow.core.protobuf import config_pb2
 from tensorflow.python.framework import test_util, sparse_tensor
 from tensorflow.python.framework.errors import OpError, OutOfRangeError
-from tensorflow.contrib.avro.python.avro_dataset import make_avro_datasetV1
+from tensorflow.contrib.avro.python import avro_dataset
 from tensorflow.contrib.avro.python.utils.avro_serialization import \
   AvroRecordsToFile
 
@@ -77,7 +77,6 @@ class AvroDatasetTestBase(test_util.TensorFlowTestCase):
         else:
           self.assertAllEqual(expected_array, actual_array)
 
-      # Sparse tensor?
       if isinstance(actual_tensor, sparse_tensor.SparseTensorValue):
         self.assertAllEqual(expected_tensor.indices, actual_tensor.indices)
         assert_same_array(expected_tensor.values, actual_tensor.values)
@@ -87,14 +86,15 @@ class AvroDatasetTestBase(test_util.TensorFlowTestCase):
   def _verify_output(self):
     config = config_pb2.ConfigProto(
         intra_op_parallelism_threads=1, inter_op_parallelism_threads=1)
+
     with self.test_session(config=config) as sess:
-      # Turn off any parallelism and random for testing to have
-      # reproducibility
-      dataset = make_avro_datasetV1(file_pattern=[self._filename],
-                                    features=self._features,
-                                    batch_size=self._batch_size,
-                                    shuffle=False,
-                                    num_epochs=1)
+
+      # Turn off any parallelism and random for testing
+      dataset = avro_dataset.make_avro_dataset_v1(file_pattern=[self._filename],
+                                                  features=self._features,
+                                                  batch_size=self._batch_size,
+                                                  shuffle=False,
+                                                  num_epochs=1)
 
       iterator = dataset.make_initializable_iterator()
       next_element = iterator.get_next()
