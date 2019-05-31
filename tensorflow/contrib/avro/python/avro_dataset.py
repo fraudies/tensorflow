@@ -57,7 +57,7 @@ class _AvroDataset(DatasetSource):
   """A `DatasetSource` that reads and parses Avro records from files."""
 
   def __init__(self, filenames, features, reader_schema="", batch_size=128,
-      num_parallel_calls=2):
+      drop_remainder=False, num_parallel_calls=2):
 
     super(_AvroDataset, self).__init__()
     self._filenames = ops.convert_to_tensor(
@@ -65,6 +65,7 @@ class _AvroDataset(DatasetSource):
     self._features = _AvroDataset._build_keys_for_sparse_features(features)
     self._reader_schema = reader_schema
     self._batch_size = batch_size
+    self._drop_remainder = drop_remainder
     self._num_parallel_calls = num_parallel_calls
 
     # Copied from _ParseExampleDataset from data/experimental/ops/parsing_ops.py
@@ -123,6 +124,7 @@ class _AvroDataset(DatasetSource):
     out_dataset = avro_dataset(
         filenames=self._filenames,
         batch_size=self._batch_size,
+        drop_remainder=self._drop_remainder,
         reader_schema=self._reader_schema,
         dense_defaults=self._dense_defaults,
         sparse_keys=self._sparse_keys,
@@ -251,6 +253,7 @@ def make_avro_dataset_v2(
         features=features,
         reader_schema=reader_schema,
         batch_size=batch_size,
+        drop_remainder=num_epochs is None,
         num_parallel_calls=num_parallel_calls
     )
 

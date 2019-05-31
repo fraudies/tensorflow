@@ -23,38 +23,63 @@ from tensorflow.python.framework import dtypes as tf_types
 from tensorflow.python.ops import parsing_ops
 from tensorflow.python.framework import sparse_tensor
 
-from tensorflow.contrib.avro.python.tests import avro_dataset_test_base as avro_test_base
+from tensorflow.contrib.avro.python.tests import avro_dataset_test_base as \
+  avro_test_base
 
 
-class AvroDatasetPrimitiveTypeTest(avro_test_base.AvroDatasetTestBase):
+class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
 
-  def __init__(self, *args, **kwargs):
-    super(AvroDatasetPrimitiveTypeTest, self).__init__(3, *args, **kwargs)
-    self._schema = """{
+  def test_primitive_type(self):
+    writer_schema = """{
               "type": "record",
               "name": "row",
               "fields": [
                   {"name": "int_value", "type": "int"}
               ]}"""
-    self._actual_records = [
+    record_data = [
       {"int_value": 0},
       {"int_value": 1},
       {"int_value": 2}
     ]
-    self._features = {
+    features = {
       "int_value": parsing_ops.FixedLenFeature([], tf_types.int32,
                                                default_value=0)
     }
-    self._expected_tensors = [
+    expected_tensors = [
       {"int_value": np.asarray([0, 1, 2])}
     ]
+    self._test_dataset(writer_schema=writer_schema, record_data=record_data,
+                       expected_tensors=expected_tensors, features=features,
+                       batch_size=3, num_epochs=1)
 
+  def test_batching(self):
 
-class AvroDatasetFixedLengthListTest(avro_test_base.AvroDatasetTestBase):
+    writer_schema = """{
+              "type": "record",
+              "name": "row",
+              "fields": [
+                  {"name": "int_value", "type": "int"}
+              ]}"""
+    record_data = [
+      {"int_value": 0},
+      {"int_value": 1},
+      {"int_value": 2}
+    ]
+    features = {
+      "int_value": parsing_ops.FixedLenFeature([], tf_types.int32,
+                                               default_value=0)
+    }
+    expected_tensors = [
+      {"int_value": np.asarray([0, 1])},
+      {"int_value": np.asarray([2])}
+    ]
 
-  def __init__(self, *args, **kwargs):
-    super(AvroDatasetFixedLengthListTest, self).__init__(3, *args, **kwargs)
-    self._schema = """{
+    self._test_dataset(writer_schema=writer_schema, record_data=record_data,
+                       expected_tensors=expected_tensors, features=features,
+                       batch_size=2, num_epochs=1)
+
+  def test_fixed_length_list(self):
+    writer_schema = """{
               "type": "record",
               "name": "row",
               "fields": [
@@ -66,24 +91,24 @@ class AvroDatasetFixedLengthListTest(avro_test_base.AvroDatasetTestBase):
                      }
                   }
               ]}"""
-    self._actual_records = [
+    record_data = [
       {"int_list": [0, 1, 2]},
       {"int_list": [3, 4, 5]},
       {"int_list": [6, 7, 8]}
     ]
-    self._features = {
+    features = {
       "int_list[*]": parsing_ops.FixedLenFeature([3], tf_types.int32)
     }
-    self._expected_tensors = [
+    expected_tensors = [
       {"int_list[*]": np.asarray([[0, 1, 2], [3, 4, 5], [6, 7, 8]])}
     ]
 
+    self._test_dataset(writer_schema=writer_schema, record_data=record_data,
+                       expected_tensors=expected_tensors, features=features,
+                       batch_size=3, num_epochs=1)
 
-class AvroDatasetDense2DTest(avro_test_base.AvroDatasetTestBase):
-
-  def __init__(self, *args, **kwargs):
-    super(AvroDatasetDense2DTest, self).__init__(2, *args, **kwargs)
-    self._schema = """{
+  def test_dense_2d(self):
+    writer_schema = """{
               "type": "record",
               "name": "row",
               "fields": [
@@ -109,7 +134,7 @@ class AvroDatasetDense2DTest(avro_test_base.AvroDatasetTestBase):
                      }
                   }
               ]}"""
-    self._actual_records = [
+    record_data = [
       {"int_list": [
         {"nested_int_list": [1, 2, 3]},
         {"nested_int_list": [4, 5, 6]}
@@ -119,21 +144,21 @@ class AvroDatasetDense2DTest(avro_test_base.AvroDatasetTestBase):
         {"nested_int_list": [10, 11, 12]}
       ]}
     ]
-    self._features = {
+    features = {
       "int_list[*].nested_int_list[*]":
         parsing_ops.FixedLenFeature([2, 3], tf_types.int32)
     }
-    self._expected_tensors = [
+    expected_tensors = [
       {"int_list[*].nested_int_list[*]":
          np.asarray([[[1, 2, 3], [4, 5, 6]], [[7, 8, 9], [10, 11, 12]]])}
     ]
 
+    self._test_dataset(writer_schema=writer_schema, record_data=record_data,
+                       expected_tensors=expected_tensors, features=features,
+                       batch_size=2, num_epochs=1)
 
-class AvroDatasetDense3DTest(avro_test_base.AvroDatasetTestBase):
-
-  def __init__(self, *args, **kwargs):
-    super(AvroDatasetDense3DTest, self).__init__(1, *args, **kwargs)
-    self._schema = """{
+  def test_dense_3d(self):
+    writer_schema = """{
               "type": "record",
               "name": "row",
               "fields": [
@@ -172,7 +197,7 @@ class AvroDatasetDense3DTest(avro_test_base.AvroDatasetTestBase):
                      }
                   }
               ]}"""
-    self._actual_records = [
+    record_data = [
       {"int_list": [
         {"nested_int_list":
           [
@@ -194,11 +219,11 @@ class AvroDatasetDense3DTest(avro_test_base.AvroDatasetTestBase):
         },
       ]}
     ]
-    self._features = {
+    features = {
       "int_list[*].nested_int_list[*].nested_nested_int_list[*]":
         parsing_ops.FixedLenFeature([3, 2, 4], tf_types.int32)
     }
-    self._expected_tensors = [
+    expected_tensors = [
       {"int_list[*].nested_int_list[*].nested_nested_int_list[*]": np.asarray(
           [[
             [
@@ -217,12 +242,12 @@ class AvroDatasetDense3DTest(avro_test_base.AvroDatasetTestBase):
           )},
     ]
 
+    self._test_dataset(writer_schema=writer_schema, record_data=record_data,
+                       expected_tensors=expected_tensors, features=features,
+                       batch_size=1, num_epochs=1)
 
-class AvroDatasetVariableLengthListTest(avro_test_base.AvroDatasetTestBase):
-
-  def __init__(self, *args, **kwargs):
-    super(AvroDatasetVariableLengthListTest, self).__init__(3, *args, **kwargs)
-    self._schema = """{
+  def test_variable_length(self):
+    writer_schema = """{
               "type": "record",
               "name": "row",
               "fields": [
@@ -234,15 +259,15 @@ class AvroDatasetVariableLengthListTest(avro_test_base.AvroDatasetTestBase):
                      }
                   }
               ]}"""
-    self._actual_records = [
+    record_data = [
       {"int_list": [1, 2]},
       {"int_list": [3, 4, 5]},
       {"int_list": [6]}
     ]
-    self._features = {
+    features = {
       'int_list[*]': parsing_ops.VarLenFeature(tf_types.int32)
     }
-    self._expected_tensors = [
+    expected_tensors = [
       {"int_list[*]":
          sparse_tensor.SparseTensorValue(
              np.asarray([[0, 0], [0, 1], [1, 0], [1, 1], [1, 2], [2, 0]]),
@@ -252,13 +277,12 @@ class AvroDatasetVariableLengthListTest(avro_test_base.AvroDatasetTestBase):
       }
     ]
 
+    self._test_dataset(writer_schema=writer_schema, record_data=record_data,
+                       expected_tensors=expected_tensors, features=features,
+                       batch_size=3, num_epochs=1)
 
-# Not implemented yet
-class AvroDatasetSparseFeatureTest(avro_test_base.AvroDatasetTestBase):
-
-  def __init__(self, *args, **kwargs):
-    super(AvroDatasetSparseFeatureTest, self).__init__(2, *args, **kwargs)
-    self._schema = """{
+  def test_sparse_feature(self):
+    writer_schema = """{
               "type": "record",
               "name": "row",
               "fields": [
@@ -283,23 +307,28 @@ class AvroDatasetSparseFeatureTest(avro_test_base.AvroDatasetTestBase):
                  }
               }
         ]}"""
-    self._actual_records = [
+    record_data = [
       {"sparse_type": [{"index": 0, "value": 5.0}, {"index": 3, "value": 2.0}]},
       {"sparse_type": [{"index": 2, "value": 7.0}]},
     ]
-    self._features = {
+    features = {
       "sparse_type": parsing_ops.SparseFeature(index_key="index",
                                                value_key="value",
                                                dtype=tf_types.float32,
                                                size=4)
     }
-    self._expected_tensors = [
+    expected_tensors = [
       {"sparse_type": sparse_tensor.SparseTensorValue(
           np.asarray([[0, 0], [0, 3], [1, 2]]),
           np.asarray([5.0, 2.0, 7.0]),
           np.asarray([2, 3]))}
     ]
+    self._test_dataset(writer_schema=writer_schema, record_data=record_data,
+                       expected_tensors=expected_tensors, features=features,
+                       batch_size=2, num_epochs=1)
 
+
+# TODO: Add test for sparse with multiple indices
 
 if __name__ == "__main__":
   test.main()

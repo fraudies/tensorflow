@@ -79,6 +79,7 @@ Status CheckValidType(const DataType& dtype) {
 REGISTER_OP("AvroDataset")
     .Input("filenames: string")
     .Input("batch_size: int64")
+    .Input("drop_remainder: bool")
     .Input("dense_defaults: Tdense")
     .Output("handle: variant")
     .Attr("reader_schema: string")
@@ -172,6 +173,10 @@ class AvroDatasetOp : public DatasetOpKernel {
                 errors::InvalidArgument(
                     "batch_size must be greater than zero."));
 
+    bool drop_remainder;
+    OP_REQUIRES_OK(ctx, ParseScalarArgument(ctx, "drop_remainder",
+                                            &drop_remainder));
+
     // Get keys
     OpInputList sparse_keys;
     OpInputList dense_keys;
@@ -218,7 +223,7 @@ class AvroDatasetOp : public DatasetOpKernel {
       it->second = i++;
     }
 
-    *output = new Dataset(ctx, std::move(filenames), batch_size, reader_schema_,
+    *output = new Dataset(ctx, std::move(filenames), batch_size, drop_remainder, reader_schema_,
                     dense_defaults, sparse_keys_, dense_keys_,
                     std::move(key_to_output_index),
                     sparse_types_, dense_types_,
@@ -234,6 +239,7 @@ class AvroDatasetOp : public DatasetOpKernel {
     Dataset(OpKernelContext* ctx,
             std::vector<string> filenames,
             int64 batch_size,
+            bool drop_remainder,
             string reader_schema,
             std::vector<Tensor> dense_defaults,
             std::vector<string> sparse_keys,
@@ -254,16 +260,15 @@ class AvroDatasetOp : public DatasetOpKernel {
           sparse_types_(sparse_types),
           dense_types_(dense_types),
           dense_shapes_(dense_shapes),
-          dense_shapes_batched_(PrependDimension(dense_shapes, batch_size)),
+          dense_shapes_batched_(PrependBatchDimension(dense_shapes, batch_size, drop_remainder, 0,
+                                                      dense_shapes.size())),
           output_types_(output_types),
           output_shapes_(output_shapes),
-          output_shapes_batched_(SelectAndPrependDimension(output_shapes, batch_size, 0, dense_keys_.size())),
-          config_(BuildConfig(batch_size, dense_keys_, dense_types_, dense_shapes_batched_, dense_defaults_,
-                              sparse_keys_, sparse_types_)) {
-
-      LOG(INFO) << "Config has " << config_.dense.size() << " dense keys";
-
-    }
+          output_shapes_batched_(PrependBatchDimension(output_shapes, batch_size, drop_remainder, 0,
+                                                       dense_keys_.size())),
+          config_(BuildConfig(batch_size, drop_remainder, dense_keys_, dense_types_,
+                              dense_shapes_batched_, dense_defaults_, sparse_keys_,
+                              sparse_types_)) { }
 
     std::unique_ptr<IteratorBase> MakeIteratorInternal(
         const string& prefix) const override {
@@ -276,8 +281,6 @@ class AvroDatasetOp : public DatasetOpKernel {
     }
 
     const std::vector<PartialTensorShape>& output_shapes() const override {
-      LOG(INFO) << "Called output shapes";
-
       return output_shapes_;
     }
 
@@ -299,6 +302,10 @@ class AvroDatasetOp : public DatasetOpKernel {
       Node* batch_size = nullptr;
 
       TF_RETURN_IF_ERROR(b->AddScalar(config_.batch_size, &batch_size));
+
+      Node* drop_remainder = nullptr;
+
+      TF_RETURN_IF_ERROR(b->AddScalar(config_.drop_remainder, &drop_remainder));
 
       std::vector<Node*> dense_defaults_nodes;
       dense_defaults_nodes.reserve(dense_defaults_.size());
@@ -326,10 +333,11 @@ class AvroDatasetOp : public DatasetOpKernel {
       TF_RETURN_IF_ERROR(b->AddDataset(this,
                                        {
                                           {0, filenames},
-                                          {1, batch_size}
+                                          {1, batch_size},
+                                          {2, drop_remainder}
                                        }, // single tensor inputs
                                        {
-                                          {2, dense_defaults_nodes}
+                                          {3, dense_defaults_nodes}
                                        }, // list tensor inputs
                                        {
                                           {"reader_schema", reader_schema_attr},
@@ -463,32 +471,26 @@ class AvroDatasetOp : public DatasetOpKernel {
       std::unique_ptr<AvroReader> reader_ GUARDED_BY(mu_);
     };                      // class Iterator
 
-
-    static std::vector<PartialTensorShape> PrependDimension(
-      const std::vector<PartialTensorShape>& shapes, int64 dim) {
-
-      std::vector<PartialTensorShape> new_shapes(shapes);
-      for (int s = 0; s < shapes.size(); ++s) {
-        new_shapes[s] = PartialTensorShape({dim}).Concatenate(new_shapes[s]);
-
-        LOG(INFO) << "New shape " << new_shapes[s];
-      }
-
-      return new_shapes;
-    }
-
-    static std::vector<PartialTensorShape> SelectAndPrependDimension(
-      const std::vector<PartialTensorShape>& shapes, int64 dim, int64 first, int64 num) {
+    static std::vector<PartialTensorShape> PrependBatchDimension(
+      const std::vector<PartialTensorShape>& shapes, int64 dim, bool drop_remainder,
+      int64 first, int64 num) {
 
       std::vector<PartialTensorShape> new_shapes(shapes);
       for (int s = first; s < num; ++s) {
-        new_shapes[s] = PartialTensorShape({dim}).Concatenate(new_shapes[s]);
+        // Know batch dimension (it's fixed)
+        if (drop_remainder) {
+          new_shapes[s] = PartialTensorShape({dim}).Concatenate(new_shapes[s]);
+
+        // Don't know batch dimension, put a -1 here
+        } else {
+          new_shapes[s] = PartialTensorShape({-1}).Concatenate(new_shapes[s]);
+        }
       }
 
       return new_shapes;
     }
 
-    static AvroParseConfig BuildConfig(int64 batch_size,
+    static AvroParseConfig BuildConfig(int64 batch_size, bool drop_remainder,
       const std::vector<string>& dense_keys, const DataTypeVector& dense_types,
       const std::vector<PartialTensorShape>& dense_shapes,
       const std::vector<Tensor>& dense_defaults, const std::vector<string>& sparse_keys,
@@ -497,6 +499,7 @@ class AvroDatasetOp : public DatasetOpKernel {
       AvroParseConfig config;
       // Create the config
       config.batch_size = batch_size;
+      config.drop_remainder = drop_remainder;
       for (int d = 0; d < dense_keys.size(); ++d) {
         config.dense.push_back({dense_keys[d], dense_types[d], dense_shapes[d],
                                 dense_defaults[d]});

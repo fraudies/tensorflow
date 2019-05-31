@@ -35,6 +35,7 @@ struct AvroParseConfig {
   };
 
   int64 batch_size;
+  bool drop_remainder;
   std::vector<Dense> dense;
   std::vector<Sparse> sparse;
 };

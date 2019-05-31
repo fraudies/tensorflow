@@ -245,6 +245,7 @@ py_test(
         "//tensorflow/python:framework_ops",
         "//tensorflow/python:io_ops",
         "//tensorflow/python:parsing_ops",
+        "//tensorflow/python/data/kernel_tests:test_base"
     ],
 )
 

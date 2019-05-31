@@ -46,6 +46,9 @@ Status AvroReader::Read(AvroResult* result) {
   // TODO(fraudies): Use callback for performance optimization
   // TODO(fraudies): Handle last batch of uneven size -- currently dropped
   TF_RETURN_IF_ERROR(avro_mem_reader_.ReadBatch(&values, config_.batch_size));
+
+  LOG(INFO) << "Batch with " << values.size() << " values";
+
   TF_RETURN_IF_ERROR(avro_parser_tree_.ParseValues(&key_to_value_, values));
 
   // Get sparse tensors

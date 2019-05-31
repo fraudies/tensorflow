@@ -121,6 +121,9 @@ private:
   inline static bool IsOneElementTensor(const TensorShape& tensor_shape) {
     return tensor_shape.dims() == 1 && tensor_shape.dim_size(0) == 1;
   }
+  inline static bool IsNonTrivialTensor(const TensorShape& tensor_shape) {
+    return tensor_shape.dims() >= 1 && tensor_shape.dim_size(0) > 1;
+  }
   gtl::InlinedVector<T, 4> values_; // For up to 4 values use inline
   ShapeBuilder shape_builder_;
 };
@@ -184,21 +187,27 @@ template<typename T>
 Status ValueBuffer<T>::ResolveDenseShape(TensorShape* shape,
   const PartialTensorShape& partial_shape, const TensorShape& default_shape) const {
 
-  bool defaultIsOneElementTensor = IsOneElementTensor(default_shape);
+  //bool defaultIsOneElementTensor = IsOneElementTensor(default_shape);
+  bool defaultIsNonTrivialTensor = IsNonTrivialTensor(default_shape);
 
-  LOG(INFO) << "Default shape is " << default_shape << " and is one element tensor " << (defaultIsOneElementTensor ? "true" : "false");
+  //LOG(INFO) << "Default shape is " << default_shape << " and is one element tensor " << (defaultIsOneElementTensor ? "true" : "false");
 
   LOG(INFO) << "Fully defined user shape " << (partial_shape.IsFullyDefined() ? "true" : "false");
 
   // Honor user defined shape if fully defined
   if (partial_shape.IsFullyDefined()) {
+
+    LOG(INFO) << "Fully defined input shape";
+
     if (!partial_shape.AsTensorShape(shape)) {
       return errors::InvalidArgument("Expected ", partial_shape, " to be convertible"
        " into a dense shape.");
     }
 
   // If the default is not scalar
-  } else if (!defaultIsOneElementTensor) {
+  } else if (defaultIsNonTrivialTensor) {
+    LOG(INFO) << "Default is non trivial tensor";
+
     PartialTensorShape tmp_shape;
     // Honor any partially defined shape from user and supplement with that from default
     if (partial_shape.MergeWith(default_shape, &tmp_shape) == Status::OK()) {
@@ -211,8 +220,12 @@ Status ValueBuffer<T>::ResolveDenseShape(TensorShape* shape,
       // Could not merge, then use default
       *shape = default_shape;
     }
+
   // If the shape is not defined by the user nor the default, infer from provided data
   } else {
+
+    LOG(INFO) << "Get shape from data";
+
     TensorShape dense_shape;
     shape_builder_.GetDenseShape(&dense_shape);
 

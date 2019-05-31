@@ -102,7 +102,6 @@ Status AvroMemReader::ReadBatch(std::vector<AvroValueSharedPtr>* values, int64 b
 
   mutex_lock l(mu_);
 
-  avro_set_error("");
 
   for (int64 i_batch = 0; i_batch < batch_size; ++i_batch) {
     AvroValueUniquePtr next_value(new avro_value_t, AvroValueDestructor);
@@ -115,11 +114,22 @@ Status AvroMemReader::ReadBatch(std::vector<AvroValueSharedPtr>* values, int64 b
 
     int ret = avro_file_reader_read_value(*file_reader_, next_value.get());
 
-    (*values).push_back(std::move(next_value));
+    // TODO(fraudies): When migrating to avro 1.8 c++ handle this differently by checking for
+    // the proper return value, if we have an error other than eof forward that to the user
+    // Here it is currently treated as eof -- because the end produces a return code other
+    // than eof when using a memory mapped file
 
-    if (ret != 0) {
+    // If we receive a read error at the first value, then return EOF
+    if (ret != 0 && i_batch == 0) {
       return errors::OutOfRange("eof");
     }
+
+    // If we did not get a valid value, then stop and return this batch
+    if (ret != 0) {
+      break;
+    }
+
+    (*values).push_back(std::move(next_value));
   }
 
   return Status::OK();
@@ -256,7 +266,6 @@ Status AvroResolvedMemReader::ReadBatch(std::vector<AvroValueSharedPtr>* values,
           "Unable to create instance for generic reader class."));
     }
 
-    // Create instance for resolved writer class
     if (avro_resolved_writer_new_value(writer_iface_.get(), writer_value.get()) != 0) {
       return Status(
           errors::InvalidArgument("Unable to create resolved writer value."));
@@ -264,24 +273,27 @@ Status AvroResolvedMemReader::ReadBatch(std::vector<AvroValueSharedPtr>* values,
     avro_resolved_writer_set_dest(writer_value.get(), reader_value.get());
 
     int ret = avro_file_reader_read_value(*file_reader_, writer_value.get());
-    if (ret != 0) {
+
+    // TODO(fraudies): When migrating to avro 1.8 c++ handle this differently by checking for
+    // the proper return value, if we have an error other than eof forward that to the user
+    // Here it is currently treated as eof -- because the end produces a return code other
+    // than eof when using a memory mapped file
+    // if (ret == EOF) {
+    //    return errors::OutOfRange("eof");
+    // }
+    // if (ret != 0) {
+    //    return errors::InvalidArgument("Unable to read value due to: ", avro_strerror());
+    // }
+
+    // If we receive a read error at the first value, then return EOF
+    if (ret != 0 && i_batch == 0) {
       return errors::OutOfRange("eof");
     }
-    // TODO(fraudies): Issue:
-    // When reading from a memory mapped file we get this error
-    // `Error reading file: Incorrect sync bytes`
-    // Instead of EOF
-    // Need to check why this is happening when opening the file with fmemopen and not with
-    // fopen
-    /*
-    if (ret == EOF) {
-      return errors::OutOfRange("eof");
-    }
+
+    // If we did not get a valid value, then stop and return this batch
     if (ret != 0) {
-      return errors::InvalidArgument("Unable to read value due to: ", avro_strerror());
+      break;
     }
-    */
-    // Transfer ownership for reader value
 
     (*values).push_back(std::move(reader_value));
 
