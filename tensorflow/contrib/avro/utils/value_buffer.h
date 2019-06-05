@@ -332,6 +332,8 @@ Status ValueBuffer<T>::FillInFromBuffer(Tensor* tensor) const {
 
 template <typename T>
 Status ValueBuffer<T>::FillInFromDefault(Tensor* tensor, const Tensor& defaults) const {
+
+  // Don't have any default values
   if (!defaults.IsInitialized()) {
     return errors::InvalidArgument("Need to provide a 'defaults' tensor with values");
   }
@@ -340,8 +342,8 @@ Status ValueBuffer<T>::FillInFromDefault(Tensor* tensor, const Tensor& defaults)
   auto tensor_data = (*tensor).flat<T>().data();
   auto buffer_data = defaults.flat<T>().data();
 
-  if (IsOneElementTensor(defaults.shape())) {
-    // Fill tensor with default to create padding
+  // Defaults is a scalar or one element tensor that need to be initialized
+  if (IsOneElementTensor(defaults.shape()) || IsScalarValue(defaults.shape())) {
     std::fill(tensor_data, tensor_data + shape.num_elements(), defaults.flat<T>()(0));
   } else {
     std::vector<std::pair<size_t, size_t> > fill_info;

@@ -42,8 +42,7 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
       {"int_value": 2}
     ]
     features = {
-      "int_value": parsing_ops.FixedLenFeature([], tf_types.int32,
-                                               default_value=0)
+      "int_value": parsing_ops.FixedLenFeature([], tf_types.int32)
     }
     expected_tensors = [
       {"int_value": np.asarray([0, 1, 2])}
@@ -66,8 +65,7 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
       {"int_value": 2}
     ]
     features = {
-      "int_value": parsing_ops.FixedLenFeature([], tf_types.int32,
-                                               default_value=0)
+      "int_value": parsing_ops.FixedLenFeature([], tf_types.int32)
     }
     expected_tensors = [
       {"int_value": np.asarray([0, 1])},
@@ -101,6 +99,74 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
     }
     expected_tensors = [
       {"int_list[*]": np.asarray([[0, 1, 2], [3, 4, 5], [6, 7, 8]])}
+    ]
+
+    self._test_dataset(writer_schema=writer_schema, record_data=record_data,
+                       expected_tensors=expected_tensors, features=features,
+                       batch_size=3, num_epochs=1)
+
+  def test_fixed_length_with_default_vector(self):
+    writer_schema = """{
+              "type": "record",
+              "name": "row",
+              "fields": [
+                  {
+                     "name": "int_list",
+                     "type": {
+                        "type": "array",
+                        "items": "int"
+                     }
+                  }
+              ]}"""
+    record_data = [
+      {"int_list": [0, 1, 2]},
+      {"int_list": [3]},
+      {"int_list": [6, 7]}
+    ]
+    features = {
+      "int_list[*]": parsing_ops.FixedLenFeature([3], tf_types.int32,
+                                                 default_value=[0, 1, 2])
+    }
+    expected_tensors = [
+      {"int_list[*]": np.asarray([
+        [0, 1, 2],
+        [3, 1, 2],
+        [6, 7, 2]])
+      }
+    ]
+
+    self._test_dataset(writer_schema=writer_schema, record_data=record_data,
+                       expected_tensors=expected_tensors, features=features,
+                       batch_size=3, num_epochs=1)
+
+  def test_fixed_length_with_default_scalar(self):
+    writer_schema = """{
+              "type": "record",
+              "name": "row",
+              "fields": [
+                  {
+                     "name": "int_list",
+                     "type": {
+                        "type": "array",
+                        "items": "int"
+                     }
+                  }
+              ]}"""
+    record_data = [
+      {"int_list": [0, 1, 2]},
+      {"int_list": [3]},
+      {"int_list": [6, 7]}
+    ]
+    features = {
+      "int_list[*]": parsing_ops.FixedLenFeature([], tf_types.int32,
+                                                 default_value=0)
+    }
+    expected_tensors = [
+      {"int_list[*]": np.asarray([
+        [0, 1, 2],
+        [3, 0, 0],
+        [6, 7, 0]])
+      }
     ]
 
     self._test_dataset(writer_schema=writer_schema, record_data=record_data,
@@ -327,8 +393,6 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
                        expected_tensors=expected_tensors, features=features,
                        batch_size=2, num_epochs=1)
 
-
-# TODO: Add test for sparse with multiple indices
 
 if __name__ == "__main__":
   test.main()

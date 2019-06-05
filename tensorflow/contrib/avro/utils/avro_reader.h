@@ -27,6 +27,8 @@ struct AvroParseConfig {
     DataType dtype;
     PartialTensorShape shape;
     Tensor default_value;
+    // user did not provide shape and we need to find the dimension
+    bool variable_length;
   };
 
   struct Sparse {
@@ -70,10 +72,14 @@ public:
 private:
 
   // Assumes tensor has been allocated appropriate space -- not checked
-  Status ShapeToTensor(Tensor* tensor, const TensorShape& shape);
+  static Status ShapeToTensor(Tensor* tensor, const TensorShape& shape);
 
   // Checks that there are no duplicate keys in the sparse feature names and dense feature names
   std::vector<std::pair<string, DataType>> CreateKeysAndTypesFromConfig();
+
+  static int ResolveDefaultShape(TensorShape* resolved, const PartialTensorShape& default_shape,
+    int64 batch_size);
+
 
   const std::unique_ptr<RandomAccessFile>& file_;
   const uint64 file_size_;

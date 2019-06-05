@@ -426,13 +426,30 @@ class AvroDatasetOp : public DatasetOpKernel {
               << DataTypeString(dataset()->output_dtypes()[output_index]) << ", got "
               << DataTypeString(avro_result.dense_values[d].dtype())
               << ").";
-          CHECK(dataset()->output_shapes_batched_[output_index].IsCompatibleWith(
-              avro_result.dense_values[d].shape()))
-              << "Got wrong shape for AvroDataset return value " << d
-              << " (expected "
-              << dataset()->output_shapes_batched_[output_index].DebugString() << ", got "
-              << avro_result.dense_values[d].shape().DebugString()
-              << ").";
+
+          const AvroParseConfig::Dense& dense = dataset()->config_.dense[d];
+          if (dense.variable_length) {
+            // Use dense_defaults_ here because it does not include the batch replicate
+            CHECK(dataset()->dense_defaults_[d].NumElements() == 1)
+                << "dense_shape[" << d
+                << "] is a variable length shape: "
+                << dense.shape.DebugString()
+                << ", therefore "
+                << "def_value["
+                << d
+                << "] must contain a single element ("
+                << "the padding element).  But its shape is: "
+                << dense.default_value.shape().DebugString();
+
+          } else {
+            CHECK(dataset()->output_shapes_batched_[output_index].IsCompatibleWith(
+                avro_result.dense_values[d].shape()))
+                << "Got wrong shape for AvroDataset return value " << d
+                << " (expected "
+                << dataset()->output_shapes_batched_[output_index].DebugString() << ", got "
+                << avro_result.dense_values[d].shape().DebugString()
+                << ").";
+          }
 
           LOG(INFO) << "Output tensor for " << dataset()->dense_keys_[d] << " is " << avro_result.dense_values[d].SummarizeValue(3);
           (*out_tensors)[output_index] = avro_result.dense_values[d];
@@ -501,8 +518,11 @@ class AvroDatasetOp : public DatasetOpKernel {
       config.batch_size = batch_size;
       config.drop_remainder = drop_remainder;
       for (int d = 0; d < dense_keys.size(); ++d) {
+        // If the user did not provide shape information and the first dimension is -1 for the batch
+        bool variable_length = dense_shapes[d].dims() == 1
+                            && dense_shapes[d].dim_size(0) == -1;
         config.dense.push_back({dense_keys[d], dense_types[d], dense_shapes[d],
-                                dense_defaults[d]});
+                                dense_defaults[d], variable_length});
       }
       for (int d = 0; d < sparse_keys.size(); ++d) {
         config.sparse.push_back({sparse_keys[d], sparse_types[d]});
@@ -510,8 +530,6 @@ class AvroDatasetOp : public DatasetOpKernel {
 
       return config;
     }
-
-    static bool prepend_dimension_for_dense_shapes;
 
     const std::vector<string> filenames_;
     const string reader_schema_;

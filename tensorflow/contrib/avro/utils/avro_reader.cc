@@ -11,6 +11,7 @@ limitations under the License.
 ==============================================================================*/
 
 #include "tensorflow/contrib/avro/utils/avro_reader.h"
+#include "tensorflow/core/framework/tensor_util.h"
 
 namespace tensorflow {
 namespace data {
@@ -46,6 +47,8 @@ Status AvroReader::Read(AvroResult* result) {
   // TODO(fraudies): Use callback for performance optimization
   // TODO(fraudies): Handle last batch of uneven size -- currently dropped
   TF_RETURN_IF_ERROR(avro_mem_reader_.ReadBatch(&values, config_.batch_size));
+
+  int64 batch_size = values.size();
 
   LOG(INFO) << "Batch with " << values.size() << " values";
 
@@ -93,9 +96,24 @@ Status AvroReader::Read(AvroResult* result) {
 
     const ValueStoreUniquePtr& value_store = key_to_value_[dense.feature_name];
 
+    TensorShape default_shape;
+    Tensor default_value;
+    // If we can resolve the dense shape add batch, otherwise keep things as they are
+    if (ResolveDefaultShape(&default_shape, dense.default_value.shape(), batch_size)) {
+      default_value = Tensor(allocator_, dense.dtype, default_shape);
+      TF_RETURN_IF_ERROR(tensor::Concat(
+        std::vector<Tensor>(batch_size, dense.default_value),
+        &default_value));
+    } else {
+      default_value = dense.default_value;
+      default_shape = default_value.shape();
+    }
+
+    LOG(INFO) << "Default value is " << default_value.SummarizeValue(9);
+
     TensorShape resolved_shape;
     TF_RETURN_IF_ERROR((*value_store).ResolveDenseShape(&resolved_shape, dense.shape,
-      dense.default_value.shape()));
+      default_shape));
 
     (*result).dense_values[i_dense] = Tensor(allocator_, dense.dtype, resolved_shape);
 
@@ -104,13 +122,27 @@ Status AvroReader::Read(AvroResult* result) {
     LOG(INFO) << (*value_store).ToString(10);
 
     TF_RETURN_IF_ERROR((*value_store).MakeDense(&(*result).dense_values[i_dense],
-      resolved_shape, dense.default_value));
+      resolved_shape, default_value));
 
-    LOG(INFO) << "Dense tensor " << (*result).dense_values[i_dense].SummarizeValue(3);
+    LOG(INFO) << "Dense tensor " << (*result).dense_values[i_dense].SummarizeValue(9);
   }
 
   return Status::OK();
 }
+
+int AvroReader::ResolveDefaultShape(TensorShape* resolved, const PartialTensorShape& default_shape,
+  int64 batch_size) {
+
+  // If default is not given or a scalar, do not resolve nor replicate
+  if (default_shape.dims() < 1 || (default_shape.dims() == 1 && default_shape.dim_size(0) <= 1)) {
+    return 0;
+  }
+
+  // TODO: Check that dense shape matches dimensions, handle cases where the default is not given
+  PartialTensorShape full_shape(PartialTensorShape({batch_size}).Concatenate(default_shape));
+  return full_shape.AsTensorShape(resolved);
+}
+
 
 // Assumes tensor has been allocated appropriate space -- not checked
 Status AvroReader::ShapeToTensor(Tensor* tensor, const TensorShape& shape) {

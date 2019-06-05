@@ -249,6 +249,22 @@ py_test(
     ],
 )
 
+py_test(
+    name = "avro_dataset_test_new",
+    size = "small",
+    srcs = ["python/tests/avro_dataset_test_new.py"],
+    deps = [
+        ":avro",
+        ":avro_test",
+        "//tensorflow/contrib/avro/python/utils:avro_utils",
+        "//tensorflow/python:client_testlib",
+        "//tensorflow/python:framework_ops",
+        "//tensorflow/python:io_ops",
+        "//tensorflow/python:parsing_ops",
+        "//tensorflow/python/data/kernel_tests:test_base"
+    ],
+)
+
 filegroup(
     name = "all_files",
     srcs = glob(
