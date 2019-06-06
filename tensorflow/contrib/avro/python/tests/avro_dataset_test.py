@@ -29,23 +29,123 @@ from tensorflow.contrib.avro.python.tests import avro_dataset_test_base as \
 
 class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
 
-  def test_primitive_type(self):
+  def test_primitive_types(self):
     writer_schema = """{
               "type": "record",
-              "name": "row",
+              "name": "dataTypes",
               "fields": [
-                  {"name": "int_value", "type": "int"}
+                  {  
+                     "name":"string_value",
+                     "type":"string"
+                  },
+                  {  
+                     "name":"bytes_value",
+                     "type":"bytes"
+                  },
+                  {  
+                     "name":"double_value",
+                     "type":"double"
+                  },
+                  {  
+                     "name":"float_value",
+                     "type":"float"
+                  },
+                  {  
+                     "name":"long_value",
+                     "type":"long"
+                  },
+                  {  
+                     "name":"int_value",
+                     "type":"int"
+                  },
+                  {  
+                     "name":"boolean_value",
+                     "type":"boolean"
+                  }
               ]}"""
     record_data = [
-      {"int_value": 0},
-      {"int_value": 1},
-      {"int_value": 2}
+      {
+        "string_value": "",
+        "bytes_value": b"",
+        "double_value": 0.0,
+        "float_value": 0.0,
+        "long_value": 0,
+        "int_value": 0,
+        "boolean_value": False,
+      },
+      {
+        "string_value": "SpecialChars@!#$%^&*()-_=+{}[]|/`~\\\'?",
+        "bytes_value": b"SpecialChars@!#$%^&*()-_=+{}[]|/`~\\\'?",
+        "double_value": 1.7976931348623157e+308,
+        "float_value": 3.40282306074e+38,
+        "long_value": 9223372036854775807,
+        "int_value": 2147483648 - 1,
+        "boolean_value": True,
+      },
+      {
+        "string_value": "ABCDEFGHIJKLMNOPQRSTUVWZabcdefghijklmnopqrstuvwz0123456789",
+        "bytes_value": b"ABCDEFGHIJKLMNOPQRSTUVWZabcdefghijklmnopqrstuvwz0123456789",
+        "double_value": -1.7976931348623157e+308,
+        "float_value": -3.40282306074e+38,
+        "long_value": -9223372036854775807 - 1,
+        "int_value": -2147483648,
+        "boolean_value": False,
+      }
     ]
     features = {
-      "int_value": parsing_ops.FixedLenFeature([], tf_types.int32)
+      "string_value": parsing_ops.FixedLenFeature([], tf_types.string),
+      "bytes_value": parsing_ops.FixedLenFeature([], tf_types.string),
+      "double_value": parsing_ops.FixedLenFeature([], tf_types.float64),
+      "float_value": parsing_ops.FixedLenFeature([], tf_types.float32),
+      "long_value": parsing_ops.FixedLenFeature([], tf_types.int64),
+      "int_value": parsing_ops.FixedLenFeature([], tf_types.int32),
+      "boolean_value": parsing_ops.FixedLenFeature([], tf_types.bool)
     }
     expected_tensors = [
-      {"int_value": np.asarray([0, 1, 2])}
+      {
+        "string_value":
+          np.asarray([
+            "",
+            "SpecialChars@!#$%^&*()-_=+{}[]|/`~\\\'?",
+            "ABCDEFGHIJKLMNOPQRSTUVWZabcdefghijklmnopqrstuvwz0123456789"
+          ]),
+        "bytes_value":
+          np.asarray([
+            b"",
+            b"SpecialChars@!#$%^&*()-_=+{}[]|/`~\\\'?",
+            b"ABCDEFGHIJKLMNOPQRSTUVWZabcdefghijklmnopqrstuvwz0123456789"
+          ]),
+        "double_value":
+          np.asarray([
+            0.0,
+            1.7976931348623157e+308,
+            -1.7976931348623157e+308
+          ]),
+        "float_value":
+          np.asarray([
+            0.0,
+            3.40282306074e+38,
+            -3.40282306074e+38
+          ]),
+        "long_value":
+          np.asarray([
+            0,
+            9223372036854775807,
+            -9223372036854775807-1
+          ]),
+        "int_value":
+          np.asarray([
+            0,
+            2147483648-1,
+            -2147483648
+          ]),
+        "boolean_value":
+          np.asarray([
+            False,
+            True,
+            False
+          ])
+      }
     ]
     self._test_dataset(writer_schema=writer_schema, record_data=record_data,
                        expected_tensors=expected_tensors, features=features,

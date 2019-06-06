@@ -164,23 +164,32 @@ string FloatValueParser::ToString(int level) const {
   return LevelToString(level) + "|---FloatValue(" + key_ + ")\n";
 }
 
-StringValueParser::StringValueParser(const string& key) : AvroParser(key) { }
-Status StringValueParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
+StringOrBytesValueParser::StringOrBytesValueParser(const string& key) : AvroParser(key) { }
+Status StringOrBytesValueParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
   const avro_value_t& value) const {
 
-  const char* field_value = nullptr;  // just a pointer to the data not a copy, no need to free this
+  const char* char_field_value = nullptr;  // just a pointer to the data not a copy, no need to free this
   size_t field_size = 0;
-  if (avro_value_get_string(&value, &field_value, &field_size) != 0) {
-    return Status(errors::InvalidArgument("For '", key_, "' could not extract string. Error: ",
-      avro_strerror()));
+  if (avro_value_get_string(&value, &char_field_value, &field_size) == 0) {
+    // Assume the key exists
+    (*reinterpret_cast<StringValueBuffer*>((*values)[key_].get())).AddByRef(string(char_field_value, field_size - 1));
+    // (*(*values)[key_]).AddByRef<string>(string(field_value, field_size - 1));
+    return Status::OK();
   }
-  // Assume the key exists
-  (*reinterpret_cast<StringValueBuffer*>((*values)[key_].get())).AddByRef(string(field_value, field_size - 1));
-  // (*(*values)[key_]).AddByRef<string>(string(field_value, field_size - 1));
-  return Status::OK();
+
+  const void* bytes_field_value = nullptr;
+  if (avro_value_get_bytes(&value, &bytes_field_value, &field_size) == 0) {
+    // Assume the key exists
+    (*reinterpret_cast<StringValueBuffer*>((*values)[key_].get())).AddByRef(string((const char*)bytes_field_value, field_size));
+    // (*(*values)[key_]).AddByRef<string>(string(field_value, field_size - 1));
+    return Status::OK();
+  }
+
+  return Status(errors::InvalidArgument("For '", key_, "' could not extract string. Error: ",
+    avro_strerror()));
 }
-string StringValueParser::ToString(int level) const {
-  return LevelToString(level) + "|---StringValue(" + key_ + ")\n";
+string StringOrBytesValueParser::ToString(int level) const {
+  return LevelToString(level) + "|---StringOrBytesValue(" + key_ + ")\n";
 }
 
 // ------------------------------------------------------------

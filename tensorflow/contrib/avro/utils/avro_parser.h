@@ -97,9 +97,9 @@ public:
   virtual string ToString(int level = 0) const;
 };
 
-class StringValueParser : public AvroParser {
+class StringOrBytesValueParser : public AvroParser {
 public:
-  StringValueParser(const string& key);
+  StringOrBytesValueParser(const string& key);
   Status Parse(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
   virtual string ToString(int level = 0) const;

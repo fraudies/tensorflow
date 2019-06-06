@@ -29,7 +29,7 @@ from tensorflow.contrib.avro.python.tests import avro_dataset_test_base as \
 class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
 
   def test_dummy(self):
-    print("I'm a dummy")
+    print("dummy test")
 
 
 if __name__ == "__main__":

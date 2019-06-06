@@ -284,12 +284,12 @@ Status AvroParserTree::CreateValueParser(AvroParserUniquePtr& value_parser,
       value_parser.reset(new DoubleValueParser(user_defined_name));
       break;
     case DT_STRING:
-      value_parser.reset(new StringValueParser(user_defined_name));
+      value_parser.reset(new StringOrBytesValueParser(user_defined_name));
       break;
     default:
-      return Status(errors::Unimplemented("Unable to build avro value parser for name '",
+      return errors::Unimplemented("Unable to build avro value parser for name '",
                 user_defined_name, "', because data type '", DataTypeString(data_type),
-                "' is not supported!"));
+                "' is not supported!");
   }
   return Status::OK();
 }
