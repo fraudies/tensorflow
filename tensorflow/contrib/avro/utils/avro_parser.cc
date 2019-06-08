@@ -200,7 +200,12 @@ Status ArrayAllParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
   const avro_value_t& value) const {
 
   size_t n_elements = 0;
-  avro_value_get_size(&value, &n_elements);
+
+  if (avro_value_get_size(&value, &n_elements) != 0) {
+    return errors::InvalidArgument("Unable to find size for array due to error: ",
+      avro_strerror());
+  }
+
   const std::vector<AvroParserSharedPtr>& children(GetChildren());
   const std::vector<AvroParserSharedPtr>& final_descendents(GetFinalDescendents());
 
@@ -213,7 +218,11 @@ Status ArrayAllParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
   // Resolve all the values from the array
   for (size_t i_elements = 0; i_elements < n_elements; ++i_elements) {
     AvroValueSharedPtr next_value(new avro_value_t);
-    avro_value_get_by_index(&value, i_elements, next_value.get(), NULL);
+
+    if (avro_value_get_by_index(&value, i_elements, next_value.get(), NULL) != 0) {
+      return errors::InvalidArgument("Unable to find value for index '", i_elements,
+        "' in array due to error: ", avro_strerror());
+    }
     // For all children
     for (const AvroParserSharedPtr& child : children) {
       TF_RETURN_IF_ERROR((*child).Parse(values, *next_value));
@@ -241,7 +250,12 @@ Status ArrayIndexParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
 
   // Check for valid index
   size_t n_elements = 0;
-  avro_value_get_size(&value, &n_elements);
+
+  if (avro_value_get_size(&value, &n_elements) != 0) {
+    return errors::InvalidArgument("Unable to find size for array index due to error: ",
+      avro_strerror());
+  }
+
   if (index_ > n_elements || index_ < 0) {
     return Status(errors::InvalidArgument("Invalid index ", index_,
       ". Range [", 0, ", ", n_elements, ")."));
@@ -257,7 +271,10 @@ Status ArrayIndexParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
   }
 
   AvroValueSharedPtr next_value(new avro_value_t);
-  avro_value_get_by_index(&value, index_, next_value.get(), NULL);
+  if (avro_value_get_by_index(&value, index_, next_value.get(), NULL) != 0) {
+    return errors::InvalidArgument("Unable to find value for index '", index_, "' due to error: ",
+      avro_strerror());
+  }
 
   // For all children same next value
   for (const AvroParserSharedPtr& child : children) {
@@ -297,7 +314,11 @@ Status ArrayFilterParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
   }
 
   size_t n_elements = 0;
-  avro_value_get_size(&value, &n_elements);
+
+  if (avro_value_get_size(&value, &n_elements) != 0) {
+    return errors::InvalidArgument("Unable to find size for array filter due to error: ",
+      avro_strerror());
+  }
 
   const std::vector<AvroParserSharedPtr>& children(GetChildren());
 
@@ -311,7 +332,11 @@ Status ArrayFilterParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
           && (*(*values).at(lhs_)).ValuesMatchAtReverseIndex(*(*values).at(rhs_), reverse_index)) ) {
 
       AvroValueSharedPtr next_value(new avro_value_t);
-      avro_value_get_by_index(&value, i_elements, next_value.get(), NULL);
+      if (avro_value_get_by_index(&value, i_elements, next_value.get(), NULL) != 0) {
+        return errors::InvalidArgument("Unable to find value for index '", i_elements, "' due to error: ",
+          avro_strerror());
+      }
+
       // For all children
       for (const AvroParserSharedPtr& child : children) {
         TF_RETURN_IF_ERROR((*child).Parse(values, *next_value));

@@ -94,8 +94,8 @@ class AvroDatasetTestBase(test_base.DatasetTestBase):
       with self.assertRaises(OutOfRangeError):
         sess.run(next_element)
 
-  def _test_dataset(self, writer_schema, record_data, expected_tensors,
-                    features, batch_size, **kwargs):
+  def _test_pass_dataset(self, writer_schema, record_data, expected_tensors,
+                         features, batch_size, **kwargs):
     filenames = AvroDatasetTestBase._setup_files(writer_schema=writer_schema,
                                                  records=record_data)
 
@@ -107,3 +107,28 @@ class AvroDatasetTestBase(test_base.DatasetTestBase):
 
     self._verify_output(expected_tensors=expected_tensors,
                         actual_dataset=actual_dataset)
+
+  def _test_fail_dataset(self, writer_schema, record_data, features, batch_size,
+      **kwargs):
+    filenames = AvroDatasetTestBase._setup_files(writer_schema=writer_schema,
+                                                 records=record_data)
+
+    actual_dataset = avro_dataset.make_avro_dataset_v1(
+        file_pattern=filenames, features=features, batch_size=batch_size,
+        reader_schema=kwargs.get("reader_schema", ""),
+        shuffle=kwargs.get("shuffle", None),
+        num_epochs=kwargs.get("num_epochs", None))
+
+    # Turn off any parallelism and random for testing
+    config = config_pb2.ConfigProto(
+        intra_op_parallelism_threads=1, inter_op_parallelism_threads=1)
+
+    with self.test_session(config=config) as sess:
+
+      iterator = actual_dataset.make_initializable_iterator()
+      next_element = iterator.get_next()
+      sess.run(iterator.initializer)
+
+      with self.assertRaises(OpError):
+        sess.run(next_element)
+

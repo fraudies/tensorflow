@@ -21,6 +21,7 @@ import numpy as np
 from tensorflow.python.platform import test
 from tensorflow.python.framework import dtypes as tf_types
 from tensorflow.python.ops import parsing_ops
+from tensorflow.python.util import compat
 from tensorflow.python.framework import sparse_tensor
 
 from tensorflow.contrib.avro.python.tests import avro_dataset_test_base as \
@@ -147,9 +148,11 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
           ])
       }
     ]
-    self._test_dataset(writer_schema=writer_schema, record_data=record_data,
-                       expected_tensors=expected_tensors, features=features,
-                       batch_size=3, num_epochs=1)
+    self._test_pass_dataset(writer_schema=writer_schema,
+                            record_data=record_data,
+                            expected_tensors=expected_tensors,
+                            features=features,
+                            batch_size=3, num_epochs=1)
 
   def test_batching(self):
 
@@ -172,9 +175,11 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
       {"int_value": np.asarray([2])}
     ]
 
-    self._test_dataset(writer_schema=writer_schema, record_data=record_data,
-                       expected_tensors=expected_tensors, features=features,
-                       batch_size=2, num_epochs=1)
+    self._test_pass_dataset(writer_schema=writer_schema,
+                            record_data=record_data,
+                            expected_tensors=expected_tensors,
+                            features=features,
+                            batch_size=2, num_epochs=1)
 
   def test_fixed_length_list(self):
     writer_schema = """{
@@ -201,9 +206,11 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
       {"int_list[*]": np.asarray([[0, 1, 2], [3, 4, 5], [6, 7, 8]])}
     ]
 
-    self._test_dataset(writer_schema=writer_schema, record_data=record_data,
-                       expected_tensors=expected_tensors, features=features,
-                       batch_size=3, num_epochs=1)
+    self._test_pass_dataset(writer_schema=writer_schema,
+                            record_data=record_data,
+                            expected_tensors=expected_tensors,
+                            features=features,
+                            batch_size=3, num_epochs=1)
 
   def test_fixed_length_with_default_vector(self):
     writer_schema = """{
@@ -235,9 +242,11 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
       }
     ]
 
-    self._test_dataset(writer_schema=writer_schema, record_data=record_data,
-                       expected_tensors=expected_tensors, features=features,
-                       batch_size=3, num_epochs=1)
+    self._test_pass_dataset(writer_schema=writer_schema,
+                            record_data=record_data,
+                            expected_tensors=expected_tensors,
+                            features=features,
+                            batch_size=3, num_epochs=1)
 
   def test_fixed_length_with_default_scalar(self):
     writer_schema = """{
@@ -269,9 +278,11 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
       }
     ]
 
-    self._test_dataset(writer_schema=writer_schema, record_data=record_data,
-                       expected_tensors=expected_tensors, features=features,
-                       batch_size=3, num_epochs=1)
+    self._test_pass_dataset(writer_schema=writer_schema,
+                            record_data=record_data,
+                            expected_tensors=expected_tensors,
+                            features=features,
+                            batch_size=3, num_epochs=1)
 
   def test_dense_2d(self):
     writer_schema = """{
@@ -319,9 +330,11 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
          np.asarray([[[1, 2, 3], [4, 5, 6]], [[7, 8, 9], [10, 11, 12]]])}
     ]
 
-    self._test_dataset(writer_schema=writer_schema, record_data=record_data,
-                       expected_tensors=expected_tensors, features=features,
-                       batch_size=2, num_epochs=1)
+    self._test_pass_dataset(writer_schema=writer_schema,
+                            record_data=record_data,
+                            expected_tensors=expected_tensors,
+                            features=features,
+                            batch_size=2, num_epochs=1)
 
   def test_dense_3d(self):
     writer_schema = """{
@@ -408,9 +421,11 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
           )},
     ]
 
-    self._test_dataset(writer_schema=writer_schema, record_data=record_data,
-                       expected_tensors=expected_tensors, features=features,
-                       batch_size=1, num_epochs=1)
+    self._test_pass_dataset(writer_schema=writer_schema,
+                            record_data=record_data,
+                            expected_tensors=expected_tensors,
+                            features=features,
+                            batch_size=1, num_epochs=1)
 
   def test_variable_length(self):
     writer_schema = """{
@@ -443,9 +458,11 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
       }
     ]
 
-    self._test_dataset(writer_schema=writer_schema, record_data=record_data,
-                       expected_tensors=expected_tensors, features=features,
-                       batch_size=3, num_epochs=1)
+    self._test_pass_dataset(writer_schema=writer_schema,
+                            record_data=record_data,
+                            expected_tensors=expected_tensors,
+                            features=features,
+                            batch_size=3, num_epochs=1)
 
   def test_sparse_feature(self):
     writer_schema = """{
@@ -489,9 +506,313 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
           np.asarray([5.0, 2.0, 7.0]),
           np.asarray([2, 3]))}
     ]
-    self._test_dataset(writer_schema=writer_schema, record_data=record_data,
-                       expected_tensors=expected_tensors, features=features,
-                       batch_size=2, num_epochs=1)
+    self._test_pass_dataset(writer_schema=writer_schema,
+                            record_data=record_data,
+                            expected_tensors=expected_tensors,
+                            features=features,
+                            batch_size=2, num_epochs=1)
+
+  def test_nesting(self):
+
+    writer_schema = """
+        {
+           "type": "record",
+           "name": "nesting",
+           "fields": [
+              {
+                 "name": "nested_record",
+                 "type": {
+                    "type": "record",
+                    "name": "nested_values",
+                    "fields": [
+                       {
+                          "name": "nested_int",
+                          "type": "int"
+                       },
+                       {
+                          "name": "nested_float_list",
+                          "type": {
+                             "type": "array",
+                             "items": "float"
+                          }
+                       }
+                    ]
+                 }
+              },
+              {
+                 "name": "list_of_records",
+                 "type": {
+                    "type": "array",
+                    "items": {
+                       "type": "record",
+                       "name": "person",
+                       "fields": [
+                          {
+                             "name": "first_name",
+                             "type": "string"
+                          },
+                          {
+                             "name": "age",
+                             "type": "int"
+                          }
+                       ]
+                    }
+                 }
+              },
+              {
+                 "name": "map_of_records",
+                 "type": {
+                    "type": "map",
+                    "values": {
+                       "type": "record",
+                       "name": "secondPerson",
+                       "fields": [
+                          {
+                             "name": "first_name",
+                             "type": "string"
+                          },
+                          {
+                             "name": "age",
+                             "type": "int"
+                          }
+                       ]
+                    }
+                 }
+              }
+           ]
+        }
+        """
+    record_data = [
+      {
+        "nested_record": {
+          "nested_int": 0,
+          "nested_float_list": [0.0, 10.0]
+        },
+        "list_of_records": [{
+          "first_name": "Herbert",
+          "age": 70
+        }],
+        "map_of_records": {
+          "first": {
+            "first_name": "Herbert",
+            "age": 70
+          },
+          "second": {
+            "first_name": "Julia",
+            "age": 30
+          }
+        }
+      },
+      {
+        "nested_record": {
+          "nested_int": 5,
+          "nested_float_list": [-2.0, 7.0]
+        },
+        "list_of_records": [{
+          "first_name": "Doug",
+          "age": 55
+        }, {
+          "first_name": "Jess",
+          "age": 66
+        }, {
+          "first_name": "Julia",
+          "age": 30
+        }],
+        "map_of_records": {
+          "first": {
+            "first_name": "Doug",
+            "age": 55
+          },
+          "second": {
+            "first_name": "Jess",
+            "age": 66
+          }
+        }
+      },
+      {
+        "nested_record": {
+          "nested_int": 7,
+          "nested_float_list": [3.0, 4.0]
+        },
+        "list_of_records": [{
+          "first_name": "Karl",
+          "age": 32
+        }],
+        "map_of_records": {
+          "first": {
+            "first_name": "Karl",
+            "age": 32
+          },
+          "second": {
+            "first_name": "Joan",
+            "age": 21
+          }
+        }
+      }
+    ]
+    features = {
+      "nested_record.nested_int": parsing_ops.FixedLenFeature([], tf_types.int32),
+      "nested_record.nested_float_list[*]": parsing_ops.FixedLenFeature([2], tf_types.float32),
+      "list_of_records[0].first_name": parsing_ops.FixedLenFeature([1], tf_types.string),
+      "map_of_records['second'].age": parsing_ops.FixedLenFeature([1], tf_types.int32)
+    }
+    expected_tensors = [
+      {
+        "nested_record.nested_int":
+          np.asarray([0, 5, 7]),
+        "nested_record.nested_float_list[*]":
+          np.asarray([[0.0, 10.0], [-2.0, 7.0], [3.0, 4.0]]),
+        "list_of_records[0].first_name":
+          np.asarray([[compat.as_bytes("Herbert")],
+                      [compat.as_bytes("Doug")],
+                      [compat.as_bytes("Karl")]]),
+        "map_of_records['second'].age":
+          np.asarray([30, 66, 21])
+      }
+    ]
+    self._test_pass_dataset(writer_schema=writer_schema,
+                            record_data=record_data,
+                            expected_tensors=expected_tensors,
+                            features=features,
+                            batch_size=3, num_epochs=1)
+
+  def test_parse_int_as_long_fail(self):
+    writer_schema = """
+          {
+             "type": "record",
+             "name": "data_row",
+             "fields": [
+                {
+                   "name": "index",
+                   "type": "int"
+                }
+             ]
+          }
+          """
+    record_data = [{"index": 0}]
+    features = {"index": parsing_ops.FixedLenFeature([], tf_types.int64)}
+    self._test_fail_dataset(writer_schema, record_data, features, 1)
+
+  def test_parse_int_as_sparse_type_fail(self):
+    writer_schema = """
+      {
+         "type": "record",
+         "name": "data_row",
+         "fields": [
+            {
+               "name": "index",
+               "type": "int"
+            }
+         ]
+      }        
+      """
+    record_data = [{"index": 5}]
+    features = {
+      "index":
+        parsing_ops.SparseFeature(
+            index_key="index",
+            value_key="value",
+            dtype=tf_types.float32,
+            size=10)
+    }
+    self._test_fail_dataset(writer_schema, record_data, features, 1)
+
+  def test_parse_float_as_double_fail(self):
+    writer_schema = """
+      {
+         "type": "record",
+         "name": "data_row",
+         "fields": [
+            {
+               "name": "weight",
+               "type": "float"
+            }
+         ]
+      }
+      """
+    record_data = [{"weight": 0.5}]
+    features = {"weight": parsing_ops.FixedLenFeature([], tf_types.float64)}
+    self._test_fail_dataset(writer_schema, record_data, features, 1)
+
+  def test_fixed_length_without_proper_default_fail(self):
+    writer_schema = """
+      {
+         "type": "record",
+         "name": "data_row",
+         "fields": [
+            {
+               "name": "int_list_type",
+               "type": {
+                  "type":"array",
+                  "items":"int"
+               }
+            }
+         ]
+      }        
+      """
+    record_data = [
+      {
+        "int_list_type": [0, 1, 2]
+      },
+      {
+        "int_list_type": [0, 1]
+      }
+    ]
+    features = {
+      "int_list_type": parsing_ops.FixedLenFeature([], tf_types.int32)
+    }
+    self._test_fail_dataset(writer_schema, record_data, features, 1)
+
+  def test_wrong_spelling_of_feature_name_fail(self):
+    writer_schema = """
+      {
+         "type": "record",
+         "name": "data_row",
+         "fields": [
+           {"name": "int_type", "type": "int"}
+         ]
+      }"""
+    record_data = [{"int_type": 0}]
+    features = {
+      "wrong_spelling": parsing_ops.FixedLenFeature([], tf_types.int32)
+    }
+    self._test_fail_dataset(writer_schema, record_data, features, 1)
+
+  def test_wrong_index(self):
+    writer_schema = """
+      {
+         "type": "record",
+         "name": "data_row",
+         "fields": [
+            {
+               "name": "list_of_records",
+               "type": {
+                  "type": "array",
+                  "items": {
+                     "type": "record",
+                     "name": "person",
+                     "fields": [
+                        {
+                           "name": "first_name",
+                           "type": "string"
+                        }
+                     ]
+                  }
+               }
+            }
+         ]
+      }
+      """
+    record_data = [{
+      "list_of_records": [{
+        "first_name": "My name"
+      }]
+    }]
+    features = {
+      "list_of_records[2].name":
+        parsing_ops.FixedLenFeature([], tf_types.string)
+    }
+    self._test_fail_dataset(writer_schema, record_data, features, 1)
 
 
 if __name__ == "__main__":
