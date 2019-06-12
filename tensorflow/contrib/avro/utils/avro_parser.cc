@@ -171,6 +171,9 @@ Status StringOrBytesValueParser::Parse(std::map<string, ValueStoreUniquePtr>* va
   const char* char_field_value = nullptr;  // just a pointer to the data not a copy, no need to free this
   size_t field_size = 0;
   if (avro_value_get_string(&value, &char_field_value, &field_size) == 0) {
+
+    LOG(INFO) << "Adding string value " << string(char_field_value, field_size - 1);
+
     // Assume the key exists
     (*reinterpret_cast<StringValueBuffer*>((*values)[key_].get())).AddByRef(string(char_field_value, field_size - 1));
     // (*(*values)[key_]).AddByRef<string>(string(field_value, field_size - 1));
@@ -209,9 +212,13 @@ Status ArrayAllParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
   const std::vector<AvroParserSharedPtr>& children(GetChildren());
   const std::vector<AvroParserSharedPtr>& final_descendents(GetFinalDescendents());
 
+  LOG(INFO) << "Number of array elements " << n_elements;
+
   // Add a begin mark to all value buffers under this array
   for (const AvroParserSharedPtr& value_parser : final_descendents) {
     // Assumes the key exists in the map
+    LOG(INFO) << "Set begin mark for key " << (*value_parser).GetKey();
+
     (*(*values)[(*value_parser).GetKey()]).BeginMark();
   }
 
@@ -223,6 +230,9 @@ Status ArrayAllParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
       return errors::InvalidArgument("Unable to find value for index '", i_elements,
         "' in array due to error: ", avro_strerror());
     }
+
+    LOG(INFO) << "Parsing children";
+
     // For all children
     for (const AvroParserSharedPtr& child : children) {
       TF_RETURN_IF_ERROR((*child).Parse(values, *next_value));
@@ -300,6 +310,8 @@ ArrayFilterParser::ArrayFilterParser(const string& lhs, const string& rhs, Array
   : AvroParser(""), lhs_(lhs), rhs_(rhs), type_(type) { }
 Status ArrayFilterParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
   const avro_value_t& value) const {
+
+  LOG(INFO) << "Array filter with lhs '" << lhs_ << "' and rhs '" << rhs_ << "'";
 
   if (type_ != kRhsIsConstant && type_ != kRhsIsValue) {
     return Status(errors::Internal("Unknown constant type ", type_));

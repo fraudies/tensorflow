@@ -54,6 +54,8 @@ Status AvroReader::Read(AvroResult* result) {
 
   TF_RETURN_IF_ERROR(avro_parser_tree_.ParseValues(&key_to_value_, values));
 
+  LOG(INFO) << "Done parsing values";
+
   // Get sparse tensors
   size_t n_sparse = config_.sparse.size();
   (*result).sparse_indices.resize(n_sparse);
@@ -63,6 +65,9 @@ Status AvroReader::Read(AvroResult* result) {
   for (size_t i_sparse = 0; i_sparse < n_sparse; ++i_sparse) {
     const AvroParseConfig::Sparse& sparse = config_.sparse[i_sparse];
     const ValueStoreUniquePtr& value_store = key_to_value_[sparse.feature_name];
+
+    LOG(INFO) << "Converting sparse feature " << sparse.feature_name;
+    LOG(INFO) << "Contents of value store " << (*value_store).ToString(10);
 
     TensorShape value_shape;
     TF_RETURN_IF_ERROR((*value_store).GetSparseValueShape(&value_shape));

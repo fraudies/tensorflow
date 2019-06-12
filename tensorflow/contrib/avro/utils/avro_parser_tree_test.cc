@@ -86,6 +86,8 @@ TEST(AvroParserTreeTest, BuildParserTree) {
     "|   |   |   |---AttributeParser(color)\n"
     "|   |   |   |   |---StringOrBytesValue(car['nickname'].color)\n";
 
+  LOG(INFO) << "Actual tree\n" << actual;
+
   EXPECT_EQ(actual, expected);
 }
 

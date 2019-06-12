@@ -19,11 +19,43 @@ limitations under the License.
 namespace tensorflow {
 namespace data {
 
+typedef std::pair<string, DataType> KeyWithType;
+
+// This will be a vector
+template <typename T>
+class UniqueVector {
+public:
+  bool Prepend(const T& value) {
+    auto info = unique.insert(value);
+    if (info.second) {
+      order.insert(order.begin(), value);
+    }
+    return info.second;
+  }
+  bool Append(const T& value) {
+    auto info = unique.insert(value);
+    if (info.second) {
+      order.push_back(value);
+    }
+    return info.second;
+  }
+  const std::vector<T>& GetOrdered() const {
+    return order;
+  }
+  const std::set<T>& GetUnique() const {
+    return unique;
+  }
+private:
+  std::set<T> unique;
+  std::vector<T> order;
+};
+
+
 class AvroParserTree {
 public:
   // creates all the correct parser nodes with
   static Status Build(AvroParserTree* parser_tree,
-    const std::vector<std::pair<string, DataType>>& keys_and_types);
+    const std::vector<KeyWithType>& keys_and_types);
 
   Status ParseValues(std::map<string, ValueStoreUniquePtr>* key_to_value,
     const std::vector<AvroValueSharedPtr>& values);
@@ -42,10 +74,16 @@ private:
   static const string kDefaultNamespace;
 
   Status Build(AvroParser* parent, const std::vector<PrefixTreeNodeSharedPtr>& children);
-  Status BuildKeyWithInternalName(const std::vector<std::pair<string, DataType>>& keys_and_types);
+  static std::vector<KeyWithType> ToInternalName(
+    const std::vector<KeyWithType>& keys_and_types, const string& avro_namespace);
 
-  static Status GetUniqueKeys(std::unordered_set<string>* keys,
-    const std::vector<std::pair<string, DataType>>& keys_and_types);
+  static std::vector<KeyWithType> OrderAndResolveFilters(
+    const std::vector<KeyWithType>& keys_and_types, const string& avro_namespace);
+
+  static bool ResolveFilter(string* full_key, string* resolved_key,
+                            const string& filter, const string& key, const string& avro_namespace);
+
+  static Status ValidateUniqueKeys(const std::vector<KeyWithType>& keys_and_types);
   static Status AddBeginMarks(std::map<string, ValueStoreUniquePtr>* key_to_value);
   static Status AddFinishMarks(std::map<string, ValueStoreUniquePtr>* key_to_value);
 
@@ -54,7 +92,7 @@ private:
   Status CreateValueParser(AvroParserUniquePtr& value_parser,
     const string& name, DataType data_type) const;
 
-  Status ConvertToUserName(string* user_name, const string& internal_name) const;
+  static Status ConvertToUserName(string* user_name, const string& internal_name, const string& avro_namespace);
 
   static bool ContainsFilter(string* lhs, string* rhs, const string& key);
   static bool IsFilter(string* lhs, string* rhs, const string& key);
@@ -66,7 +104,7 @@ private:
 
   Status InitValueBuffers(std::map<string, ValueStoreUniquePtr>* key_to_value);
 
-  inline bool IsDefaultNamespace() const { return avro_namespace_ == kDefaultNamespace; };
+  static bool IsDefaultNamespace(const string& avro_namespace) { return avro_namespace == kDefaultNamespace; };
 
   const string avro_namespace_;
 

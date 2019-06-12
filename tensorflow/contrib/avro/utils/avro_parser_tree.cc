@@ -61,83 +61,43 @@ Status AvroParserTree::ParseValues(std::map<string, ValueStoreUniquePtr>* key_to
 }
 
 Status AvroParserTree::Build(AvroParserTree* parser_tree,
-    const std::vector<std::pair<string, DataType>>& keys_and_types) {
+    const std::vector<KeyWithType>& keys_and_types) {
 
-  // TODO(fraudies): Clean this up by extending the scope of the build keys function
-  TF_RETURN_IF_ERROR((*parser_tree).BuildKeyWithInternalName(keys_and_types));
+  // Check unique keys
+  TF_RETURN_IF_ERROR(ValidateUniqueKeys(keys_and_types));
 
-  // Get all the keys and check for uniqueness
-  std::unordered_set<string> keys;
-  TF_RETURN_IF_ERROR(GetUniqueKeys(&keys, (*parser_tree).keys_and_types_));
-  LOG(INFO) << "Created set of unique keys";
+  // TODO: Validate filters etc
 
-  // Ensure that we have keys for lhs/rhs of all filters first
-  // Note, some keys in all_keys may not be used for the output but by filter expressions
-  std::vector<string> all_keys; // holds all keys in proper order
-  string lhs;
-  string rhs;
-  string index;
-  string name;
+  const string& avro_namespace = (*parser_tree).GetAvroNamespace();
 
-  // defined a type
-  for (const string& key : keys) {
+  // Convert to intenral names and order names to handle filters properly through parse order
+  (*parser_tree).keys_and_types_ = OrderAndResolveFilters(
+                                    ToInternalName(keys_and_types, avro_namespace), avro_namespace);
 
-    // If filter
-    if (ContainsFilter(&lhs, &rhs, key)) {
-
-      // Handle lhs
-      size_t pos = key.find(lhs);
-      const string prefix = key.substr(0, pos-1);
-      const string lhs_key = prefix + kArrayAllElements + kSeparator + lhs;
-
-      all_keys.push_back(lhs_key);
-      keys.erase(lhs_key);
-
-      // Handle rhs
-      if (IsStringConstant(nullptr, rhs)) {
-        // do nothing for constants
-      } else if (str_util::StartsWith(rhs, "@")) {
-        // If anchored at top resolve full name
-        const string rhs_key = (*parser_tree).GetAvroNamespace() + kSeparator + rhs.substr(1);
-        all_keys.insert(all_keys.begin(), rhs_key);
-        keys.erase(rhs_key);
-      } else {
-        // Otherwise
-        const string rhs_key = prefix + kArrayAllElements + kSeparator + rhs;
-        all_keys.push_back(rhs_key);
-        keys.erase(rhs_key);
-      }
-    }
-
-    all_keys.push_back(key);
+  LOG(INFO) << "Keys and types";
+  for (const KeyWithType& key_type : (*parser_tree).keys_and_types_) {
+    LOG(INFO) << "Key '" << key_type.first << " type " << key_type.second;
   }
 
-  // Parse keys into prefixes and handle namespace
+  // Parse keys into prefixes and build map from key to type
   std::vector< std::vector<string> > prefixes;
-  for (const string& key : all_keys) {
+  for (const KeyWithType& key_type : (*parser_tree).keys_and_types_) {
+
+    // Built prefixes
     std::vector<string> key_prefixes;
-    SplitOnDelimiterButNotInsideSquareBrackets(&key_prefixes, kSeparator, key);
+    SplitOnDelimiterButNotInsideSquareBrackets(&key_prefixes, kSeparator, key_type.first);
     // erase first prefix, because this is the namespace and covered in the root
     key_prefixes.erase(key_prefixes.begin());
     prefixes.push_back(key_prefixes);
+
+    // Built map from key to type
+    (*parser_tree).key_to_type_[key_type.first] = key_type.second;
   }
 
-  OrderedPrefixTree prefix_tree((*parser_tree).GetAvroNamespace());
+  OrderedPrefixTree prefix_tree(avro_namespace);
   OrderedPrefixTree::Build(&prefix_tree, prefixes);
   LOG(INFO) << "Built prefix tree";
   LOG(INFO) << prefix_tree.ToString();
-
-  // Map all keys to types from inputs
-  for (const auto& key_and_type : (*parser_tree).keys_and_types_) {
-    (*parser_tree).key_to_type_[key_and_type.first] = key_and_type.second;
-  }
-  for (const string& key : all_keys) {
-    auto key_and_type = (*parser_tree).key_to_type_.find(key);
-    // Not present yet then it must have come from one of the filters which is a string type
-    if (key_and_type == (*parser_tree).key_to_type_.end()) {
-      (*parser_tree).key_to_type_[key] = DT_STRING;
-    }
-  }
 
   // Use the expected type to decide which value parser node to add
   (*parser_tree).root_ = std::make_shared<NamespaceParser>(prefix_tree.GetRootPrefix());
@@ -184,20 +144,27 @@ Status AvroParserTree::Build(AvroParser* parent, const std::vector<PrefixTreeNod
   return Status::OK();
 }
 
-Status AvroParserTree::GetUniqueKeys(std::unordered_set<string>* keys,
-  const std::vector<std::pair<string, DataType>>& keys_and_types) {
+Status AvroParserTree::ValidateUniqueKeys(
+  const std::vector<KeyWithType>& keys_and_types) {
+
+  std::unordered_set<string> unique_keys;
 
   for (const auto& key_and_type : keys_and_types) {
     const string& key = key_and_type.first;
-    auto inserted = (*keys).insert(key);
+    auto inserted = unique_keys.insert(key);
     if (!inserted.second) {
       return Status(errors::InvalidArgument("Found duplicate key ", key));
     }
   }
+
   return Status::OK();
 }
 
-Status AvroParserTree::BuildKeyWithInternalName(const std::vector<std::pair<string, DataType>>& keys_and_types) {
+std::vector<KeyWithType> AvroParserTree::ToInternalName(
+  const std::vector<KeyWithType>& keys_and_types, const string& avro_namespace) {
+
+  std::vector<KeyWithType> internal_name_keys_and_types;
+
   for (const auto& key_and_type : keys_and_types) {
     string new_key(key_and_type.first);
     RE2::GlobalReplace(&new_key, RE2("\\["), ".[");
@@ -209,11 +176,93 @@ Status AvroParserTree::BuildKeyWithInternalName(const std::vector<std::pair<stri
     // add additional array expression for filters
     //RE2::GlobalReplace(&new_key, RE2("\\[([A-Za-z_].*)=(.*)\\]"), ".[].[\\1=\\2]");
     // add namespace
-    keys_and_types_.push_back(std::make_pair(
-      GetAvroNamespace() + kSeparator + new_key,
+
+    // TODO: For filters resolve their lhs and rhs to the fully qualified name here and simplify the logic above
+
+
+    internal_name_keys_and_types.push_back(std::make_pair(
+      avro_namespace + kSeparator + new_key,
       key_and_type.second));
   }
-  return Status::OK();
+  return internal_name_keys_and_types;
+}
+
+
+struct KeyWithTypeHash {
+  std::size_t operator()(const KeyWithType& key_type) const {
+    size_t const h1 ( std::hash<string>{}(key_type.first) );
+    size_t const h2 ( std::hash<int>{}(key_type.second) );
+    return h1 ^ (h2 << 1); // see boost hash_combine
+  }
+};
+
+// Ensure that we have keys for lhs/rhs of all filters first
+// Note, some keys in ordered may not be used for the output but by filter expressions
+// Note, if we have duplicate keys in filters we require uniqueness and we need order
+std::vector<KeyWithType> AvroParserTree::OrderAndResolveFilters(
+  const std::vector<KeyWithType>& keys_and_types, const string& avro_namespace) {
+
+  std::unordered_set<KeyWithType, KeyWithTypeHash> key_types(keys_and_types.begin(), keys_and_types.end());
+  UniqueVector<KeyWithType> ordered;
+  string lhs;
+  string rhs;
+  string lhs_key;
+  string rhs_key;
+  string full_key;
+
+  for (const KeyWithType& key_type : key_types) {
+
+    const string& key = key_type.first;
+    const DataType type = key_type.second;
+
+    if (ContainsFilter(&lhs, &rhs, key)) {
+
+      if (ResolveFilter(&full_key, &lhs_key, lhs, key, avro_namespace)) {
+        const KeyWithType& lhs_key_type = std::make_pair(lhs_key, DT_STRING);
+        ordered.Prepend(lhs_key_type);
+        // Erase so we don't add this twice
+        key_types.erase(lhs_key_type);
+      }
+
+      if (ResolveFilter(&full_key, &rhs_key, rhs, full_key, avro_namespace)) {
+        const KeyWithType& rhs_key_type = std::make_pair(rhs_key, DT_STRING);
+        ordered.Prepend(rhs_key_type);
+        // Erase so we don't add this twice
+        key_types.erase(rhs_key_type);
+      }
+
+      ordered.Append({full_key, type});
+    } else {
+      ordered.Append(key_type);
+    }
+  }
+
+  return ordered.GetOrdered();
+}
+
+// Return filter if the constant etc. needs to be resolved
+bool AvroParserTree::ResolveFilter(string* full_key, string* resolved_key,
+  const string& filter, const string& key, const string& avro_namespace) {
+
+  if (IsStringConstant(nullptr, filter)) {
+    LOG(INFO) << "Found string constant " << filter;
+    return false;
+  }
+
+  size_t pos = key.find(filter);
+
+  if (str_util::StartsWith(filter, "@")) {
+    *resolved_key = avro_namespace + kSeparator + filter.substr(1), avro_namespace;
+  } else {
+    *resolved_key = key.substr(0, pos-1) + kArrayAllElements + kSeparator + filter;
+  }
+  // When places as infix we need to use the user name definition because that is the key by which
+  // the value buffer is registered
+  string user_name_resolved_key;
+  ConvertToUserName(&user_name_resolved_key, *resolved_key, avro_namespace);
+  *full_key = key.substr(0, pos) + user_name_resolved_key + key.substr(pos + filter.length(), string::npos);
+
+  return true;
 }
 
 Status AvroParserTree::CreateAvroParser(AvroParserUniquePtr& avro_parser,
@@ -237,7 +286,12 @@ Status AvroParserTree::CreateAvroParser(AvroParserUniquePtr& avro_parser,
   // TODO(fraudies): For lhs, rhs use fully qualified names and remove the default namespace
   if (IsFilter(&lhs, &rhs, infix)) {
 
+    LOG(INFO) << "Infix " << infix << " lhs " << lhs << " and rhs " << rhs;
+
     if (IsStringConstant(&constant, rhs)) {
+
+      LOG(INFO) << "Creating array filter with constant " << constant;
+
       avro_parser.reset(new ArrayFilterParser(lhs, constant, kRhsIsConstant));
     } else {
       avro_parser.reset(new ArrayFilterParser(lhs, rhs, kRhsIsValue));
@@ -265,7 +319,7 @@ Status AvroParserTree::CreateValueParser(AvroParserUniquePtr& value_parser,
   const string& name, DataType data_type) const {
 
   string user_defined_name;
-  TF_RETURN_IF_ERROR(ConvertToUserName(&user_defined_name, name));
+  TF_RETURN_IF_ERROR(ConvertToUserName(&user_defined_name, name, GetAvroNamespace()));
 
   switch (data_type) {
     case DT_BOOL:
@@ -294,15 +348,17 @@ Status AvroParserTree::CreateValueParser(AvroParserUniquePtr& value_parser,
   return Status::OK();
 }
 
-Status AvroParserTree::ConvertToUserName(string* user_defined_name, const string& internal_name) const {
+Status AvroParserTree::ConvertToUserName(string* user_defined_name, const string& internal_name,
+  const string& avro_namespace) {
+
   // Remove the default namespace, if we added it
-  if (IsDefaultNamespace()) {
+  if (IsDefaultNamespace(avro_namespace)) {
     size_t pos = internal_name.find(kDefaultNamespace);
     if (pos != 0) {
       return Status(errors::InvalidArgument("Unable to find the default namespace '",
-        kDefaultNamespace, "' at the start of '", internal_name));
+        kDefaultNamespace, "' at the start of '", internal_name, "'"));
     }
-    *user_defined_name = internal_name.substr(pos+kDefaultNamespace.size()+1, string::npos);
+    *user_defined_name = internal_name.substr(pos + kDefaultNamespace.size() + 1, string::npos);
   }
   // Remove the . before the [ if we there are any
   RE2::GlobalReplace(user_defined_name, RE2(".\\["), "[");
@@ -359,8 +415,13 @@ Status AvroParserTree::InitValueBuffers(std::map<string, ValueStoreUniquePtr>* k
   // For all keys and their data types add a buffer
   for (const auto& key_and_type : keys_and_types_) {
     const string& key = key_and_type.first;
+
+    LOG(INFO) << "Converting key '" << key << "' to user defined name";
+
     string user_defined_name;
-    TF_RETURN_IF_ERROR(ConvertToUserName(&user_defined_name, key));
+    TF_RETURN_IF_ERROR(ConvertToUserName(&user_defined_name, key, GetAvroNamespace()));
+
+    LOG(INFO) << "Create value buffer for " << user_defined_name;
 
     DataType data_type = key_and_type.second;
     switch (data_type) {
