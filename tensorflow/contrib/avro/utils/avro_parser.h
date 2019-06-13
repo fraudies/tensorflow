@@ -123,7 +123,7 @@ private:
   size_t index_;
 };
 
-enum ArrayFilterType { kRhsIsConstant, kRhsIsValue };
+enum ArrayFilterType { kLhsIsConstant, kRhsIsConstant, kNoConstant };
 
 class ArrayFilterParser : public AvroParser {
 public:
@@ -131,6 +131,7 @@ public:
   Status Parse(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
   virtual string ToString(int level = 0) const;
+  static ArrayFilterType ToArrayFilterType(bool lhs_is_constant, bool rhs_is_constant);
 private:
   string lhs_;
   string rhs_;

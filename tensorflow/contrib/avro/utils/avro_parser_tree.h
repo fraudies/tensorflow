@@ -50,7 +50,6 @@ private:
   std::vector<T> order;
 };
 
-
 class AvroParserTree {
 public:
   // creates all the correct parser nodes with
@@ -69,32 +68,79 @@ public:
   inline AvroParserSharedPtr getRoot() const { return root_; }
   string ToString() const { return (*root_).ToString(); };
 private:
+  // To manage the internal name and user defined name
+  class Identifier {
+    public:
+      // prefix is typically the namespace
+      Identifier(); // creates invalid identifier
+      inline bool operator<(const Identifier& rhs) const {
+        // Note the user_name_ is a substring of the internal_name_
+        return internal_name_ < rhs.GetInternalName();
+      }
+
+      inline string GetUserName() const { return user_name_; }
+
+      inline string GetInternalName() const { return internal_name_; }
+
+      inline bool IsValid() const { return !(*this).Equals(invalid); }
+
+      DataType GetDataType() const { return data_type_; }
+
+      string ToString() const;
+
+      std::vector<string> GetPartsWithoutAvroNamespace() const;
+
+      // Returns tuples of user name and data type
+      // Note, that if a filter was expanded to the same name that the user had provided use that name
+      // (inside the filter and outside the filter)
+      static std::vector<KeyWithType> ToUserNameDataTypeTuples(const std::vector<Identifier>& identifiers);
+
+      static string ToUserName(const string& internal_name, const string& avro_namespace);
+      static Identifier CreateIdentifier(const string& user_name, DataType data_type,
+        const string& avro_namespace);
+
+     static const Identifier invalid;
+    private:
+      inline bool Equals(const Identifier& rhs) const {
+        return user_name_ == rhs.GetUserName()
+          && data_type_ == rhs.GetDataType()
+          && internal_name_ == rhs.GetInternalName();
+      }
+      //Identifier(const string& user_name, DataType data_type, const string& prefix);
+      Identifier(const string& user_name, DataType data_type, const string& internal_name);
+
+
+      // replaces parts and resolves filters
+      static string ToInternalName(const string& user_name, const string& prefix);
+
+      string user_name_;
+      DataType data_type_;
+      string internal_name_;
+  };
+
+
   static const char kSeparator = '.';
   static const string kArrayAllElements;
   static const string kDefaultNamespace;
 
   Status Build(AvroParser* parent, const std::vector<PrefixTreeNodeSharedPtr>& children);
-  static std::vector<KeyWithType> ToInternalName(
-    const std::vector<KeyWithType>& keys_and_types, const string& avro_namespace);
 
-  static std::vector<KeyWithType> OrderAndResolveFilters(
+  static std::vector<Identifier> CreateOrderedIdentifiers(
     const std::vector<KeyWithType>& keys_and_types, const string& avro_namespace);
-
-  static bool ResolveFilter(string* full_key, string* resolved_key,
-                            const string& filter, const string& key, const string& avro_namespace);
 
   static Status ValidateUniqueKeys(const std::vector<KeyWithType>& keys_and_types);
   static Status AddBeginMarks(std::map<string, ValueStoreUniquePtr>* key_to_value);
   static Status AddFinishMarks(std::map<string, ValueStoreUniquePtr>* key_to_value);
 
-  Status CreateAvroParser(AvroParserUniquePtr& value_parser, const string& infix) const;
+  static string ResolveFilterName(const string& user_name, const string& filter_name);
+
+  Status CreateAvroParser(AvroParserUniquePtr& value_parser, const string& infix,
+    const string& avro_namespace) const;
 
   Status CreateValueParser(AvroParserUniquePtr& value_parser,
-    const string& name, DataType data_type) const;
+    const string& user_name, DataType data_type) const;
 
-  static Status ConvertToUserName(string* user_name, const string& internal_name, const string& avro_namespace);
-
-  static bool ContainsFilter(string* lhs, string* rhs, const string& key);
+  static bool ContainsFilter(string* lhs_name, string* rhs_name, const string& name);
   static bool IsFilter(string* lhs, string* rhs, const string& key);
   static bool IsArrayAll(const string& infix);
   static bool IsArrayIndex(int* index, const string& infix);

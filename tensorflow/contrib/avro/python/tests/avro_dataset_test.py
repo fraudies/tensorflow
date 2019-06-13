@@ -814,6 +814,154 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
     }
     self._test_fail_dataset(writer_schema, record_data, features, 1)
 
+  def test_filter_with_variable_length(self):
+    writer_schema = """
+          {
+             "type": "record",
+             "name": "data_row",
+             "fields": [
+                {
+                   "name": "guests",
+                   "type": {
+                      "type": "array",
+                      "items": {
+                         "type": "record",
+                         "name": "person",
+                         "fields": [
+                            {
+                               "name": "name",
+                               "type": "string"
+                            },
+                            {
+                               "name": "gender",
+                               "type": "string"
+                            }
+                         ]
+                      }
+                   }
+                }
+             ]
+          }
+          """
+    record_data = [
+      {
+        "guests": [
+          {
+            "name": "Hans",
+            "gender": "male"
+          },
+          {
+            "name": "Mary",
+            "gender": "female"
+          },
+          {
+            "name": "July",
+            "gender": "female"
+          }
+        ]
+      },
+      {
+        "guests": [
+          {
+            "name": "Joel",
+            "gender": "male"
+          }, {
+            "name": "JoAn",
+            "gender": "female"
+          }, {
+            "name": "Marc",
+            "gender": "male"
+          }
+        ]
+      }
+    ]
+    features = {
+      "guests[gender='male'].name":
+        parsing_ops.VarLenFeature(tf_types.string),
+      "guests[gender='female'].name":
+        parsing_ops.VarLenFeature(tf_types.string)
+    }
+    expected_tensors = [
+      {
+        "guests[gender='male'].name":
+          sparse_tensor.SparseTensorValue(
+              np.asarray([[0, 0], [1, 0], [1, 1]]),
+              np.asarray([compat.as_bytes("Hans"), compat.as_bytes("Joel"),
+                          compat.as_bytes("Marc")]),
+              np.asarray([2, 1])),
+        "guests[gender='female'].name":
+          sparse_tensor.SparseTensorValue(
+              np.asarray([[0, 0], [0, 1], [1, 0]]),
+              np.asarray([compat.as_bytes("Mary"), compat.as_bytes("July"),
+                          compat.as_bytes("JoAn")]),
+              np.asarray([2, 1]))
+      }
+    ]
+
+    self._test_pass_dataset(writer_schema=writer_schema,
+                            record_data=record_data,
+                            expected_tensors=expected_tensors,
+                            features=features,
+                            batch_size=2, num_epochs=1)
+
+  def test_filter_with_empty_result(self):
+    writer_schema = """
+      {
+         "type": "record",
+         "name": "data_row",
+         "fields": [
+            {
+               "name": "guests",
+               "type": {
+                  "type": "array",
+                  "items": {
+                     "type": "record",
+                     "name": "person",
+                     "fields": [
+                        {
+                           "name":"name",
+                           "type":"string"
+                        },
+                        {
+                           "name":"gender",
+                           "type":"string"
+                        }
+                     ]
+                  }
+               }
+            }
+         ]
+      }
+      """
+    record_data = [{
+      "guests": [{
+        "name": "Hans",
+        "gender": "male"
+      }]
+    }, {
+      "guests": [{
+        "name": "Joel",
+        "gender": "male"
+      }]
+    }]
+    features = {
+      "guests[gender='wrong_value'].name":
+        parsing_ops.VarLenFeature(tf_types.string)
+    }
+    expected_tensors = [
+      {
+        "guests[gender='wrong_value'].name":
+          sparse_tensor.SparseTensorValue(
+              np.empty(shape=[0, 2], dtype=np.int64),
+              np.empty(shape=[0], dtype=np.str), np.asarray([2, 0]))
+      }
+    ]
+    self._test_pass_dataset(writer_schema=writer_schema,
+                            record_data=record_data,
+                            expected_tensors=expected_tensors,
+                            features=features,
+                            batch_size=2, num_epochs=1)
+
 
 if __name__ == "__main__":
   test.main()

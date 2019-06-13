@@ -308,14 +308,24 @@ string ArrayIndexParser::ToString(int level) const {
 
 ArrayFilterParser::ArrayFilterParser(const string& lhs, const string& rhs, ArrayFilterType type)
   : AvroParser(""), lhs_(lhs), rhs_(rhs), type_(type) { }
+
+ArrayFilterType ArrayFilterParser::ToArrayFilterType(bool lhs_is_constant, bool rhs_is_constant) {
+
+  if (lhs_is_constant) {
+    return kLhsIsConstant;
+  }
+
+  if (rhs_is_constant) {
+    return kRhsIsConstant;
+  }
+
+  return kNoConstant;
+}
+
 Status ArrayFilterParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
   const avro_value_t& value) const {
 
   LOG(INFO) << "Array filter with lhs '" << lhs_ << "' and rhs '" << rhs_ << "'";
-
-  if (type_ != kRhsIsConstant && type_ != kRhsIsValue) {
-    return Status(errors::Internal("Unknown constant type ", type_));
-  }
 
   const std::vector<AvroParserSharedPtr>& final_descendents = GetFinalDescendents();
 
@@ -338,11 +348,17 @@ Status ArrayFilterParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
 
     size_t reverse_index = n_elements - i_elements;
 
-    if ( ((type_ == kRhsIsConstant)
-           && (*(*values).at(lhs_)).ValueMatchesAtReverseIndex(rhs_, reverse_index))
-      || ((type_ == kRhsIsValue)
-          && (*(*values).at(lhs_)).ValuesMatchAtReverseIndex(*(*values).at(rhs_), reverse_index)) ) {
+    bool add_value = false;
 
+    if (type_ == kRhsIsConstant) {
+      add_value = (*(*values).at(lhs_)).ValueMatchesAtReverseIndex(rhs_, reverse_index);
+    } else if (type_ == kLhsIsConstant) {
+      add_value = (*(*values).at(rhs_)).ValueMatchesAtReverseIndex(lhs_, reverse_index);
+    } else {
+      add_value = (*(*values).at(lhs_)).ValuesMatchAtReverseIndex(*(*values).at(rhs_), reverse_index);
+    }
+
+    if (add_value) {
       AvroValueSharedPtr next_value(new avro_value_t);
       if (avro_value_get_by_index(&value, i_elements, next_value.get(), NULL) != 0) {
         return errors::InvalidArgument("Unable to find value for index '", i_elements, "' due to error: ",
