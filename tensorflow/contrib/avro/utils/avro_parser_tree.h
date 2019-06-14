@@ -132,7 +132,8 @@ private:
   static Status AddBeginMarks(std::map<string, ValueStoreUniquePtr>* key_to_value);
   static Status AddFinishMarks(std::map<string, ValueStoreUniquePtr>* key_to_value);
 
-  static string ResolveFilterName(const string& user_name, const string& filter_name);
+  static string ResolveFilterName(const string& user_name, const string& side_name,
+    const string& filter_name);
 
   Status CreateAvroParser(AvroParserUniquePtr& value_parser, const string& infix,
     const string& avro_namespace) const;

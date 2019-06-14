@@ -382,8 +382,7 @@ Status ArrayFilterParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
 }
 string ArrayFilterParser::ToString(int level) const {
   std::stringstream ss;
-  ss << LevelToString(level) << "|---ArrayFilterParser(" << lhs_ << "=" << rhs_ << ") with type ";
-  ss << type_ << std::endl;
+  ss << LevelToString(level) << "|---ArrayFilterParser(" << lhs_ << "=" << rhs_ << ")" << std::endl;
   ss << ChildrenToString(level);
   return ss.str();
 }

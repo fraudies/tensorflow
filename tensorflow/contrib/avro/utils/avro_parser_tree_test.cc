@@ -30,30 +30,26 @@ TEST(AvroParserTreeTest, BuildParserTree) {
     std::make_pair("friends[*].job[*].coworker[*].name.first", DT_STRING),
     std::make_pair("car['nickname'].color", DT_STRING),
     std::make_pair("friends[gender='unknown'].name.first", DT_STRING),
-    std::make_pair("friends[name.first=name.last].name.initial", DT_STRING),
-    std::make_pair("friends[name.first=@name.first].name.initial", DT_STRING)};
+    std::make_pair("friends[name.first=name.last].name.initial", DT_STRING)};
   AvroParserTree parser_tree; // will use default namespace
   TF_EXPECT_OK(AvroParserTree::Build(&parser_tree, keys_and_types));
   AvroParserSharedPtr root_parser = parser_tree.getRoot();
   NamespaceParser* namespace_parser = dynamic_cast<NamespaceParser*>(root_parser.get());
   EXPECT_TRUE(namespace_parser != nullptr);
   const std::vector<AvroParserSharedPtr>& children((*root_parser).GetChildren());
-  EXPECT_EQ(children.size(), 3);
+  EXPECT_EQ(children.size(), 2);
   const string actual(parser_tree.ToString());
   const string expected =
     "|---NamespaceParser(default)\n"
-    "|   |---AttributeParser(name)\n"
-    "|   |   |---AttributeParser(first)\n"
-    "|   |   |   |---StringOrBytesValue(name.first)\n"
     "|   |---AttributeParser(friends)\n"
     "|   |   |---ArrayAllParser\n"
-    "|   |   |   |---AttributeParser(gender)\n"
-    "|   |   |   |   |---StringOrBytesValue(friends[*].gender)\n"
     "|   |   |   |---AttributeParser(name)\n"
-    "|   |   |   |   |---AttributeParser(first)\n"
-    "|   |   |   |   |   |---StringOrBytesValue(friends[*].name.first)\n"
     "|   |   |   |   |---AttributeParser(last)\n"
     "|   |   |   |   |   |---StringOrBytesValue(friends[*].name.last)\n"
+    "|   |   |   |   |---AttributeParser(first)\n"
+    "|   |   |   |   |   |---StringOrBytesValue(friends[*].name.first)\n"
+    "|   |   |   |---AttributeParser(gender)\n"
+    "|   |   |   |   |---StringOrBytesValue(friends[*].gender)\n"
     "|   |   |   |---AttributeParser(address)\n"
     "|   |   |   |   |---ArrayAllParser\n"
     "|   |   |   |   |   |---AttributeParser(street)\n"
@@ -65,15 +61,11 @@ TEST(AvroParserTreeTest, BuildParserTree) {
     "|   |   |   |   |   |   |   |---AttributeParser(name)\n"
     "|   |   |   |   |   |   |   |   |---AttributeParser(first)\n"
     "|   |   |   |   |   |   |   |   |   |---StringOrBytesValue(friends[*].job[*].coworker[*].name.first)\n"
-    "|   |   |---ArrayFilterParser(gender=unknown) with type 0\n"
+    "|   |   |---ArrayFilterParser(friends[*].gender=unknown)\n"
     "|   |   |   |---AttributeParser(name)\n"
     "|   |   |   |   |---AttributeParser(first)\n"
     "|   |   |   |   |   |---StringOrBytesValue(friends[gender='unknown'].name.first)\n"
-    "|   |   |---ArrayFilterParser(name.first=@name.first) with type 1\n"
-    "|   |   |   |---AttributeParser(name)\n"
-    "|   |   |   |   |---AttributeParser(initial)\n"
-    "|   |   |   |   |   |---StringOrBytesValue(friends[name.first=@name.first].name.initial)\n"
-    "|   |   |---ArrayFilterParser(name.first=name.last) with type 1\n"
+    "|   |   |---ArrayFilterParser(friends[*].name.first=friends[*].name.last)\n"
     "|   |   |   |---AttributeParser(name)\n"
     "|   |   |   |   |---AttributeParser(initial)\n"
     "|   |   |   |   |   |---StringOrBytesValue(friends[name.first=name.last].name.initial)\n"
@@ -85,8 +77,6 @@ TEST(AvroParserTreeTest, BuildParserTree) {
     "|   |   |---MapKeyParser(nickname)\n"
     "|   |   |   |---AttributeParser(color)\n"
     "|   |   |   |   |---StringOrBytesValue(car['nickname'].color)\n";
-
-  LOG(INFO) << "Actual tree\n" << actual;
 
   EXPECT_EQ(actual, expected);
 }

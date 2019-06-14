@@ -54,11 +54,17 @@ Status AvroParserTree::Build(AvroParserTree* parser_tree,
   // TODO: Validate filters etc, no nesting, no name conflict in shorthand
   // TODO: Check for nested filters and throw error, e.g. disallow [name[first=last]age=friends.age]
   // TODO(fraudies): Add to validation that lhs/rhs being a constant won't be possible
+  // lhs != rhs
   const string& avro_namespace = (*parser_tree).GetAvroNamespace();
 
   // Convert to internal names and order names to handle filters properly through parse order
   LOG(INFO) << "Order identifiers";
   std::vector<Identifier> ordered_identifiers = CreateOrderedIdentifiers(keys_and_types, avro_namespace);
+
+  LOG(INFO) << "\nListing ordered identifiers";
+  for (const Identifier& identifier : ordered_identifiers) {
+    LOG(INFO) << identifier.ToString();
+  }
 
   // Parse keys into prefixes and build map from key to type
   std::vector< std::vector<string> > prefixes;
@@ -76,7 +82,7 @@ Status AvroParserTree::Build(AvroParserTree* parser_tree,
   OrderedPrefixTree prefix_tree(avro_namespace);
   OrderedPrefixTree::Build(&prefix_tree, prefixes);
 
-  LOG(INFO) << "Prefix tree\n " << prefix_tree.ToString();
+  LOG(INFO) << "Prefix tree\n" << prefix_tree.ToString();
 
   (*parser_tree).keys_and_types_ = Identifier::ToUserNameDataTypeTuples(ordered_identifiers);
 
@@ -157,6 +163,18 @@ struct KeyWithTypeHash {
 // Ensure that we have keys for lhs/rhs of all filters first
 // Note, some keys in ordered may not be used for the output but by filter expressions
 // Note, if we have duplicate keys in filters we require uniqueness and we need order
+
+// TODO: Need to enhance the ordering constraint, the below algorithm won't do
+// e.g.
+// "friends[@name.first=name.first].name.initial" will result in
+// 1. friends[*].name.first                         \  These are grouped by the pre-fix tree
+// 2. friends[@name.first=name.first].name.initial  /
+// 3. name.first
+// but the proper order would be
+// 1. name.first
+// 2. friends[*].name.first
+// 3. friends[@name.first=name.first].name.initial
+
 std::vector<AvroParserTree::Identifier> AvroParserTree::CreateOrderedIdentifiers(
   const std::vector<KeyWithType>& keys_and_types, const string& avro_namespace) {
 
@@ -176,15 +194,25 @@ std::vector<AvroParserTree::Identifier> AvroParserTree::CreateOrderedIdentifiers
 
     if (ContainsFilter(&lhs_name, &rhs_name, user_name)) {
 
+      const string& filter_name = lhs_name + "=" + rhs_name;
+
+      LOG(INFO) << "Found filter with lhs '" << lhs_name << "' and rhs '" << rhs_name < "'";
+
       if (!IsStringConstant(nullptr, lhs_name)) {
-        const string& lhs_resolved_name = ResolveFilterName(user_name, lhs_name);
+        const string& lhs_resolved_name = ResolveFilterName(user_name, lhs_name, filter_name);
+
+        LOG(INFO) << "  Resolved lhs " << lhs_resolved_name;
+
         lhs_id = Identifier::CreateIdentifier(lhs_resolved_name, DT_STRING, avro_namespace);
         ordered.Prepend(lhs_id);
         key_types.erase(std::make_pair(lhs_resolved_name, DT_STRING));
       }
 
       if (!IsStringConstant(nullptr, rhs_name)) {
-        const string& rhs_resolved_name = ResolveFilterName(user_name, rhs_name);
+        const string& rhs_resolved_name = ResolveFilterName(user_name, rhs_name, filter_name);
+
+        LOG(INFO) << "  Resolved rhs " << rhs_resolved_name;
+
         rhs_id = Identifier::CreateIdentifier(rhs_resolved_name, DT_STRING, avro_namespace);
         ordered.Prepend(rhs_id);
         key_types.erase(std::make_pair(rhs_resolved_name, DT_STRING));
@@ -221,15 +249,16 @@ Status AvroParserTree::CreateAvroParser(AvroParserUniquePtr& avro_parser,
 
     bool lhs_is_constant = IsStringConstant(&lhs_resolved_name, lhs_name);
     bool rhs_is_constant = IsStringConstant(&rhs_resolved_name, rhs_name);
+    const string& filter_name = lhs_name + "=" + rhs_name;
 
     // If the lhs is not a constant, then find the resolved name from the user name
     if (!lhs_is_constant) {
-      lhs_resolved_name = ResolveFilterName(user_name, lhs_name);
+      lhs_resolved_name = ResolveFilterName(user_name, lhs_name, filter_name);
     }
 
     // If the rhs is not a constant, then find the resolved name form the user name
     if (!rhs_is_constant) {
-      rhs_resolved_name = ResolveFilterName(user_name, rhs_name);
+      rhs_resolved_name = ResolveFilterName(user_name, rhs_name, filter_name);
     }
 
     ArrayFilterType array_filter_type = ArrayFilterParser::ToArrayFilterType(lhs_is_constant, rhs_is_constant);
@@ -388,13 +417,16 @@ std::vector<string> SplitOnDelimiterButNotInsideSquareBrackets(const string& str
   return results;
 }
 
-string AvroParserTree::ResolveFilterName(const string& user_name, const string& filter_name) {
+string AvroParserTree::ResolveFilterName(const string& user_name, const string& filter_side_name,
+  const string& filter_name) {
 
-  if (str_util::StartsWith(filter_name, "@")) {
-    return filter_name.substr(1);
+  if (str_util::StartsWith(filter_side_name, "@")) {
+    LOG(INFO) << "Resolve absolute filter name: " << filter_side_name;
+
+    return filter_side_name.substr(1);
   } else {
     size_t pos = user_name.find(filter_name);
-    return user_name.substr(0, pos-1) + kArrayAllElements + kSeparator + filter_name;
+    return user_name.substr(0, pos-1) + kArrayAllElements + kSeparator + filter_side_name;
   }
 }
 
