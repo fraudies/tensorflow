@@ -174,7 +174,6 @@ struct KeyWithTypeHash {
 // 1. name.first
 // 2. friends[*].name.first
 // 3. friends[@name.first=name.first].name.initial
-
 std::vector<AvroParserTree::Identifier> AvroParserTree::CreateOrderedIdentifiers(
   const std::vector<KeyWithType>& keys_and_types, const string& avro_namespace) {
 
@@ -314,8 +313,12 @@ Status AvroParserTree::CreateValueParser(AvroParserUniquePtr& value_parser,
   return Status::OK();
 }
 
-inline bool AvroParserTree::IsFilter(string* lhs, string* rhs, const string& key) {
-  return RE2::FullMatch(key, "\\[([A-Za-z_].*)=(.*)\\]", lhs, rhs);
+bool AvroParserTree::ContainsFilter(string* lhs_name, string* rhs_name, const string& name) {
+  return RE2::PartialMatch(name, "\\[(['@A-Za-z_]['\\.\\w]*)=(['@A-Za-z_]['\\.\\w]*)\\]", lhs_name, rhs_name);
+}
+
+inline bool AvroParserTree::IsFilter(string* lhs_name, string* rhs_name, const string& name) {
+  return RE2::FullMatch(name, "\\[(['@A-Za-z_]['\\.\\w]*)=(['@A-Za-z_]['\\.\\w]*)\\]", lhs_name, rhs_name);
 }
 
 inline bool AvroParserTree::IsArrayAll(const string& infix) {
@@ -428,10 +431,6 @@ string AvroParserTree::ResolveFilterName(const string& user_name, const string& 
     size_t pos = user_name.find(filter_name);
     return user_name.substr(0, pos-1) + kArrayAllElements + kSeparator + filter_side_name;
   }
-}
-
-bool AvroParserTree::ContainsFilter(string* lhs_name, string* rhs_name, const string& name) {
-  return RE2::PartialMatch(name, "\\[([A-Za-z_].*)=(.*)\\]", lhs_name, rhs_name);
 }
 
 // ********************************** AvroParserTree::Identifier ***********************************

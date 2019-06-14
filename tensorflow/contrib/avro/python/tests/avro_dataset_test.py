@@ -962,6 +962,282 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
                             features=features,
                             batch_size=2, num_epochs=1)
 
+  def test_filter_with_wrong_key_fail(self):
+    writer_schema = """
+      {
+         "type": "record",
+         "name": "data_row",
+         "fields": [
+            {
+               "name": "guests",
+               "type": {
+                  "type": "array",
+                  "items": {
+                     "type": "record",
+                     "name": "person",
+                     "fields": [
+                        {
+                           "name":"name",
+                           "type":"string"
+                        }
+                     ]
+                  }
+               }
+            }
+         ]
+      }
+      """
+    record_data = [{
+      "guests": [{
+        "name": "Hans"
+      }]
+    }]
+    features = {
+      "guests[wrong_key='female'].name":
+        parsing_ops.VarLenFeature(tf_types.string)
+    }
+    self._test_fail_dataset(writer_schema, record_data, features, 1)
+
+  def test_filter_with_wrong_pair_fail(self):
+    writer_schema = """
+      {
+         "type":"record",
+         "name":"data_row",
+         "fields":[
+            {
+               "name":"guests",
+               "type":{
+                  "type":"array",
+                  "items":{
+                     "type":"record",
+                     "name":"person",
+                     "fields":[
+                        {
+                           "name":"name",
+                           "type":"string"
+                        }
+                     ]
+                  }
+               }
+            }
+         ]
+      }
+      """
+    record_data = [{
+      "guests": [{
+        "name": "Hans"
+      }]
+    }]
+    features = {
+      "guests[forgot_the_separator].name":
+        parsing_ops.VarLenFeature(tf_types.string)
+    }
+    self._test_fail_dataset(writer_schema, record_data, features, 1)
+
+
+  def test_filter_with_too_many_separators_fail(self):
+    writer_schema = """
+      {
+         "type": "record",
+         "name": "data_row",
+         "fields": [
+            {
+               "name": "guests",
+               "type": {
+                  "type": "array",
+                  "items": {
+                     "type":"record",
+                     "name":"person",
+                     "fields":[
+                        {
+                           "name":"name",
+                           "type":"string"
+                        }
+                     ]
+                  }
+               }
+            }
+         ]
+      }        
+      """
+    record_data = [{
+      "guests": [{
+        "name": "Hans"
+      }]
+    }]
+    features = {
+      "guests[used=too=many=separators].name":
+        parsing_ops.VarLenFeature(tf_types.string)
+    }
+    self._test_fail_dataset(writer_schema, record_data, features, 1)
+
+  def test_filter_for_nested_record(self):
+    writer_schema = """
+      {
+         "type": "record",
+         "name": "data_row",
+         "fields": [
+            {
+               "name": "guests",
+               "type": {
+                  "type": "array",
+                  "items": {
+                     "type": "record",
+                     "name": "person",
+                     "fields": [
+                        {
+                           "name": "name",
+                           "type": "string"
+                        },
+                        {
+                           "name": "gender",
+                           "type": "string"
+                        },
+                        {
+                           "name": "address",
+                           "type": {
+                              "type": "record",
+                              "name": "postal",
+                              "fields": [
+                                 {
+                                    "name":"street",
+                                    "type":"string"
+                                 },
+                                 {
+                                    "name":"zip",
+                                    "type":"int"
+                                 },
+                                 {
+                                    "name":"state",
+                                    "type":"string"
+                                 }
+                              ]
+                           }
+                        }
+                     ]
+                  }
+               }
+            }
+         ]
+      }
+      """
+    record_data = [{
+      "guests": [{
+        "name": "Hans",
+        "gender": "male",
+        "address": {
+          "street": "California St",
+          "zip": 94040,
+          "state": "CA"
+        }
+      }, {
+        "name": "Mary",
+        "gender": "female",
+        "address": {
+          "street": "Ellis St",
+          "zip": 29040,
+          "state": "MA"
+        }
+      }]
+    }]
+    features = {
+      "guests[gender='female'].address.street":
+        parsing_ops.VarLenFeature(tf_types.string)
+    }
+    expected_tensors = [
+      {
+        "guests[gender='female'].address.street":
+          sparse_tensor.SparseTensorValue(
+              np.asarray([[0, 0]]), np.asarray([compat.as_bytes("Ellis St")]),
+              np.asarray([2, 1]))
+      }
+    ]
+    self._test_pass_dataset(writer_schema=writer_schema,
+                            record_data=record_data,
+                            expected_tensors=expected_tensors,
+                            features=features,
+                            batch_size=2, num_epochs=1)
+
+  def test_filter_with_bytes_as_type(self):
+    writer_schema = """
+      {
+         "type": "record",
+         "name": "data_row",
+         "fields": [
+            {
+               "name": "guests",
+               "type": {
+                  "type": "array",
+                  "items": {
+                     "type": "record",
+                     "name": "person",
+                     "fields": [
+                        {
+                           "name":"name",
+                           "type":"bytes"
+                        },
+                        {
+                           "name":"gender",
+                           "type":"bytes"
+                        }
+                     ]
+                  }
+               }
+            }
+         ]
+      }
+      """
+    record_data = [{
+      "guests": [{
+        "name": b"Hans",
+        "gender": b"male"
+      }, {
+        "name": b"Mary",
+        "gender": b"female"
+      }, {
+        "name": b"July",
+        "gender": b"female"
+      }]
+    }, {
+      "guests": [{
+        "name": b"Joel",
+        "gender": b"male"
+      }, {
+        "name": b"JoAn",
+        "gender": b"female"
+      }, {
+        "name": b"Marc",
+        "gender": b"male"
+      }]
+    }]
+    features = {
+      "guests[gender='male'].name":
+        parsing_ops.VarLenFeature(tf_types.string),
+      "guests[gender='female'].name":
+        parsing_ops.VarLenFeature(tf_types.string)
+    }
+    expected_tensors = [
+      {
+        "guests[gender='male'].name":
+          sparse_tensor.SparseTensorValue(
+              np.asarray([[0, 0], [1, 0], [1, 1]]),
+              np.asarray([compat.as_bytes("Hans"), compat.as_bytes("Joel"),
+                          compat.as_bytes("Marc")]),
+              np.asarray([2, 1])),
+        "guests[gender='female'].name":
+          sparse_tensor.SparseTensorValue(
+              np.asarray([[0, 0], [0, 1], [1, 0]]),
+              np.asarray([compat.as_bytes("Mary"), compat.as_bytes("July"),
+                          compat.as_bytes("JoAn")]),
+              np.asarray([2, 1]))
+      }
+    ]
+    self._test_pass_dataset(writer_schema=writer_schema,
+                            record_data=record_data,
+                            expected_tensors=expected_tensors,
+                            features=features,
+                            batch_size=2, num_epochs=1)
+
 
 if __name__ == "__main__":
   test.main()
