@@ -53,14 +53,11 @@ private:
 class AvroParserTree {
 public:
   // creates all the correct parser nodes with
-  static Status Build(AvroParserTree* parser_tree,
+  static Status Build(AvroParserTree* parser_tree, const string& avro_namespace,
     const std::vector<KeyWithType>& keys_and_types);
 
   Status ParseValues(std::map<string, ValueStoreUniquePtr>* key_to_value,
     const std::vector<AvroValueSharedPtr>& values);
-
-  // default constructor
-  AvroParserTree(const string& avro_namespace = kDefaultNamespace);
 
   inline string GetAvroNamespace() const { return avro_namespace_; }
 
@@ -68,65 +65,17 @@ public:
   inline AvroParserSharedPtr getRoot() const { return root_; }
   string ToString() const { return (*root_).ToString(); };
 private:
-  // To manage the internal name and user defined name
-  class Identifier {
-    public:
-      // prefix is typically the namespace
-      Identifier(); // creates invalid identifier
-      inline bool operator<(const Identifier& rhs) const {
-        // Note the user_name_ is a substring of the internal_name_
-        return internal_name_ < rhs.GetInternalName();
-      }
-
-      inline string GetUserName() const { return user_name_; }
-
-      inline string GetInternalName() const { return internal_name_; }
-
-      inline bool IsValid() const { return !(*this).Equals(invalid); }
-
-      DataType GetDataType() const { return data_type_; }
-
-      string ToString() const;
-
-      std::vector<string> GetPartsWithoutAvroNamespace() const;
-
-      // Returns tuples of user name and data type
-      // Note, that if a filter was expanded to the same name that the user had provided use that name
-      // (inside the filter and outside the filter)
-      static std::vector<KeyWithType> ToUserNameDataTypeTuples(const std::vector<Identifier>& identifiers);
-
-      static string ToUserName(const string& internal_name, const string& avro_namespace);
-      static Identifier CreateIdentifier(const string& user_name, DataType data_type,
-        const string& avro_namespace);
-
-     static const Identifier invalid;
-    private:
-      inline bool Equals(const Identifier& rhs) const {
-        return user_name_ == rhs.GetUserName()
-          && data_type_ == rhs.GetDataType()
-          && internal_name_ == rhs.GetInternalName();
-      }
-      //Identifier(const string& user_name, DataType data_type, const string& prefix);
-      Identifier(const string& user_name, DataType data_type, const string& internal_name);
-
-
-      // replaces parts and resolves filters
-      static string ToInternalName(const string& user_name, const string& prefix);
-
-      string user_name_;
-      DataType data_type_;
-      string internal_name_;
-  };
-
-
   static const char kSeparator = '.';
   static const string kArrayAllElements;
   static const string kDefaultNamespace;
 
   Status Build(AvroParser* parent, const std::vector<PrefixTreeNodeSharedPtr>& children);
 
-  static std::vector<Identifier> CreateOrderedIdentifiers(
-    const std::vector<KeyWithType>& keys_and_types, const string& avro_namespace);
+  // Resolve and set namespace
+  string ResolveAndSetNamespace(const string& avro_namespace);
+
+  static std::vector<KeyWithType> OrderAndResolveKeyTypes(
+    const std::vector<KeyWithType>& keys_and_types);
 
   static Status ValidateUniqueKeys(const std::vector<KeyWithType>& keys_and_types);
   static Status AddBeginMarks(std::map<string, ValueStoreUniquePtr>* key_to_value);
@@ -134,6 +83,12 @@ private:
 
   static string ResolveFilterName(const string& user_name, const string& side_name,
     const string& filter_name);
+
+  static std::vector<string> GetPartsWithoutAvroNamespace(const string& user_name,
+    const string& avro_namespace);
+
+  static string RemoveDefaultAvroNamespace(const string& name);
+  static string RemoveDotBeforeBracket(const string& name);
 
   Status CreateAvroParser(AvroParserUniquePtr& value_parser, const string& infix,
     const string& avro_namespace) const;
@@ -153,7 +108,7 @@ private:
 
   static bool IsDefaultNamespace(const string& avro_namespace) { return avro_namespace == kDefaultNamespace; };
 
-  const string avro_namespace_;
+  string avro_namespace_;
 
   AvroParserSharedPtr root_;
 

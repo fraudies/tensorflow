@@ -31,8 +31,8 @@ TEST(AvroParserTreeTest, BuildParserTree) {
     std::make_pair("car['nickname'].color", DT_STRING),
     std::make_pair("friends[gender='unknown'].name.first", DT_STRING),
     std::make_pair("friends[name.first=name.last].name.initial", DT_STRING)};
-  AvroParserTree parser_tree; // will use default namespace
-  TF_EXPECT_OK(AvroParserTree::Build(&parser_tree, keys_and_types));
+  AvroParserTree parser_tree;
+  TF_EXPECT_OK(AvroParserTree::Build(&parser_tree, "default", keys_and_types));
   AvroParserSharedPtr root_parser = parser_tree.getRoot();
   NamespaceParser* namespace_parser = dynamic_cast<NamespaceParser*>(root_parser.get());
   EXPECT_TRUE(namespace_parser != nullptr);
@@ -87,7 +87,7 @@ TEST(AvroParserTreeTest, ParseIntArray) {
     std::make_pair(int_array_key, DT_INT32)
   };
   AvroParserTree parser_tree;
-  TF_EXPECT_OK(AvroParserTree::Build(&parser_tree, keys_and_types));
+  TF_EXPECT_OK(AvroParserTree::Build(&parser_tree, "default", keys_and_types));
 
   const std::vector<int> int_values = {1, 2, 3, 4};
   const string schema = "{  \"type\":\"record\","
@@ -173,7 +173,7 @@ TEST(AvroParserTreeTest, ParseIntValue) {
     std::make_pair(int_value_name, DT_INT32)
   };
   AvroParserTree parser_tree;
-  TF_EXPECT_OK(AvroParserTree::Build(&parser_tree, keys_and_types));
+  TF_EXPECT_OK(AvroParserTree::Build(&parser_tree, "default", keys_and_types));
 
   const int int_value = 12;
   const string schema = "{  \"type\":\"record\","

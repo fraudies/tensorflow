@@ -28,7 +28,6 @@ namespace data {
 class AvroMemReader {
   public:
     AvroMemReader();
-    virtual ~AvroMemReader();
     // Supply a filename if this memory is backed by a file
     static Status Create(AvroMemReader* reader, const std::unique_ptr<char[]>& mem_data,
       const uint64 mem_size, const string& filename);
@@ -39,6 +38,9 @@ class AvroMemReader {
     // e.g. iterator
     virtual Status ReadBatch(std::vector<AvroValueSharedPtr>* values, int64 batch_size);
 
+    // Returns the schema string for this avro reader
+    string GetNamespace() const;
+
     static void AvroFileReaderDestructor(avro_file_reader_t* reader) {
       CHECK_GE(avro_file_reader_close(*reader), 0);
       free(reader);
@@ -47,12 +49,12 @@ class AvroMemReader {
     mutex mu_;
     AvroFileReaderPtr file_reader_ GUARDED_BY(mu_); // will close the file
     AvroInterfacePtr writer_iface_ GUARDED_BY(mu_);
+    AvroSchemaPtr writer_schema_;
 };
 
 class AvroResolvedMemReader : public AvroMemReader {
   public:
     AvroResolvedMemReader();
-    virtual ~AvroResolvedMemReader();
     static Status Create(AvroResolvedMemReader* reader, const std::unique_ptr<char[]>& mem_data,
       const uint64 mem_size, const string& reader_schema_str,
       const string& filename);

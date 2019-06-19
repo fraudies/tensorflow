@@ -34,7 +34,8 @@ Status AvroReader::OnWorkStartup() {
   TF_RETURN_IF_ERROR(AvroMemReader::Create(&avro_mem_reader_, data_, file_size_, filename_));
 
   // Create the parser tree
-  TF_RETURN_IF_ERROR(avro_parser_tree_.Build(&avro_parser_tree_, CreateKeysAndTypesFromConfig()));
+  TF_RETURN_IF_ERROR(AvroParserTree::Build(&avro_parser_tree_,
+    avro_mem_reader_.GetNamespace(), CreateKeysAndTypesFromConfig()));
 
   return Status::OK();
 }
@@ -42,10 +43,8 @@ Status AvroReader::OnWorkStartup() {
 
 Status AvroReader::Read(AvroResult* result) {
 
-  std::vector<AvroValueSharedPtr> values;
-
   // TODO(fraudies): Use callback for performance optimization
-  // TODO(fraudies): Handle last batch of uneven size -- currently dropped
+  std::vector<AvroValueSharedPtr> values;
   TF_RETURN_IF_ERROR(avro_mem_reader_.ReadBatch(&values, config_.batch_size));
 
   int64 batch_size = values.size();

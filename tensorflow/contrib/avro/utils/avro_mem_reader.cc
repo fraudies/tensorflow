@@ -18,9 +18,8 @@ namespace data {
 
 AvroMemReader::AvroMemReader() :
   file_reader_(nullptr, AvroFileReaderDestructor),
-  writer_iface_(nullptr, AvroInterfaceDestructor) { }
-
-AvroMemReader::~AvroMemReader() { }
+  writer_iface_(nullptr, AvroInterfaceDestructor),
+  writer_schema_(nullptr, AvroSchemaDestructor) { }
 
 Status AvroMemReader::Create(AvroMemReader* reader, const std::unique_ptr<char[]>& mem_data,
   const uint64 mem_size, const string& filename) {
@@ -47,14 +46,14 @@ Status AvroMemReader::Create(AvroMemReader* reader, const std::unique_ptr<char[]
   reader->file_reader_.reset(file_reader);
 
   // Get the writer schema
-  AvroSchemaPtr writer_schema(avro_file_reader_get_writer_schema(*reader->file_reader_),
-             AvroSchemaDestructor);
-  if (writer_schema.get() == nullptr) {
+  avro_schema_t writer_schema = avro_file_reader_get_writer_schema(*reader->file_reader_);
+  if (writer_schema == nullptr) {
     return Status(errors::InvalidArgument("Unable to retrieve schema from file ", filename));
   }
+  reader->writer_schema_.reset(writer_schema);
 
   // Get the writer interface for that schema
-  avro_value_iface_t* writer_iface = avro_generic_class_from_schema(writer_schema.get());
+  avro_value_iface_t* writer_iface = avro_generic_class_from_schema(reader->writer_schema_.get());
   if (writer_iface == nullptr) {
     free(writer_iface);
     // TODO(fraudies): Get a string representation of the schema, use avro_schema_to_json
@@ -135,14 +134,19 @@ Status AvroMemReader::ReadBatch(std::vector<AvroValueSharedPtr>* values, int64 b
   return Status::OK();
 }
 
-
-
+// Return empty string if the namespace does not exist
+string AvroMemReader::GetNamespace() const {
+  const char* name = avro_schema_namespace(writer_schema_.get());
+  if (name != nullptr) {
+    return string(name);
+  } else {
+    return "";
+  }
+}
 
 AvroResolvedMemReader::AvroResolvedMemReader() :
   AvroMemReader(),
   reader_iface_(nullptr, AvroInterfaceDestructor) { }
-
-AvroResolvedMemReader::~AvroResolvedMemReader() { }
 
 // An example of resolved reading can be found in this test case test_avro_984.c
 // We follow that here

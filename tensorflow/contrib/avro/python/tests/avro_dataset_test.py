@@ -1238,6 +1238,43 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
                             features=features,
                             batch_size=2, num_epochs=1)
 
+  def test_namespace(self):
+    writer_schema = """{
+              "namespace": "com.test",
+              "type": "record",
+              "name": "simple",
+              "fields": [
+                  {  
+                     "name":"string_value",
+                     "type":"string"
+                  }
+              ]}"""
+    features = {
+      "com.test.string_value": parsing_ops.FixedLenFeature([], tf_types.string)
+    }
+    record_data = [
+      {
+        "string_value": "abc"
+      },
+      {
+        "string_value": "def"
+      }
+    ]
+    expected_tensors = [
+      {
+        "com.test.string_value":
+          np.asarray([
+            "abc",
+            "def"
+          ])
+      }
+    ]
+    self._test_pass_dataset(writer_schema=writer_schema,
+                            record_data=record_data,
+                            expected_tensors=expected_tensors,
+                            features=features,
+                            batch_size=2, num_epochs=1)
+
 
 if __name__ == "__main__":
   test.main()
