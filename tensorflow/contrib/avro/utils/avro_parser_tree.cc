@@ -283,7 +283,12 @@ Status AvroParserTree::CreateAvroParser(AvroParserUniquePtr& avro_parser,
 
   // TODO(fraudies): Check that the name appears in the prefix tree
   if (IsAttribute(infix)) {
-    avro_parser.reset(new AttributeParser(infix));
+    avro_parser.reset(new RecordParser(infix));
+    return Status::OK();
+  }
+
+  if (IsBranch(infix)) {
+    avro_parser.reset(new UnionParser(user_name));
     return Status::OK();
   }
 
@@ -347,6 +352,10 @@ inline bool AvroParserTree::IsAttribute(const string& infix) {
 
 inline bool AvroParserTree::IsStringConstant(string* constant, const string& infix) {
   return RE2::FullMatch(infix, "'(\\S+)'", constant);
+}
+
+inline bool AvroParserTree::IsBranch(const string& infix) {
+  return RE2::FullMatch(infix, ":int|:long|:float|:double|:string|:boolean");
 }
 
 Status AvroParserTree::AddBeginMarks(std::map<string, ValueStoreUniquePtr>* key_to_value) {
@@ -448,7 +457,8 @@ std::vector<string> AvroParserTree::GetPartsWithoutAvroNamespace(const string& u
   if (str_util::StartsWith(name, avro_namespace)) {
     name = name.substr(avro_namespace.size() + 1, string::npos); // +1 to remove separator
   }
-  RE2::GlobalReplace(&name, RE2("\\["), ".[");
+  RE2::GlobalReplace(&name, RE2("\\["), ".["); // [ -> .[
+  RE2::GlobalReplace(&name, RE2(":"), ".:"); // : -> .:
   std::vector<string> parts = SplitOnDelimiterButNotInsideSquareBrackets(name, kSeparator);
   return parts;
 }
@@ -465,6 +475,7 @@ string AvroParserTree::RemoveDefaultAvroNamespace(const string& name) {
 string AvroParserTree::RemoveDotBeforeBracket(const string& name) {
   string removed(name);
   RE2::GlobalReplace(&removed, RE2("\\.\\["), "[");
+  RE2::GlobalReplace(&removed, RE2("\\.:"), ":");
   return removed;
 }
 

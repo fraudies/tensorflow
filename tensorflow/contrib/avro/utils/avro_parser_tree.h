@@ -103,6 +103,7 @@ private:
   static bool IsMapKey(string* key, const string& infix);
   static bool IsAttribute(const string& infix);
   static bool IsStringConstant(string* constant, const string& infix);
+  static bool IsBranch(const string& infix);
 
   Status InitValueBuffers(std::map<string, ValueStoreUniquePtr>* key_to_value);
 

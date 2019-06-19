@@ -76,6 +76,19 @@ string AvroParser::LevelToString(int level) const {
 // ------------------------------------------------------------
 // Concrete implementations of avro value parsers
 // ------------------------------------------------------------
+/*
+NullValueParser::NullValueParser(const string& key) : AvroParser(key) { }
+Status NullValueParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
+                          const avro_value_t& value) const {
+  // Do nothing, means default will be used for dense tensors and for sparse
+  // tensors no entry is created
+  return Status::OK();
+}
+string NullValueParser::ToString(int level) const {
+  return LevelToString(level) + "|---NullValue(" + key_ + ")\n";
+}
+*/
+
 BoolValueParser::BoolValueParser(const string& key) : AvroParser(key) { }
 Status BoolValueParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
   const avro_value_t& value) const {
@@ -411,8 +424,8 @@ string MapKeyParser::ToString(int level) const {
 }
 
 
-AttributeParser::AttributeParser(const string& name) : AvroParser(""), name_(name) { }
-Status AttributeParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
+RecordParser::RecordParser(const string& name) : AvroParser(""), name_(name) { }
+Status RecordParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
   const avro_value_t& value) const {
 
   AvroValueSharedPtr next_value(new avro_value_t);
@@ -425,13 +438,40 @@ Status AttributeParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
   }
   return Status::OK();
 }
-string AttributeParser::ToString(int level) const {
+string RecordParser::ToString(int level) const {
   std::stringstream ss;
-  ss << LevelToString(level) << "|---AttributeParser(" << name_ << ")" << std::endl;
+  ss << LevelToString(level) << "|---RecordParser(" << name_ << ")" << std::endl;
   ss << ChildrenToString(level);
   return ss.str();
 }
 
+UnionParser::UnionParser(const string& name) : AvroParser(""), name_(name) { }
+Status UnionParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
+  const avro_value_t& value) const {
+
+  AvroValueSharedPtr next_value(new avro_value_t);
+  if (avro_value_get_current_branch(&value, next_value.get()) != 0) {
+    return errors::InvalidArgument("Unable to resolve branch '", name_, "'!");
+  }
+  const std::vector<AvroParserSharedPtr>& children(GetChildren());
+  // Find the right child for this type
+  avro_type_t field_type = avro_value_get_type(next_value.get());
+  for (const AvroParserSharedPtr& child : children) {
+    if ((*child).GetType() == field_type) {
+      TF_RETURN_IF_ERROR((*child).Parse(values, *next_value));
+      return Status::OK();
+    }
+  }
+  // We could not find the right child, log a warning since this datum is lost
+  // LOG(WARN) << "Branch value in data is not consumed";
+  return Status::OK();
+}
+string UnionParser::ToString(int level) const {
+  std::stringstream ss;
+  ss << LevelToString(level) << "|---UnionParser(" << name_ << ")" << std::endl;
+  ss << ChildrenToString(level);
+  return ss.str();
+}
 
 NamespaceParser::NamespaceParser(const string& name) : AvroParser(""), name_(name) { }
 Status NamespaceParser::Parse(std::map<string, ValueStoreUniquePtr>* values,

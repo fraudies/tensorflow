@@ -43,6 +43,7 @@ public:
   const std::vector<AvroParserSharedPtr>& GetChildren() const;
   virtual string ToString(int level = 0) const = 0;
   inline const string& GetKey() const { return key_; }
+  virtual avro_type_t GetType() const = 0;
 protected:
   const std::vector<AvroParserSharedPtr>& GetFinalDescendents() const;
   string ChildrenToString(int level) const;
@@ -56,12 +57,27 @@ private:
   mutable std::vector<AvroParserSharedPtr> final_descendents_;
 };
 
+// Parser for primitive types
+/*
+class NullValueParser : public AvroParser {
+public:
+  NullValueParser(const string& key);
+  // Don't do anything, meaning for dense tensors the default will be filled
+  // and for sparse tensors no entry will be generated
+  Status Parse(std::map<string, ValueStoreUniquePtr>* values,
+    const avro_value_t& value) const override;
+  virtual string ToString(int level = 0) const;
+  inline avro_type_t GetType() const override { return AVRO_NULL; }
+};
+*/
+
 class BoolValueParser : public AvroParser {
 public:
   BoolValueParser(const string& key);
   Status Parse(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
   virtual string ToString(int level = 0) const;
+  inline avro_type_t GetType() const override { return AVRO_BOOLEAN; }
 };
 
 class LongValueParser : public AvroParser {
@@ -70,6 +86,7 @@ public:
   Status Parse(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
   virtual string ToString(int level = 0) const;
+  inline avro_type_t GetType() const override { return AVRO_INT64; }
 };
 
 
@@ -79,6 +96,7 @@ public:
   Status Parse(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
   virtual string ToString(int level = 0) const;
+  inline avro_type_t GetType() const override { return AVRO_INT32; }
 };
 
 class DoubleValueParser : public AvroParser {
@@ -87,6 +105,7 @@ public:
   Status Parse(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
   virtual string ToString(int level = 0) const;
+  inline avro_type_t GetType() const override { return AVRO_DOUBLE; }
 };
 
 class FloatValueParser : public AvroParser {
@@ -95,6 +114,7 @@ public:
   Status Parse(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
   virtual string ToString(int level = 0) const;
+  inline avro_type_t GetType() const override { return AVRO_FLOAT; }
 };
 
 class StringOrBytesValueParser : public AvroParser {
@@ -103,14 +123,18 @@ public:
   Status Parse(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
   virtual string ToString(int level = 0) const;
+  inline avro_type_t GetType() const override { return AVRO_STRING; }
 };
 
+
+// Parsers for non-primitive types
 class ArrayAllParser : public AvroParser {
 public:
   ArrayAllParser();
   Status Parse(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
   virtual string ToString(int level = 0) const;
+  inline avro_type_t GetType() const override { return AVRO_ARRAY; }
 };
 
 class ArrayIndexParser : public AvroParser {
@@ -119,6 +143,7 @@ public:
   Status Parse(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
   virtual string ToString(int level = 0) const;
+  inline avro_type_t GetType() const override { return AVRO_ARRAY; }
 private:
   size_t index_;
 };
@@ -132,6 +157,7 @@ public:
     const avro_value_t& value) const override;
   virtual string ToString(int level = 0) const;
   static ArrayFilterType ToArrayFilterType(bool lhs_is_constant, bool rhs_is_constant);
+  inline avro_type_t GetType() const override { return AVRO_ARRAY; }
 private:
   string lhs_;
   string rhs_;
@@ -144,19 +170,32 @@ public:
   Status Parse(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
   virtual string ToString(int level = 0) const;
+  inline avro_type_t GetType() const override { return AVRO_MAP; }
 private:
   string key_;
 };
 
-class AttributeParser : public AvroParser {
+class RecordParser : public AvroParser {
 public:
-  AttributeParser(const string& name);
+  RecordParser(const string& name);
   // check that the in_value is of type record
   // check that an attribute with name exists
   // get the the attribute for the name and return it in the vector as single element
   Status Parse(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
   virtual string ToString(int level = 0) const;
+  inline avro_type_t GetType() const override { return AVRO_RECORD; }
+private:
+  string name_;
+};
+
+class UnionParser : public AvroParser {
+public:
+  UnionParser(const string& name);
+  Status Parse(std::map<string, ValueStoreUniquePtr>* values,
+    const avro_value_t& value) const override;
+  virtual string ToString(int level = 0) const;
+  inline avro_type_t GetType() const override { return AVRO_UNION; }
 private:
   string name_;
 };
@@ -170,6 +209,7 @@ public:
   Status Parse(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
   virtual string ToString(int level = 0) const;
+  inline avro_type_t GetType() const override { return AVRO_LINK; }
 private:
   string name_;
 };

@@ -173,7 +173,6 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
       {"int_value": np.asarray([0, 1])},
       {"int_value": np.asarray([2])}
     ]
-
     self._test_pass_dataset(writer_schema=writer_schema,
                             record_data=record_data,
                             expected_tensors=expected_tensors,
@@ -246,6 +245,121 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
                             features=features,
                             batch_size=2, num_epochs=1,
                             reader_schema=reader_schema)
+
+  def test_null_union_primitive_type(self):
+    writer_schema = """
+      {
+         "type":"record",
+         "name":"data_row",
+         "fields":[
+            {
+               "name":"multi_type",
+               "type":[
+                  "null",
+                  "boolean",
+                  "int",
+                  "long",
+                  "float",
+                  "double",
+                  "string"
+               ]
+            }
+         ]
+      }        
+      """
+    record_data = [
+      {
+        "multi_type": 1.0
+      },
+      {
+        "multi_type": 2.0
+      },
+      {
+        "multi_type": 3.0
+      },
+      {
+        "multi_type": True  # converted by py avro implementation into 1
+      },
+      {
+        "multi_type": "abc"
+      },
+      {
+        "multi_type": None
+      }
+    ]
+    features = {
+      "multi_type:boolean": parsing_ops.FixedLenFeature([], tf_types.bool),
+      "multi_type:int": parsing_ops.FixedLenFeature([], tf_types.int32),
+      "multi_type:long": parsing_ops.FixedLenFeature([], tf_types.int64),
+      "multi_type:float": parsing_ops.FixedLenFeature([], tf_types.float32),
+      "multi_type:double": parsing_ops.FixedLenFeature([], tf_types.float64),
+      "multi_type:string": parsing_ops.FixedLenFeature([], tf_types.string)
+    }
+    expected_tensors = [
+      {
+        "multi_type:boolean":
+          np.asarray([]),
+        "multi_type:int":
+          np.asarray([]),
+        "multi_type:long":
+          np.asarray([]),
+        "multi_type:float":
+          np.asarray([]),
+        "multi_type:double":
+          np.asarray([1.0, 2.0, 3.0, 1.0]),
+        "multi_type:string":
+          np.asarray(["abc"])
+      }
+    ]
+    self._test_pass_dataset(writer_schema=writer_schema,
+                            record_data=record_data,
+                            expected_tensors=expected_tensors,
+                            features=features,
+                            batch_size=6, num_epochs=1)
+
+  def test_union_with_null(self):
+    writer_schema = """
+      {
+         "type": "record",
+         "name": "data_row",
+         "fields": [
+            {
+               "name": "possible_float_type",
+               "type": [
+                  "null",
+                  "float"
+               ]
+            }
+         ]
+      }        
+      """
+    record_data = [
+      {
+        "possible_float_type": 1.0
+      },
+      {
+        "possible_float_type": None
+      },
+      {
+        "possible_float_type": -1.0
+      }
+    ]
+    features = {
+      "possible_float_type:float": parsing_ops.FixedLenFeature([],
+                                                               tf_types.float32)
+    }
+    # TODO(fraudies): If we have a default, then we use that in the place of
+    #  the None
+    expected_tensors = [
+      {
+        "possible_float_type:float": np.asarray([1.0, -1.0])
+      }
+    ]
+    self._test_pass_dataset(writer_schema=writer_schema,
+                            record_data=record_data,
+                            expected_tensors=expected_tensors,
+                            features=features,
+                            batch_size=3, num_epochs=1)
 
   def test_fixed_length_list(self):
     writer_schema = """{
@@ -1362,16 +1476,18 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
                             batch_size=2, num_epochs=1)
 
   def test_namespace(self):
-    writer_schema = """{
-              "namespace": "com.test",
-              "type": "record",
-              "name": "simple",
-              "fields": [
-                  {  
-                     "name":"string_value",
-                     "type":"string"
-                  }
-              ]}"""
+    writer_schema = """
+      {
+        "namespace": "com.test",
+        "type": "record",
+        "name": "simple",
+        "fields": [
+            {  
+               "name":"string_value",
+               "type":"string"
+            }
+        ]
+      }"""
     features = {
       "com.test.string_value": parsing_ops.FixedLenFeature([], tf_types.string)
     }
@@ -1399,43 +1515,51 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
                             batch_size=2, num_epochs=1)
 
   def test_broken_schema_fail(self):
-    writer_schema = """{
-              "type": "record",
-              "name": "row",
-              "fields": [
-                  {"name": "int_value", "type": "int"}
-              ]}"""
+    writer_schema = """
+      {
+        "type": "record",
+        "name": "row",
+        "fields": [
+            {"name": "int_value", "type": "int"}
+        ]
+      }"""
     record_data = [
       {"int_value": 0}
     ]
-    broken_schema = '''{
-              "type": "record",
-              "name": "row",
-              "fields": [
-                  {"name": "index", "type": "int"},
-                  {"name": "boolean_type"}
-              ]}'''
+    broken_schema = """
+      {
+        "type": "record",
+        "name": "row",
+        "fields": [
+            {"name": "index", "type": "int"},
+            {"name": "boolean_type"}
+        ]
+      }"""
     features = {"index": parsing_ops.FixedLenFeature([], tf_types.int64)}
     self._test_fail_dataset(writer_schema, record_data, features, 1,
                             reader_schema=broken_schema)
 
   def test_incompatible_schema_fail(self):
-    writer_schema = """{
-              "type": "record",
-              "name": "row",
-              "fields": [
-                  {"name": "int_value", "type": "int"}
-              ]}"""
+    writer_schema = """
+      {
+        "type": "record",
+        "name": "row",
+        "fields": [
+            {"name": "int_value", "type": "int"}
+        ]
+      }"""
     record_data = [
       {"int_value": 0}
     ]
-    broken_schema = '''{
-            "type": "record",
-            "name": "row",
-            "fields": [
-                {"name": "index", "type": "int"},
-                {"name": "crazy_type", "type": "boolean"}
-            ]}'''
+    broken_schema = """
+      {
+        "type": "record",
+        "name": "row",
+        "fields": [
+            {"name": "index", "type": "int"},
+            {"name": "crazy_type", "type": "boolean"}
+        ]
+      }"""
     features = {"index": parsing_ops.FixedLenFeature([], tf_types.int64)}
     self._test_fail_dataset(writer_schema, record_data, features, 1,
                             reader_schema=broken_schema)

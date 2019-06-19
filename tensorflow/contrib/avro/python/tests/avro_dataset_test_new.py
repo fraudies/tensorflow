@@ -34,7 +34,6 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
   def test_dummy(self):
     print("dummy")
 
-
 if __name__ == "__main__":
   log_root = logging.getLogger()
   log_root.setLevel(logging.INFO)
