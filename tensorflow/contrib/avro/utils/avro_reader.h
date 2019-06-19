@@ -80,14 +80,13 @@ private:
   static int ResolveDefaultShape(TensorShape* resolved, const PartialTensorShape& default_shape,
     int64 batch_size);
 
-
   const std::unique_ptr<RandomAccessFile>& file_;
   const uint64 file_size_;
   const string filename_;
   const string reader_schema_;
   const AvroParseConfig config_;
 
-  AvroMemReader avro_mem_reader_;
+  std::unique_ptr<AvroMemReader> avro_mem_reader_;
   AvroParserTree avro_parser_tree_;
   std::unique_ptr<char[]> data_;
   std::map<string, ValueStoreUniquePtr> key_to_value_;

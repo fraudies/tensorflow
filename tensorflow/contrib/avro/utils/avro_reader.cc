@@ -29,13 +29,24 @@ Status AvroReader::OnWorkStartup() {
   StringPiece result;
   TF_RETURN_IF_ERROR((*file_).Read(0, file_size_, &result, data_.get()));
 
-  // TODO(fraudies): Create a resolved avro mem reader using the reader schema
+  bool do_resolve;
+  TF_RETURN_IF_ERROR(AvroResolvedMemReader::DoResolve(&do_resolve, data_, file_size_,
+    reader_schema_, filename_));
+
   // Create the memory reader
-  TF_RETURN_IF_ERROR(AvroMemReader::Create(&avro_mem_reader_, data_, file_size_, filename_));
+  if (do_resolve) {
+    AvroResolvedMemReader* resolved_reader = new AvroResolvedMemReader();
+    TF_RETURN_IF_ERROR(AvroResolvedMemReader::Create(resolved_reader, data_, file_size_,
+      reader_schema_, filename_));
+    avro_mem_reader_.reset(resolved_reader);
+  } else {
+    avro_mem_reader_.reset(new AvroMemReader());
+    TF_RETURN_IF_ERROR(AvroMemReader::Create(avro_mem_reader_.get(), data_, file_size_, filename_));
+  }
 
   // Create the parser tree
   TF_RETURN_IF_ERROR(AvroParserTree::Build(&avro_parser_tree_,
-    avro_mem_reader_.GetNamespace(), CreateKeysAndTypesFromConfig()));
+    (*avro_mem_reader_).GetNamespace(), CreateKeysAndTypesFromConfig()));
 
   return Status::OK();
 }
@@ -45,7 +56,7 @@ Status AvroReader::Read(AvroResult* result) {
 
   // TODO(fraudies): Use callback for performance optimization
   std::vector<AvroValueSharedPtr> values;
-  TF_RETURN_IF_ERROR(avro_mem_reader_.ReadBatch(&values, config_.batch_size));
+  TF_RETURN_IF_ERROR((*avro_mem_reader_).ReadBatch(&values, config_.batch_size));
 
   int64 batch_size = values.size();
 
@@ -146,7 +157,6 @@ int AvroReader::ResolveDefaultShape(TensorShape* resolved, const PartialTensorSh
   PartialTensorShape full_shape(PartialTensorShape({batch_size}).Concatenate(default_shape));
   return full_shape.AsTensorShape(resolved);
 }
-
 
 // Assumes tensor has been allocated appropriate space -- not checked
 Status AvroReader::ShapeToTensor(Tensor* tensor, const TensorShape& shape) {

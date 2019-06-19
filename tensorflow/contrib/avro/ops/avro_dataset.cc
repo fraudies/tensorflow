@@ -404,7 +404,14 @@ class AvroDatasetOp : public DatasetOpKernel {
           reader_.reset(new AvroReader(
               std::move(file_), file_size, next_filename,
               dataset()->reader_schema_, dataset()->config_));
-          TF_RETURN_IF_ERROR(reader_->OnWorkStartup());
+
+          // Check status and set reader to nullptr to avoid read on broken reader_
+          Status s = reader_->OnWorkStartup();
+          if (!s.ok()) {
+            reader_.reset(nullptr);
+            return s;
+          }
+
         } while (true);
       }
 
