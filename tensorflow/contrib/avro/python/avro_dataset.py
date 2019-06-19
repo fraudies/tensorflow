@@ -26,7 +26,6 @@ import collections
 import os
 import re
 
-from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import load_library
@@ -160,13 +159,19 @@ class _AvroDataset(DatasetSource):
     :return: A map of features where for the sparse feature the 'index_key' and the 'value_key' have been expanded
              properly for the parser in the native code.
     """
+    def resolve_index_key(key_, index_key):
+      if isinstance(index_key, list):
+        return [key_ + '[*].' + index_key_ for index_key_ in index_key]
+      else:
+        return key_ + '[*].' + index_key
+
     if features:
       # NOTE: We iterate over sorted keys to keep things deterministic.
       for key in sorted(features.keys()):
         feature = features[key]
         if isinstance(feature, parsing_ops.SparseFeature):
           features[key] = parsing_ops.SparseFeature(
-              index_key=key + '[*].' + feature.index_key,
+              index_key=resolve_index_key(key, feature.index_key),
               value_key=key + '[*].' + feature.value_key,
               dtype=feature.dtype,
               size=feature.size,

@@ -427,43 +427,6 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
                             features=features,
                             batch_size=1, num_epochs=1)
 
-  def test_variable_length(self):
-    writer_schema = """{
-              "type": "record",
-              "name": "row",
-              "fields": [
-                  {
-                     "name": "int_list",
-                     "type": {
-                        "type": "array",
-                        "items": "int"
-                     }
-                  }
-              ]}"""
-    record_data = [
-      {"int_list": [1, 2]},
-      {"int_list": [3, 4, 5]},
-      {"int_list": [6]}
-    ]
-    features = {
-      'int_list[*]': parsing_ops.VarLenFeature(tf_types.int32)
-    }
-    expected_tensors = [
-      {"int_list[*]":
-         sparse_tensor.SparseTensorValue(
-             np.asarray([[0, 0], [0, 1], [1, 0], [1, 1], [1, 2], [2, 0]]),
-             np.asarray([1, 2, 3, 4, 5, 6]),
-             np.asarray([2, 6])
-         )
-      }
-    ]
-
-    self._test_pass_dataset(writer_schema=writer_schema,
-                            record_data=record_data,
-                            expected_tensors=expected_tensors,
-                            features=features,
-                            batch_size=3, num_epochs=1)
-
   def test_sparse_feature(self):
     writer_schema = """{
               "type": "record",
@@ -511,6 +474,100 @@ class AvroDatasetTest(avro_test_base.AvroDatasetTestBase):
                             expected_tensors=expected_tensors,
                             features=features,
                             batch_size=2, num_epochs=1)
+
+  def test_sparse_3d_feature(self):
+    writer_schema = """{
+              "type": "record",
+              "name": "row",
+              "fields": [
+                {
+                  "name": "sparse_type",
+                  "type": {
+                    "type": "array",
+                    "items": {
+                       "type": "record",
+                       "name": "sparse_triplet",
+                       "fields": [
+                          {
+                             "name":"first_index",
+                             "type":"long"
+                          },
+                          {
+                             "name":"second_index",
+                             "type":"long"
+                          },
+                          {
+                             "name":"value",
+                             "type":"float"
+                          }
+                       ]
+                    }
+                 }
+              }
+        ]}"""
+    record_data = [
+      {"sparse_type": [
+        {"first_index": 0, "second_index": 1, "value": 5.0},
+        {"first_index": 3, "second_index": 5, "value": 2.0}]
+      },
+      {"sparse_type": [
+        {"first_index": 0, "second_index": 1, "value": 7.0}]
+      }
+    ]
+    features = {
+      "sparse_type": parsing_ops.SparseFeature(index_key=["first_index", "second_index"],
+                                               value_key="value",
+                                               dtype=tf_types.float32,
+                                               size=[4, 6])
+    }
+    expected_tensors = [
+      {"sparse_type": sparse_tensor.SparseTensorValue(
+          np.asarray([[0, 0, 1], [0, 3, 5], [1, 0, 1]]),
+          np.asarray([5.0, 2.0, 7.0]),
+          np.asarray([2, 3]))}
+    ]
+    self._test_pass_dataset(writer_schema=writer_schema,
+                            record_data=record_data,
+                            expected_tensors=expected_tensors,
+                            features=features,
+                            batch_size=2, num_epochs=1)
+
+  def test_variable_length(self):
+    writer_schema = """{
+              "type": "record",
+              "name": "row",
+              "fields": [
+                  {
+                     "name": "int_list",
+                     "type": {
+                        "type": "array",
+                        "items": "int"
+                     }
+                  }
+              ]}"""
+    record_data = [
+      {"int_list": [1, 2]},
+      {"int_list": [3, 4, 5]},
+      {"int_list": [6]}
+    ]
+    features = {
+      'int_list[*]': parsing_ops.VarLenFeature(tf_types.int32)
+    }
+    expected_tensors = [
+      {"int_list[*]":
+         sparse_tensor.SparseTensorValue(
+             np.asarray([[0, 0], [0, 1], [1, 0], [1, 1], [1, 2], [2, 0]]),
+             np.asarray([1, 2, 3, 4, 5, 6]),
+             np.asarray([2, 6])
+         )
+      }
+    ]
+
+    self._test_pass_dataset(writer_schema=writer_schema,
+                            record_data=record_data,
+                            expected_tensors=expected_tensors,
+                            features=features,
+                            batch_size=3, num_epochs=1)
 
   def test_nesting(self):
 
