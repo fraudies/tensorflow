@@ -10,7 +10,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 #include <sstream>
-#include "tensorflow/core/platform/logging.h"
 #include "tensorflow/contrib/avro/utils/prefix_tree.h"
 
 namespace tensorflow {
@@ -18,16 +17,6 @@ namespace data {
 
 PrefixTreeNode::PrefixTreeNode(const std::string& prefix, PrefixTreeNode* father)
   : prefix_(prefix), father_(father) { }
-
-PrefixTreeNode::~PrefixTreeNode() { }
-
-std::vector<PrefixTreeNodeSharedPtr> PrefixTreeNode::GetChildren() const {
-  return children_;
-}
-
-std::string PrefixTreeNode::GetPrefix() const {
-  return prefix_;
-}
 
 std::string PrefixTreeNode::GetName(char separator) const {
   std::string name;
@@ -40,16 +29,8 @@ std::string PrefixTreeNode::GetName(char separator) const {
   return name;
 }
 
-bool PrefixTreeNode::IsTerminal() const {
-  return children_.size() == 0;
-}
-
-bool PrefixTreeNode::HasPrefix() const {
-  return prefix_.size() > 0;
-}
-
-// TODO(fraudies): Could be optimized using a set instead of a std::vector--but note that we need
-// the std::vector to preserve order
+// TODO(fraudies): Could be optimized by using a set in addition to the vector
+// Vector will be used for order and the set for fast access
 PrefixTreeNodeSharedPtr PrefixTreeNode::Find(const std::string& child_prefix) const {
   for (auto child : children_) {
     std::string prefix((*child).GetPrefix());
@@ -72,7 +53,7 @@ PrefixTreeNodeSharedPtr PrefixTreeNode::FindOrAddChild(const std::string& child_
   }
 }
 
-string PrefixTreeNode::ToString(int level) const {
+std::string PrefixTreeNode::ToString(int level) const {
   std::stringstream ss;
   for (int l = 0; l < level; ++l) {
     ss << "|   ";
@@ -89,14 +70,6 @@ string PrefixTreeNode::ToString(int level) const {
 // -------------------------------------------------------------------------------------------------
 OrderedPrefixTree::OrderedPrefixTree(const std::string& root_name)
   : root_(new PrefixTreeNode(root_name)) { }
-
-std::string OrderedPrefixTree::GetRootPrefix() const {
-  return (*root_).GetPrefix();
-}
-
-PrefixTreeNodeSharedPtr OrderedPrefixTree::GetRoot() const {
-  return root_;
-}
 
 void OrderedPrefixTree::Insert(const std::vector<std::string>& prefixes) {
   PrefixTreeNodeSharedPtr node = root_;
@@ -150,8 +123,8 @@ PrefixTreeNodeSharedPtr OrderedPrefixTree::Find(const std::vector<std::string>& 
   return remaining.size() == 0 ? node : nullptr;
 }
 
-string OrderedPrefixTree::ToString() const {
-  return root_.get() != nullptr ? (*root_).ToString(0) : "empty";
+std::string OrderedPrefixTree::ToString() const {
+  return root_.get() != nullptr ? (*root_).ToString(0) : "empty tree";
 }
 
 }

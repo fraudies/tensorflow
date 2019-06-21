@@ -137,11 +137,7 @@ Status AvroMemReader::ReadBatch(std::vector<AvroValueSharedPtr>* values, int64 b
 // Return empty string if the namespace does not exist
 string AvroMemReader::GetNamespace() const {
   const char* name = avro_schema_namespace(writer_schema_.get());
-  if (name != nullptr) {
-    return string(name);
-  } else {
-    return "";
-  }
+  return (name != nullptr) ? string(name) : "";
 }
 
 AvroResolvedMemReader::AvroResolvedMemReader() :

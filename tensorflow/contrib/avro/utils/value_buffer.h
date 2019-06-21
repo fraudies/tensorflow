@@ -12,170 +12,222 @@ limitations under the License.
 #ifndef TENSORFLOW_DATA_VALUE_BUFFER_H_
 #define TENSORFLOW_DATA_VALUE_BUFFER_H_
 
-#include <stack>
 #include <sstream>
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_shape.h"
 
+#define DEBUG_LEVEL -1
+
 namespace tensorflow {
 namespace data {
 
+// Constants in namespace data for begin and finish mark
 static constexpr size_t kBeginMark = std::numeric_limits<size_t>::max() - 1;
 static constexpr size_t kFinishMark = std::numeric_limits<size_t>::max();
 
-// Forward declaration
+
+// An abstract representation of a store for values
+// This representation preserves the order in which elements have been added
+// Uses begin and finish marks around elements to infer the full shape of an N-D tensor
 class ValueStore;
-
-// Pointer type
 using ValueStoreUniquePtr = std::unique_ptr<ValueStore>;
-
-
-// Non template base class
 class ValueStore {
 public:
+  // Make a dense tensor from this value store given the default values and the resolved shape
+  // Assumes the tensor has been initialized and allocated!
+  virtual Status MakeDense(Tensor* tensor, const TensorShape& resolved_shape, const Tensor& defaults) const = 0;
+
+  // Make a sparse tensor with values and indices from this value store
+  // Assumes the tensor has been initialized and allocated!
+  virtual Status MakeSparse(Tensor* values, Tensor* indices) const = 0;
+
+  // Resolve a shape given a partial shape from the user and a shape from the defaults
   virtual Status ResolveDenseShape(TensorShape* shape, const PartialTensorShape& partial_shape,
     const TensorShape& default_shape) const = 0;
+
+  // Get the shape for sparse values if this value store where represented as sparse tensor
   virtual Status GetSparseValueShape(TensorShape* shape) const = 0;
+
+  // Get the shape for sparse indices if this value store where represented as sparse tensor
   virtual Status GetSparseIndexShape(TensorShape* shape) const = 0;
 
-  virtual Status MakeDense(Tensor* tensor, const TensorShape& resolved_shape, const Tensor& defaults) const = 0;
-  virtual Status MakeSparse(Tensor* values, Tensor* indices) const = 0;
+  // Check if values match at the reverse index between this store and the provided one
   virtual bool ValuesMatchAtReverseIndex(const ValueStore& store, size_t reverse_index) const = 0;
+
+  // Check if the value matches at the reverse index
   virtual bool ValueMatchesAtReverseIndex(const string& value, size_t reverse_index) const = 0;
+
+  // Is empty when this store has no values
   virtual bool IsEmpty() const = 0;
+
+  // Place a begin mark
   virtual void BeginMark() = 0;
+
+  // Place a finish mark
   virtual void FinishMark() = 0;
+
+  // Output a human readable string representation with limit number of elements
   virtual string ToString(size_t limit = 10) const = 0;
 };
 
+
+// The shape builder keeps track of the number of values each dimension has
+// Assumes that values are added in sequence
 class ShapeBuilder {
 public:
+
+  // Default constructor
   ShapeBuilder();
+
+  // Places a begin mark
   void BeginMark();
+
+  // Places a finish mark
   void FinishMark();
+
+  // Increment the counter for the elements
   void Increment();
+
+  // Get the number of dimensions
   size_t GetNumberOfDimensions() const;
+
+  // Get the dense shape for this shape builder
   void GetDenseShape(TensorShape* shape) const;
 
-  // indicates if the underlying buffer has all elements for the given shape
+  // True if the shape builder registered all elements for the given shape
   bool HasAllElements(const TensorShape& shape) const;
 
+  // Get the copy information for the given tensor shape
   Status GetCopyInfo(std::vector<std::pair<size_t, size_t> >* copy_info, const TensorShape& shape) const;
+
+  // Get the fill information for the given tensor shape
   Status GetFillInfo(std::vector<std::pair<size_t, size_t> >* fill_info, const TensorShape& shape) const;
+
+  // Get the indices as tensor for this shape
   Status GetIndices(Tensor* indices) const;
+
+  // Get a human readable string for this shape builder
   string ToString() const;
 private:
-  // Not recommended by google style guide but this is not part of the public API
+
+  // Get the cumulative product of dimensions without the last one
   std::vector<size_t> CumulativeProductOfDimensionsWithOneAtEnd(const TensorShape& shape) const;
+
+  // Contains begin marks, finish marks, and the element counter for each dimension
   std::vector<size_t> element_info_;
-  size_t element_counter_; // intermediate counter used when creating a buffer
+
+  // intermediate counter used when creating a buffer
+  size_t element_counter_;
+
+  // True if we had a begin mark otherwise false
   bool has_begin;
 };
 
-// Up to 4 items are stored without allocating heap memory
+
+// The value buffer holds the actual values and implements a value store
 template <typename T>
 class ValueBuffer : public ValueStore {
 public:
-  void BeginMark() override;
-  void FinishMark() override;
-  // Make sure to finish dimensions, also add the end, Make will not call finish dimension because
-  // in certain cases 0 dimensions might be desired in the shape
-  void Add(T value); // use for bool, int, long, float, double, specialized implementation for string
-  void AddByRef(const T& value);
+  inline void BeginMark() override { shape_builder_.BeginMark(); }
+
+  inline void FinishMark() override { shape_builder_.FinishMark(); }
+
+  // Add a primitive value (e.g. bool, int) to the buffer by copy
+  inline void Add(T value) {
+    values_.push_back(value);
+    shape_builder_.Increment();
+  }
+
+  // Add a non-primitive value (e.g. string) by reference to the buffer
+  inline void AddByRef(const T& value) {
+    values_.push_back(value);
+    shape_builder_.Increment();
+  }
+
+  // Return the last item in the buffer
   inline const T back() const { return values_.back(); }
 
-  // Index must be starting from 1; which indexes the last element
+  // Index in reverse order, index 1 indexes the last element
   inline const T ReverseIndex(size_t index) const { return values_[values_.size() - index]; }
 
-  // TODO(fraudies): May want to split this into two methods rather than using the flag
+  // Resolve the partial shape provided by the user into a fully defined shape for a dense tensor
   Status ResolveDenseShape(TensorShape* shape, const PartialTensorShape& partial_shape,
     const TensorShape& default_shape) const override;
+
   Status GetSparseValueShape(TensorShape* shape) const override;
+
   Status GetSparseIndexShape(TensorShape* shape) const override;
 
-  // May move the contents of this buffer into the tensor; hence not const
-  // Assumes tensor has been initialized with the proper dimensions & type through allocate
-  // TODO(fraudies): Do we want to check this in MakeDense?
   Status MakeDense(Tensor* tensor, const TensorShape& resolved_shape, const Tensor& defaults) const override;
+
   Status MakeSparse(Tensor* values, Tensor* indices) const override;
+
   virtual bool ValuesMatchAtReverseIndex(const ValueStore& store, size_t reverse_index) const override;
+
   virtual bool ValueMatchesAtReverseIndex(const string& value, size_t reverse_index) const override;
-  inline bool IsEmpty() const {
-    return GetNumberOfElements() == 0;
-  }
+
+  inline bool IsEmpty() const override { return GetNumberOfElements() == 0; }
+
   virtual string ToString(size_t limit) const override;
+
 private:
-  size_t GetNumberOfElements() const;
+  // Returns the number of elements
+  inline size_t GetNumberOfElements() const { return values_.size(); }
+
+  // Fill in from the buffer Assumes tensor has been initialized
+  Status FillInFromBuffer(Tensor* tensor) const;
 
   // Assumes tensor has been initialized
-  Status FillInFromBuffer(Tensor* tensor) const;
-  // Assumes tensor has been initialized
   Status FillInFromDefault(Tensor* tensor, const Tensor& defaults) const;
-  // Means this is not a tensor; it's just a scalar value
-  // TODO(fraudies): Remove me?
-  inline static bool IsScalarValue(const PartialTensorShape& partial_shape) {
+
+  // Is empty shape for this partial shape
+  inline static bool IsEmptyShape(const PartialTensorShape& partial_shape) {
     return partial_shape.dims() < 1;
   }
-  // Means this is a tensor which has a single dimension with value 1
+
+  // Is this a one element tensor of shape 1 with one value
   inline static bool IsOneElementTensor(const TensorShape& tensor_shape) {
     return tensor_shape.dims() == 1 && tensor_shape.dim_size(0) == 1;
   }
+
+  // Is non trivial tensor that has >= 1 dimension and the dimension(0) > 1 value
   inline static bool IsNonTrivialTensor(const TensorShape& tensor_shape) {
     return tensor_shape.dims() >= 1 && tensor_shape.dim_size(0) > 1;
   }
-  gtl::InlinedVector<T, 4> values_; // For up to 4 values use inline
+
+  // For up to 4 values use inline memory
+  gtl::InlinedVector<T, 4> values_;
+
+  // The shape builder for this value buffer
   ShapeBuilder shape_builder_;
 };
 
+// -------------------------------------------------------------------------------------------------
 // Template specializations for value buffer
+// -------------------------------------------------------------------------------------------------
 typedef ValueBuffer<bool> BoolValueBuffer;
-typedef ValueBuffer<int64> LongValueBuffer;
 typedef ValueBuffer<int32> IntValueBuffer;
-typedef ValueBuffer<double> DoubleValueBuffer;
+typedef ValueBuffer<int64> LongValueBuffer;
 typedef ValueBuffer<float> FloatValueBuffer;
+typedef ValueBuffer<double> DoubleValueBuffer;
 typedef ValueBuffer<string> StringValueBuffer;
 
-// helpers to copy or move data depending on the data type
+// -------------------------------------------------------------------------------------------------
+// copy or move data depending on the data type
+// -------------------------------------------------------------------------------------------------
 template <typename InputIterT, typename OutputIterT>
 inline void CopyOrMoveBlock(const InputIterT b, const InputIterT e, OutputIterT t) {
   std::copy(b, e, t);
 }
-
 template <>
 inline void CopyOrMoveBlock(const string* b, const string* e, string* t) {
   std::move(b, e, t);
 }
 
-
+// -------------------------------------------------------------------------------------------------
 // Implementation of the value buffer
-
-template <typename T>
-void ValueBuffer<T>::BeginMark() {
-  shape_builder_.BeginMark();
-}
-
-template <typename T>
-void ValueBuffer<T>::FinishMark() {
-  shape_builder_.FinishMark();
-}
-
-template <typename T>
-void ValueBuffer<T>::Add(T value) {
-  values_.push_back(value);
-  shape_builder_.Increment();
-}
-
-template <typename T>
-void ValueBuffer<T>::AddByRef(const T& value) {
-  values_.push_back(value);
-  shape_builder_.Increment();
-}
-
-template <typename T>
-size_t ValueBuffer<T>::GetNumberOfElements() const {
-  return values_.size();
-}
+// -------------------------------------------------------------------------------------------------
 
 // TODO(fraudies): Move validation of user defined shape and defaults into the avro dataset
 // To resolve the proper shape for a dense tensor we honor:
@@ -187,17 +239,12 @@ template<typename T>
 Status ValueBuffer<T>::ResolveDenseShape(TensorShape* shape,
   const PartialTensorShape& partial_shape, const TensorShape& default_shape) const {
 
-  //bool defaultIsOneElementTensor = IsOneElementTensor(default_shape);
   bool defaultIsNonTrivialTensor = IsNonTrivialTensor(default_shape);
-
-  //LOG(INFO) << "Default shape is " << default_shape << " and is one element tensor " << (defaultIsOneElementTensor ? "true" : "false");
-
-  LOG(INFO) << "Fully defined user shape " << (partial_shape.IsFullyDefined() ? "true" : "false");
 
   // Honor user defined shape if fully defined
   if (partial_shape.IsFullyDefined()) {
 
-    LOG(INFO) << "Fully defined input shape";
+    VLOG(DEBUG_LEVEL) << "Fully defined input shape";
 
     if (!partial_shape.AsTensorShape(shape)) {
       return errors::InvalidArgument("Expected ", partial_shape, " to be convertible"
@@ -206,7 +253,8 @@ Status ValueBuffer<T>::ResolveDenseShape(TensorShape* shape,
 
   // If the default is not scalar
   } else if (defaultIsNonTrivialTensor) {
-    LOG(INFO) << "Default is non trivial tensor";
+
+    VLOG(DEBUG_LEVEL) << "Default is non trivial tensor";
 
     PartialTensorShape tmp_shape;
     // Honor any partially defined shape from user and supplement with that from default
@@ -223,13 +271,10 @@ Status ValueBuffer<T>::ResolveDenseShape(TensorShape* shape,
 
   // If the shape is not defined by the user nor the default, infer from provided data
   } else {
-
-    LOG(INFO) << "Get shape from data";
-
     TensorShape dense_shape;
     shape_builder_.GetDenseShape(&dense_shape);
 
-    LOG(INFO) << "Dense shape from data " << dense_shape;
+    VLOG(DEBUG_LEVEL) << "Get dense shape from data " << dense_shape;
 
     PartialTensorShape tmp_shape;
     // Honor any partially defined shape from user and supplement with that from data
@@ -264,12 +309,9 @@ Status ValueBuffer<T>::GetSparseIndexShape(TensorShape* shape) const {
   return Status::OK();
 }
 
-// Builds the tensor from the value buffer
 template <typename T>
 Status ValueBuffer<T>::MakeDense(Tensor* tensor, const TensorShape& resolved_shape,
   const Tensor& defaults) const {
-
-  // TODO(fraudies): Handle batching for defaults probably in here
 
   // Get the dense shape
   bool doFillFromDefault = !shape_builder_.HasAllElements(resolved_shape);
@@ -310,9 +352,11 @@ Status ValueBuffer<T>::MakeSparse(Tensor* values, Tensor* indices) const {
 
 template <typename T>
 Status ValueBuffer<T>::FillInFromBuffer(Tensor* tensor) const {
+
   TensorShape shape = (*tensor).shape();
   auto tensor_data = (*tensor).flat<T>().data();
   auto buffer_data = values_.begin();
+
   // These offsets are per fragment of data
   std::vector<std::pair<size_t, size_t> > copy_info;
   TF_RETURN_IF_ERROR(shape_builder_.GetCopyInfo(&copy_info, shape));
@@ -343,7 +387,7 @@ Status ValueBuffer<T>::FillInFromDefault(Tensor* tensor, const Tensor& defaults)
   auto buffer_data = defaults.flat<T>().data();
 
   // Defaults is a scalar or one element tensor that need to be initialized
-  if (IsOneElementTensor(defaults.shape()) || IsScalarValue(defaults.shape())) {
+  if (IsOneElementTensor(defaults.shape()) || IsEmptyShape(defaults.shape())) {
     std::fill(tensor_data, tensor_data + shape.num_elements(), defaults.flat<T>()(0));
   } else {
     std::vector<std::pair<size_t, size_t> > fill_info;
@@ -402,7 +446,7 @@ string ValueBuffer<T>::ToString(size_t limit) const {
   return ss.str();
 }
 
-}
-}
+}  // namespace data
+}  // namespace tensorflow
 
 #endif // TENSORFLOW_DATA_VALUE_BUFFER_H_

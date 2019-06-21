@@ -322,7 +322,8 @@ string ArrayIndexParser::ToString(int level) const {
 ArrayFilterParser::ArrayFilterParser(const string& lhs, const string& rhs, ArrayFilterType type)
   : AvroParser(""), lhs_(lhs), rhs_(rhs), type_(type) { }
 
-ArrayFilterType ArrayFilterParser::ToArrayFilterType(bool lhs_is_constant, bool rhs_is_constant) {
+ArrayFilterParser::ArrayFilterType ArrayFilterParser::ToArrayFilterType(
+  bool lhs_is_constant, bool rhs_is_constant) {
 
   if (lhs_is_constant) {
     return kLhsIsConstant;
@@ -338,12 +339,11 @@ ArrayFilterType ArrayFilterParser::ToArrayFilterType(bool lhs_is_constant, bool 
 Status ArrayFilterParser::Parse(std::map<string, ValueStoreUniquePtr>* values,
   const avro_value_t& value) const {
 
-  LOG(INFO) << "Array filter with lhs '" << lhs_ << "' and rhs '" << rhs_ << "'";
-
   const std::vector<AvroParserSharedPtr>& final_descendents = GetFinalDescendents();
 
   // Add a begin mark to all value buffers under this array
   for (const AvroParserSharedPtr& value_parser : final_descendents) {
+    LOG(INFO) << "Find parser for key " << (*value_parser).GetKey();
     // Assumes the key exists in the map
     (*(*values)[(*value_parser).GetKey()]).BeginMark();
   }

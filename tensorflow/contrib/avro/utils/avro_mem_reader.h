@@ -20,20 +20,28 @@ limitations under the License.
 namespace tensorflow {
 namespace data {
 
-// Avro mem reader assumes that the memory block contains
+// Avro memory reader assumes that the memory block contains
 // - header information for avro files
 // - schema information about the data
+// - an arbitrary amount of values that follow
 // This reader uses the file reader on a memory mapped file
-// This reader can support schema resolution
 class AvroMemReader {
   public:
+    // Constructor
     AvroMemReader();
-    // Supply a filename if this memory is backed by a file
+
+    // Create an avro memory reader from the provided memory
+    // Assumes that the reader is initialized
+    // Provide the filename for error messaging
     static Status Create(AvroMemReader* reader, const std::unique_ptr<char[]>& mem_data,
       const uint64 mem_size, const string& filename);
+
+    // Read the next value
     // Note, value is only valid as long as no ReadNext is called since the internal method
     // re-uses the same memory for the next read
     virtual Status ReadNext(AvroValueUniquePtr& value);
+
+    // Read the next batch of values
     // TODO(fraudies): For performance optimization convert this into a callback pattern,
     // e.g. iterator
     virtual Status ReadBatch(std::vector<AvroValueSharedPtr>* values, int64 batch_size);
@@ -41,31 +49,54 @@ class AvroMemReader {
     // Returns the schema string for this avro reader
     string GetNamespace() const;
 
+  protected:
+    // Avro file reader destructor
     static void AvroFileReaderDestructor(avro_file_reader_t* reader) {
       CHECK_GE(avro_file_reader_close(*reader), 0);
       free(reader);
     }
-  protected:
+
+    // Used in lock
     mutex mu_;
+
+    // Avro file reader
     AvroFileReaderPtr file_reader_ GUARDED_BY(mu_); // will close the file
+
+    // Avro interface for writer value
     AvroInterfacePtr writer_iface_ GUARDED_BY(mu_);
+
+    // Avro schema presentation for writer schema
     AvroSchemaPtr writer_schema_;
 };
 
+// Avro resolved memory reader that supports schema resolution
 class AvroResolvedMemReader : public AvroMemReader {
   public:
+    // Constructor
     AvroResolvedMemReader();
+
+    // Create a resolved avro memory reader
+    // Assumes that the reader has been initialized
+    // The filename is used for error reporting
     static Status Create(AvroResolvedMemReader* reader, const std::unique_ptr<char[]>& mem_data,
       const uint64 mem_size, const string& reader_schema_str,
       const string& filename);
+
+    // Method that checks if we need to resolve between the schema provided by the memory region
+    // and the reader schema string
     static Status DoResolve(bool* resolve, const std::unique_ptr<char[]>& mem_data,
       const uint64 mem_size, const string& reader_schema_str, const string& filename);
+
+    // Read next value
     virtual Status ReadNext(AvroValueUniquePtr& value);
 
+    // Read batch of values
     // TODO(fraudies): For performance optimization convert this into a callback pattern,
     // e.g. iterator
     virtual Status ReadBatch(std::vector<AvroValueSharedPtr>* values, int64 batch_size);
   protected:
+
+    // Avro interface for the reader value
     AvroInterfacePtr reader_iface_ GUARDED_BY(mu_);
 };
 

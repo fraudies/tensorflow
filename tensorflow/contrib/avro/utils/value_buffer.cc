@@ -23,7 +23,7 @@ void ShapeBuilder::BeginMark() {
 }
 
 void ShapeBuilder::FinishMark() {
-  // Only put the element count
+  // Only put the element count if there was a beginning, necessary for nested dimensions
   if (has_begin) {
     element_info_.push_back(element_counter_);
     element_counter_ = 0;
@@ -256,5 +256,5 @@ std::vector<size_t> ShapeBuilder::CumulativeProductOfDimensionsWithOneAtEnd(
   return dims;
 }
 
-}
-}
+}  // namespace data
+}  // namespace tensorflow

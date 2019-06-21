@@ -23,42 +23,62 @@ limitations under the License.
 namespace tensorflow {
 namespace data {
 
-class AvroParser; // forward declare for pointer definition
-
+// Avro parser
+class AvroParser;
 using AvroParserUniquePtr = std::unique_ptr<AvroParser>;
 using AvroParserSharedPtr = std::shared_ptr<AvroParser>;
-
-
 class AvroParser {
 public:
+  // Constructor
   AvroParser(const string& key);
 
+  // Parse will traverse the sub-tree of this value and fill all values into `parsed_values`
   // may also read from parsed values if filtering
   virtual Status Parse(std::map<string, ValueStoreUniquePtr>* parsed_values,
     const avro_value_t& value) const = 0;
 
+  // Add a child to this avro parser
   inline void AddChild(const AvroParserSharedPtr& child) { children_.push_back(child); }
 
   // public for testing
   const std::vector<AvroParserSharedPtr>& GetChildren() const;
+
+  // Convert the avro parser into a human readable string representation
   virtual string ToString(int level = 0) const = 0;
+
+  // Get the key for this avro parser -- this key can be used to map to values
   inline const string& GetKey() const { return key_; }
+
+  // Get the avro type for this parser
   virtual avro_type_t GetType() const = 0;
+
 protected:
+  // Get the final descendents for this avro parser
   const std::vector<AvroParserSharedPtr>& GetFinalDescendents() const;
+
+  // Convert all children into a string representation
   string ChildrenToString(int level) const;
+
+  // Convert the level into a string
   string LevelToString(int level) const;
+
+  // The key for this avro parser
   string key_;
 private:
+  // Is this a terminal parser node
   inline bool IsTerminal() const { return children_.size() == 0; }
+
+  // Children for this avro parser
   std::vector<AvroParserSharedPtr> children_;
 
-  // computed upon first call and then cached
+  // The final descendents of this parser are computed upon first call and then cached
   mutable std::vector<AvroParserSharedPtr> final_descendents_;
 };
 
 // Parser for primitive types
 /*
+// TODO(fraudies): Use this null value parser to resolve to default value
+// if provided
 class NullValueParser : public AvroParser {
 public:
   NullValueParser(const string& key);
@@ -71,6 +91,7 @@ public:
 };
 */
 
+// Parser for boolean values
 class BoolValueParser : public AvroParser {
 public:
   BoolValueParser(const string& key);
@@ -80,6 +101,7 @@ public:
   inline avro_type_t GetType() const override { return AVRO_BOOLEAN; }
 };
 
+// Parser for long values
 class LongValueParser : public AvroParser {
 public:
   LongValueParser(const string& key);
@@ -89,7 +111,7 @@ public:
   inline avro_type_t GetType() const override { return AVRO_INT64; }
 };
 
-
+// Parser for integer values
 class IntValueParser : public AvroParser {
 public:
   IntValueParser(const string& key);
@@ -99,6 +121,7 @@ public:
   inline avro_type_t GetType() const override { return AVRO_INT32; }
 };
 
+// Parser for double values
 class DoubleValueParser : public AvroParser {
 public:
   DoubleValueParser(const string& key);
@@ -108,6 +131,7 @@ public:
   inline avro_type_t GetType() const override { return AVRO_DOUBLE; }
 };
 
+// Parser for float values
 class FloatValueParser : public AvroParser {
 public:
   FloatValueParser(const string& key);
@@ -117,6 +141,8 @@ public:
   inline avro_type_t GetType() const override { return AVRO_FLOAT; }
 };
 
+// Parser for string or byte values
+// Tries to parse a string first and if this fails will try to parse bytes second
 class StringOrBytesValueParser : public AvroParser {
 public:
   StringOrBytesValueParser(const string& key);
@@ -126,8 +152,7 @@ public:
   inline avro_type_t GetType() const override { return AVRO_STRING; }
 };
 
-
-// Parsers for non-primitive types
+// Parser for an array -- parses all elements
 class ArrayAllParser : public AvroParser {
 public:
   ArrayAllParser();
@@ -137,6 +162,7 @@ public:
   inline avro_type_t GetType() const override { return AVRO_ARRAY; }
 };
 
+// Parser for an array -- parses one index out of the array
 class ArrayIndexParser : public AvroParser {
 public:
   ArrayIndexParser(size_t index);
@@ -148,10 +174,10 @@ private:
   size_t index_;
 };
 
-enum ArrayFilterType { kLhsIsConstant, kRhsIsConstant, kNoConstant };
-
+// Parser for an array -- parses all values that evaluate the filter to true
 class ArrayFilterParser : public AvroParser {
 public:
+  enum ArrayFilterType { kLhsIsConstant, kRhsIsConstant, kNoConstant };
   ArrayFilterParser(const string& lhs, const string& rhs, ArrayFilterType type);
   Status Parse(std::map<string, ValueStoreUniquePtr>* values,
     const avro_value_t& value) const override;
@@ -164,6 +190,7 @@ private:
   ArrayFilterType type_;
 };
 
+// Parser for a map -- parses one key
 class MapKeyParser : public AvroParser {
 public:
   MapKeyParser(const string& key);
@@ -175,6 +202,7 @@ private:
   string key_;
 };
 
+// Parser for a record -- parses all attributes
 class RecordParser : public AvroParser {
 public:
   RecordParser(const string& name);
@@ -189,6 +217,7 @@ private:
   string name_;
 };
 
+// Parser for a union in a record
 class UnionParser : public AvroParser {
 public:
   UnionParser(const string& name);
@@ -200,6 +229,7 @@ private:
   string name_;
 };
 
+// Parses the namespace
 class NamespaceParser : public AvroParser {
 public:
   NamespaceParser(const string& name);
@@ -215,7 +245,7 @@ private:
 };
 
 
-}
-}
+}  // namespace data
+}  // namespace tensorflow
 
 #endif // TENSORFLOW_DATA_AVRO_PARSER_H_
